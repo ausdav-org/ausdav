@@ -10,6 +10,10 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { z } from 'zod';
 
+/**
+ * Zod schema for validating login form data.
+ * Ensures the email is a valid email address and the password is at least 6 characters long.
+ */
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
@@ -36,30 +40,19 @@ const LoginPage: React.FC = () => {
 
   const redirectBasedOnRole = async (userId: string) => {
     try {
-      // Fetch user role
-      const { data: roleData } = await supabase
-        .from('user_roles')
+      // Cast to any because generated types don't yet include the new members table.
+      const { data: member } = await supabase
+        .from('members' as any)
         .select('role')
-        .eq('user_id', userId)
+        .eq('auth_user_id', userId)
         .maybeSingle();
 
-      // Fetch profile for activation status
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('is_active')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      const role = roleData?.role;
-      const isActive = profileData?.is_active ?? false;
-
-      if (!isActive && role !== 'super_admin') {
-        setError(language === 'en' 
-          ? 'Your account is not yet activated. Please contact an administrator.'
-          : 'உங்கள் கணக்கு இன்னும் செயல்படுத்தப்படவில்லை. நிர்வாகியைத் தொடர்பு கொள்ளவும்.');
-        await supabase.auth.signOut();
+      if (!member) {
+        navigate('/admin/profile-setup');
         return;
       }
+
+      const role = (member as any)?.role as string | undefined;
 
       // Redirect based on role
       switch (role) {

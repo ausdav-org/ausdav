@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { User, Mail, Phone, Calendar, Shield, Save, Loader2 } from 'lucide-react';
+import { User, Mail, Shield, Save, Loader2 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -17,9 +18,14 @@ export default function AdminProfilePage() {
   const { profile, role, refreshProfile } = useAdminAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    full_name: profile?.full_name || '',
+    fullname: profile?.fullname || '',
+    username: profile?.username || '',
+    nic: profile?.nic || '',
+    gender: profile?.gender ? 'male' : 'female',
+    batch: profile?.batch?.toString() || '',
+    university: profile?.university || '',
+    school: profile?.school || '',
     phone: profile?.phone || '',
-    batch: profile?.batch || '',
   });
 
   const handleSave = async () => {
@@ -28,13 +34,18 @@ export default function AdminProfilePage() {
     setLoading(true);
     try {
       const { error } = await supabase
-        .from('profiles')
+        .from('members' as any)
         .update({
-          full_name: formData.full_name,
+          fullname: formData.fullname,
+          username: formData.username,
+          nic: formData.nic,
+          gender: formData.gender === 'male',
+          batch: Number(formData.batch),
+          university: formData.university,
+          school: formData.school,
           phone: formData.phone,
-          batch: formData.batch,
-        })
-        .eq('id', profile.id);
+        } as any)
+        .eq('mem_id', profile.mem_id);
 
       if (error) throw error;
 
@@ -47,7 +58,7 @@ export default function AdminProfilePage() {
     }
   };
 
-  const initials = profile?.full_name
+  const initials = profile?.fullname
     ?.split(' ')
     .map((n) => n[0])
     .join('')
@@ -82,27 +93,19 @@ export default function AdminProfilePage() {
             <CardContent className="p-8">
               <div className="flex flex-col md:flex-row items-center gap-6">
                 <Avatar className="h-24 w-24">
-                  <AvatarImage src={profile?.avatar_url || undefined} />
+                  <AvatarImage src={profile?.profile_path || undefined} />
                   <AvatarFallback className="bg-primary/20 text-primary text-2xl">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
                 <div className="text-center md:text-left">
-                  <h2 className="text-2xl font-bold">{profile?.full_name || 'User'}</h2>
-                  <p className="text-muted-foreground">{profile?.email}</p>
+                  <h2 className="text-2xl font-bold">{profile?.fullname || 'User'}</h2>
+                  <p className="text-muted-foreground">{profile?.username}</p>
                   <div className="flex flex-wrap gap-2 mt-3 justify-center md:justify-start">
                     <Badge className={cn('capitalize', getRoleBadgeColor(role))}>
                       {role?.replace('_', ' ') || 'Unknown'}
                     </Badge>
-                    {profile?.is_active ? (
-                      <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                        Active
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
-                        Inactive
-                      </Badge>
-                    )}
+                    <Badge className="bg-muted text-muted-foreground border-border">{profile?.designation}</Badge>
                   </div>
                 </div>
               </div>
@@ -126,14 +129,97 @@ export default function AdminProfilePage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="full_name">Full Name</Label>
+                  <Label htmlFor="fullname">Full Name</Label>
                   <Input
-                    id="full_name"
-                    value={formData.full_name}
+                    id="fullname"
+                    value={formData.fullname}
                     onChange={(e) =>
-                      setFormData({ ...formData, full_name: e.target.value })
+                      setFormData({ ...formData, fullname: e.target.value })
                     }
                     placeholder="Enter your full name"
+                    className="bg-background/50"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    value={formData.username}
+                    onChange={(e) =>
+                      setFormData({ ...formData, username: e.target.value })
+                    }
+                    placeholder="your.username"
+                    className="bg-background/50"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="nic">NIC</Label>
+                  <Input
+                    id="nic"
+                    value={formData.nic}
+                    onChange={(e) =>
+                      setFormData({ ...formData, nic: e.target.value })
+                    }
+                    placeholder="NIC number"
+                    className="bg-background/50"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="gender">Gender</Label>
+                  <Select
+                    value={formData.gender}
+                    onValueChange={(value: 'male' | 'female') =>
+                      setFormData({ ...formData, gender: value })
+                    }
+                  >
+                    <SelectTrigger id="gender" className="bg-background/50">
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="batch">Batch / Year</Label>
+                  <Input
+                    id="batch"
+                    value={formData.batch}
+                    onChange={(e) =>
+                      setFormData({ ...formData, batch: e.target.value })
+                    }
+                    placeholder="e.g., 2024"
+                    className="bg-background/50"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="university">University</Label>
+                  <Input
+                    id="university"
+                    value={formData.university}
+                    onChange={(e) =>
+                      setFormData({ ...formData, university: e.target.value })
+                    }
+                    placeholder="University name"
+                    className="bg-background/50"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="school">School</Label>
+                  <Input
+                    id="school"
+                    value={formData.school}
+                    onChange={(e) =>
+                      setFormData({ ...formData, school: e.target.value })
+                    }
+                    placeholder="School name"
                     className="bg-background/50"
                   />
                 </div>
@@ -147,19 +233,6 @@ export default function AdminProfilePage() {
                       setFormData({ ...formData, phone: e.target.value })
                     }
                     placeholder="+94 XX XXX XXXX"
-                    className="bg-background/50"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="batch">Batch / Year</Label>
-                  <Input
-                    id="batch"
-                    value={formData.batch}
-                    onChange={(e) =>
-                      setFormData({ ...formData, batch: e.target.value })
-                    }
-                    placeholder="e.g., 2020"
                     className="bg-background/50"
                   />
                 </div>
@@ -185,7 +258,7 @@ export default function AdminProfilePage() {
             </Card>
           </motion.div>
 
-          {/* Permissions */}
+          {/* Role / designation summary */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -195,66 +268,30 @@ export default function AdminProfilePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Shield className="h-5 w-5 text-primary" />
-                  Permissions
+                  Role & Designation
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
                   <div>
-                    <p className="font-medium">Finance Submission</p>
-                    <p className="text-sm text-muted-foreground">
-                      Can submit income/expense records
-                    </p>
+                    <p className="font-medium">Role</p>
+                    <p className="text-sm text-muted-foreground">Assigned by administrators</p>
                   </div>
-                  <Badge
-                    className={cn(
-                      profile?.can_submit_finance
-                        ? 'bg-green-500/20 text-green-400'
-                        : 'bg-muted text-muted-foreground'
-                    )}
-                  >
-                    {profile?.can_submit_finance ? 'Enabled' : 'Disabled'}
+                  <Badge className={cn('capitalize', getRoleBadgeColor(role))}>
+                    {role?.replace('_', ' ') || 'member'}
                   </Badge>
                 </div>
-
                 <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
                   <div>
-                    <p className="font-medium">MFA Status</p>
-                    <p className="text-sm text-muted-foreground">
-                      Two-factor authentication
-                    </p>
+                    <p className="font-medium">Designation</p>
+                    <p className="text-sm text-muted-foreground">Managed by admins</p>
                   </div>
-                  <Badge
-                    className={cn(
-                      profile?.mfa_enabled
-                        ? 'bg-green-500/20 text-green-400'
-                        : 'bg-yellow-500/20 text-yellow-400'
-                    )}
-                  >
-                    {profile?.mfa_enabled ? 'Enabled' : 'Not Set'}
+                  <Badge className="bg-muted text-muted-foreground border-border">
+                    {profile?.designation || 'none'}
                   </Badge>
                 </div>
-
-                <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
-                  <div>
-                    <p className="font-medium">Account Status</p>
-                    <p className="text-sm text-muted-foreground">
-                      Your account activation status
-                    </p>
-                  </div>
-                  <Badge
-                    className={cn(
-                      profile?.is_active
-                        ? 'bg-green-500/20 text-green-400'
-                        : 'bg-red-500/20 text-red-400'
-                    )}
-                  >
-                    {profile?.is_active ? 'Active' : 'Inactive'}
-                  </Badge>
-                </div>
-
-                <p className="text-xs text-muted-foreground text-center mt-4">
-                  Contact your administrator to modify permissions.
+                <p className="text-xs text-muted-foreground text-center mt-2">
+                  Contact a super admin to update role or designation.
                 </p>
               </CardContent>
             </Card>

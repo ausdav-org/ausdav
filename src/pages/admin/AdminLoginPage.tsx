@@ -17,23 +17,19 @@ const loginSchema = z.object({
 });
 
 const signupSchema = z.object({
-  fullName: z.string().min(2, 'Full name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  phone: z.string().optional(),
 });
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [hasExistingUsers, setHasExistingUsers] = useState<boolean | null>(null);
-  const { signIn, user, role, profile, loading: authLoading } = useAdminAuth();
+  const { signIn, user, role, profile, loading: authLoading, needsProfileSetup } = useAdminAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -41,7 +37,7 @@ export default function AdminLoginPage() {
   useEffect(() => {
     const checkExistingUsers = async () => {
       const { count } = await supabase
-        .from('profiles')
+        .from('members' as any)
         .select('*', { count: 'exact', head: true });
       setHasExistingUsers((count ?? 0) > 0);
     };
@@ -56,14 +52,18 @@ export default function AdminLoginPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!authLoading && user && role && profile?.is_active) {
+    if (!authLoading && user) {
+      if (!profile || needsProfileSetup) {
+        navigate('/admin/profile-setup');
+        return;
+      }
       if (role === 'admin' || role === 'super_admin') {
         navigate('/admin/dashboard');
       } else {
         navigate('/admin/profile');
       }
     }
-  }, [user, role, profile, authLoading, navigate]);
+  }, [user, role, profile, authLoading, needsProfileSetup, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,7 +89,7 @@ export default function AdminLoginPage() {
     setError('');
     setSuccess('');
 
-    const result = signupSchema.safeParse({ fullName, email, password, phone });
+    const result = signupSchema.safeParse({ email, password });
     if (!result.success) {
       setError(result.error.errors[0].message);
       return;
@@ -110,48 +110,10 @@ export default function AdminLoginPage() {
       if (signupError) throw signupError;
       if (!authData.user) throw new Error('Failed to create account');
 
-      // Create profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: authData.user.id,
-          email,
-          full_name: fullName,
-          phone: phone || null,
-          is_active: true,
-          can_submit_finance: true,
-        });
-
-      if (profileError) throw profileError;
-
-      // If this is the first user, make them super_admin
-      const { count } = await supabase
-        .from('user_roles')
-        .select('*', { count: 'exact', head: true });
-
-      const isFirstUser = (count ?? 0) === 0;
-
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .insert({
-          user_id: authData.user.id,
-          role: isFirstUser ? 'super_admin' : 'member',
-        });
-
-      if (roleError) throw roleError;
-
       setSuccess(
-        isFirstUser
-          ? 'Super Admin account created! You can now sign in.'
-          : 'Account created! Please wait for an admin to activate your account.'
+        'Account created! Please set up your profile to continue.'
       );
-
-      // Clear form
-      setFullName('');
-      setEmail('');
-      setPassword('');
-      setPhone('');
-      setHasExistingUsers(true);
+      navigate('/admin/profile-setup');
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
     } finally {
@@ -269,27 +231,6 @@ export default function AdminLoginPage() {
                   </Alert>
                 )}
 
-                {hasExistingUsers === false && (
-                  <Alert className="border-primary/50 bg-primary/10">
-                    <AlertDescription className="text-primary text-sm">
-                      No admin accounts exist. The first account will be created as Super Admin.
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
-                  <Input
-                    id="fullName"
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Your full name"
-                    className="bg-background/50"
-                    required
-                  />
-                </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="signup-email">Email</Label>
                   <Input
@@ -301,18 +242,6 @@ export default function AdminLoginPage() {
                     autoComplete="email"
                     className="bg-background/50"
                     required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone (optional)</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+61 4XX XXX XXX"
-                    className="bg-background/50"
                   />
                 </div>
 
@@ -345,19 +274,15 @@ export default function AdminLoginPage() {
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Creating account...
                     </>
-                  ) : hasExistingUsers === false ? (
-                    'Create Super Admin'
                   ) : (
-                    'Request Access'
+                    'Create Account'
                   )}
                 </Button>
               </form>
 
-              {hasExistingUsers && (
-                <p className="text-xs text-muted-foreground mt-4 text-center">
-                  New accounts require admin approval before access is granted.
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground mt-4 text-center">
+                After creating your account, you’ll be prompted to complete your member profile.
+              </p>
             </TabsContent>
           </Tabs>
         </div>

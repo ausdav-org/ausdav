@@ -5,7 +5,7 @@ import { AdminSidebar } from './AdminSidebar';
 import { Loader2 } from 'lucide-react';
 
 export function AdminLayout() {
-  const { user, profile, role, loading } = useAdminAuth();
+  const { user, profile, role, loading, needsProfileSetup } = useAdminAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -14,12 +14,12 @@ export function AdminLayout() {
         navigate('/login');
         return;
       }
-      if (profile && !profile.is_active && role !== 'super_admin') {
-        navigate('/login?error=inactive');
+      if (!profile) {
+        navigate('/admin/profile-setup');
         return;
       }
     }
-  }, [user, profile, role, loading, navigate]);
+  }, [user, profile, role, loading, navigate, needsProfileSetup]);
 
   if (loading) {
     return (
@@ -32,7 +32,8 @@ export function AdminLayout() {
     );
   }
 
-  if (!user || !profile) {
+  // Allow the profile setup route to render even when profile is missing.
+  if (!user || (!profile && window.location.pathname !== '/admin/profile-setup')) {
     return null;
   }
 
