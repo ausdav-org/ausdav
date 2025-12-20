@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { AdminSidebar } from './AdminSidebar';
 import { Loader2 } from 'lucide-react';
@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 export function AdminLayout() {
   const { user, profile, role, loading, needsProfileSetup } = useAdminAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (!loading) {
@@ -33,7 +34,9 @@ export function AdminLayout() {
   }
 
   // Allow the profile setup route to render even when profile is missing.
-  if (!user || (!profile && window.location.pathname !== '/admin/profile-setup')) {
+  const isProfileSetupRoute = location.pathname.endsWith('/admin/profile-setup');
+
+  if (!user || (!profile && !isProfileSetupRoute)) {
     return null;
   }
 
