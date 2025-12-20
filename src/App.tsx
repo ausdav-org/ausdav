@@ -33,6 +33,7 @@ import AdminEventsPage from "@/pages/admin/AdminEventsPage";
 import FinanceSubmitPage from "@/pages/admin/finance/FinanceSubmitPage";
 import FinanceVerifyPage from "@/pages/admin/finance/FinanceVerifyPage";
 import FinanceLedgerPage from "@/pages/admin/finance/FinanceLedgerPage";
+import ProfileSetupPage from "@/pages/admin/ProfileSetupPage";
 
 const queryClient = new QueryClient();
 
@@ -89,6 +90,7 @@ const App = () => {
                   }>
                     <Route index element={<AdminDashboardPage />} />
                     <Route path="dashboard" element={<AdminDashboardPage />} />
+                    <Route path="profile-setup" element={<ProfileSetupPage />} />
                     <Route path="profile" element={<AdminProfilePage />} />
                     <Route path="members" element={<AdminMembersPage />} />
                     <Route path="events" element={<AdminEventsPage />} />
