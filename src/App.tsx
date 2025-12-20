@@ -69,7 +69,7 @@ const App = () => {
             {showSplash && <NeuralNetworkSplash onComplete={handleSplashComplete} />}
             
             {appReady && (
-              <BrowserRouter>
+              <BrowserRouter basename={import.meta.env.BASE_URL}>
                 <Routes>
                   {/* Public routes with Layout */}
                   <Route element={<Layout><HomePage /></Layout>} path="/" />
