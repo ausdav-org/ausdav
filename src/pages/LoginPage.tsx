@@ -26,6 +26,7 @@ const LoginPage: React.FC = () => {
   const [form, setForm] = useState({ email: '', password: '' });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [allowSignup, setAllowSignup] = useState<boolean | null>(null);
 
   useEffect(() => {
     // Check if already logged in
@@ -36,6 +37,25 @@ const LoginPage: React.FC = () => {
       }
     };
     checkSession();
+  }, []);
+
+  useEffect(() => {
+    const fetchSignupFlag = async () => {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('allow_signup')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (error) {
+        setAllowSignup(false);
+        return;
+      }
+
+      setAllowSignup(data?.allow_signup ?? false);
+    };
+
+    fetchSignupFlag();
   }, []);
 
   const redirectBasedOnRole = async (userId: string) => {
@@ -228,14 +248,16 @@ const LoginPage: React.FC = () => {
                 ? 'Contact admin if you need access' 
                 : 'அணுகல் தேவைப்பட்டால் நிர்வாகியைத் தொடர்பு கொள்ளவும்'}
             </p>
-            <div className="mt-3 text-center text-sm">
-              <Link
-                to="/signup"
-                className="text-primary hover:underline font-medium"
-              >
-                {language === 'en' ? 'Need an account? View signup status' : 'புதிய கணக்கு? பதிவு நிலையைப் பார்க்கவும்'}
-              </Link>
-            </div>
+            {allowSignup && (
+              <div className="mt-3 text-center text-sm">
+                <Link
+                  to="/signup"
+                  className="text-primary hover:underline font-medium"
+                >
+                  {language === 'en' ? 'Need an account? View signup status' : 'புதிய கணக்கு? பதிவு நிலையைப் பார்க்கவும்'}
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </motion.div>
