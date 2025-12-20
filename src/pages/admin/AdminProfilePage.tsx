@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { User, Mail, Shield, Save, Loader2 } from 'lucide-react';
+import { User, Shield, Save, Loader2, UploadCloud } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,8 @@ import { cn } from '@/lib/utils';
 export default function AdminProfilePage() {
   const { profile, role, refreshProfile } = useAdminAuth();
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
   const [formData, setFormData] = useState({
     fullname: profile?.fullname || '',
     username: profile?.username || '',
@@ -27,6 +29,25 @@ export default function AdminProfilePage() {
     school: profile?.school || '',
     phone: profile?.phone || '',
   });
+
+  useEffect(() => {
+    const loadSignedAvatar = async () => {
+      if (!profile?.profile_path) {
+        setAvatarUrl(undefined);
+        return;
+      }
+      const { data, error } = await supabase.storage
+        .from('member-profiles')
+        .createSignedUrl(profile.profile_path, 60 * 60); // 1 hour
+      if (error) {
+        setAvatarUrl(undefined);
+        return;
+      }
+      setAvatarUrl(data?.signedUrl);
+    };
+
+    loadSignedAvatar();
+  }, [profile?.profile_path]);
 
   const handleSave = async () => {
     if (!profile) return;
@@ -79,6 +100,34 @@ export default function AdminProfilePage() {
     }
   };
 
+  const handleAvatarUpload = async (file: File) => {
+    if (!profile) return;
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `${profile.auth_user_id || profile.mem_id}/avatar-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('member-profiles')
+        .upload(path, file, { upsert: true, contentType: file.type });
+
+      if (uploadError) throw uploadError;
+
+      const { error: updateError } = await supabase
+        .from('members' as any)
+        .update({ profile_path: path })
+        .eq('mem_id', profile.mem_id);
+
+      if (updateError) throw updateError;
+
+      await refreshProfile();
+      toast.success('Profile picture updated');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload image');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen">
       <AdminHeader title="Profile" breadcrumb="Settings" />
@@ -92,12 +141,28 @@ export default function AdminProfilePage() {
           <Card className="bg-card/50 backdrop-blur-sm border-border">
             <CardContent className="p-8">
               <div className="flex flex-col md:flex-row items-center gap-6">
-                <Avatar className="h-24 w-24">
-                  <AvatarImage src={profile?.profile_path || undefined} />
-                  <AvatarFallback className="bg-primary/20 text-primary text-2xl">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="flex flex-col items-center gap-2">
+                  <Avatar className="h-24 w-24">
+                    <AvatarImage src={avatarUrl || undefined} />
+                    <AvatarFallback className="bg-primary/20 text-primary text-2xl">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <label className="inline-flex items-center gap-2 text-sm text-primary cursor-pointer">
+                    <UploadCloud className="h-4 w-4" />
+                    <span>{uploading ? 'Uploading...' : 'Change photo'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleAvatarUpload(file);
+                      }}
+                    />
+                  </label>
+                </div>
                 <div className="text-center md:text-left">
                   <h2 className="text-2xl font-bold">{profile?.fullname || 'User'}</h2>
                   <p className="text-muted-foreground">{profile?.username}</p>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { UserPlus, Save, Loader2, Shield } from 'lucide-react';
+import { UserPlus, Save, Loader2, Shield, UploadCloud } from 'lucide-react';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { AdminHeader } from '@/components/admin/AdminHeader';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 interface FormState {
   fullname: string;
@@ -38,6 +39,8 @@ export default function ProfileSetupPage() {
   const { user, profile, refreshProfile } = useAdminAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(initialForm);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +73,19 @@ export default function ProfileSetupPage() {
 
     setLoading(true);
     try {
+      let uploadedPath: string | null = null;
+
+      if (photoFile) {
+        const ext = photoFile.name.split('.').pop() || 'jpg';
+        const path = `${user.id}/avatar-${Date.now()}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from('member-profiles')
+          .upload(path, photoFile, { upsert: true, contentType: photoFile.type });
+
+        if (uploadError) throw uploadError;
+        uploadedPath = path;
+      }
+
       const { error: upsertError } = await supabase
         // Cast table name while generated types are outdated.
         .from('members' as any)
@@ -86,6 +102,7 @@ export default function ProfileSetupPage() {
           designation: 'none',
           auth_user_id: user.id,
           profile_bucket: 'member-profiles',
+          profile_path: uploadedPath,
         } as any)
         .eq('auth_user_id', user.id);
 
@@ -124,6 +141,42 @@ export default function ProfileSetupPage() {
             )}
 
             <form className="space-y-4" onSubmit={handleSubmit}>
+              <div className="flex items-center gap-4">
+                <Avatar className="h-16 w-16">
+                  <AvatarImage src={photoPreview || undefined} />
+                  <AvatarFallback className="bg-primary/20 text-primary">{(form.fullname || 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div className="space-y-2">
+                  <Label htmlFor="avatar">Profile picture (optional)</Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      id="avatar"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        setPhotoFile(file);
+                        setPhotoPreview(file ? URL.createObjectURL(file) : null);
+                      }}
+                      className="bg-background/50 cursor-pointer"
+                    />
+                    {photoPreview && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setPhotoFile(null);
+                          setPhotoPreview(null);
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Full Name</Label>
