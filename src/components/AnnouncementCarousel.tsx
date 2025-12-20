@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/carousel';
 
 interface Announcement {
-  id: number;
+  id: string | number;
   en: string;
   ta: string;
   type?: 'event' | 'news' | 'urgent';
