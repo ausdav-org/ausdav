@@ -1,38 +1,12 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { ArrowRight, BookOpen, Users, Calendar, MessageSquare, ChevronRight, Sparkles, GraduationCap, Heart, Zap } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import AnnouncementCarousel from '@/components/AnnouncementCarousel';
-
-// Sample announcements
-const announcements = [
-  {
-    icon: BookOpen,
-    label: language === 'en' ? 'Exams' : 'தேர்வுகள்',
-    desc: language === 'en' ? 'Academic assessments' : 'கல்வி மதிப்பீடுகள்'
-  },
-  {
-    icon: GraduationCap,
-    label: language === 'en' ? 'Seminars' : 'கருத்தரங்குகள்',
-    desc: language === 'en' ? 'Practical & academic seminars' : 'நடைமுறை மற்றும் கல்வி கருத்தரங்குகள்'
-  },
-  {
-    icon: Calendar,
-    label: language === 'en' ? 'Events' : 'நிகழ்வுகள்',
-    desc: language === 'en' ? 'Community & annual programs' : 'சமூக மற்றும் ஆண்டு நிகழ்வுகள்'
-  },
-  {
-    icon: Users,
-    label: language === 'en' ? 'Mentorship' : 'வழிகாட்டுதல்',
-    desc: language === 'en' ? 'Guidance & leadership' : 'வழிகாட்டல் மற்றும் தலைமை'
-  }
-]
-
 
 // Sample events
 const annualEvents = [
@@ -65,8 +39,38 @@ const stats = [
 
 const HomePage: React.FC = () => {
   const { language, t } = useLanguage();
-  const [feedbackForm, setFeedbackForm] = useState({ name: '', contact: '', message: '' });
+  const [feedbackForm, setFeedbackForm] = useState({ message: '' });
   const heroRef = useRef<HTMLDivElement>(null);
+
+  const announcements = useMemo(
+    () => [
+      {
+        id: 1,
+        en: 'Monthly exam registrations are open. Submit your forms by the 25th.',
+        ta: 'மாதாந்திர தேர்வுக்கான பதிவு தொடங்கியுள்ளது. 25-ஆம் தேதிக்குள் உங்கள் விண்ணப்பங்களை சமர்ப்பிக்கவும்.',
+        type: 'event' as const,
+      },
+      {
+        id: 2,
+        en: 'Kalvi Karam mentorship intake begins next week.',
+        ta: 'கல்வி கரம் வழிகாட்டுதல் சேர்க்கை அடுத்த வாரம் தொடங்குகிறது.',
+        type: 'news' as const,
+      },
+      {
+        id: 3,
+        en: 'Blood donation camp this Sunday at the main hall.',
+        ta: 'இந்த ஞாயிறு முதன்மை மண்டபத்தில் இரத்ததான முகாம்.',
+        type: 'event' as const,
+      },
+      {
+        id: 4,
+        en: 'Share your suggestions to improve our community programs.',
+        ta: 'எங்கள் சமூக நிகழ்ச்சிகளை மேம்படுத்த உங்கள் பரிந்துரைகளை பகிரவும்.',
+        type: 'news' as const,
+      },
+    ],
+    []
+  );
   
   const { scrollYProgress } = useScroll({
     target: heroRef,
@@ -83,7 +87,7 @@ const HomePage: React.FC = () => {
       return;
     }
     toast.success(t('home.feedback.success'));
-    setFeedbackForm({ name: '', contact: '', message: '' });
+    setFeedbackForm({ message: '' });
   };
 
   return (
@@ -495,7 +499,9 @@ const HomePage: React.FC = () => {
         </label>
         <Textarea
           value={feedbackForm.message}
-          onChange={(e) => setFeedbackForm({ message: e.target.value })}
+          onChange={(e) =>
+            setFeedbackForm((prev) => ({ ...prev, message: e.target.value }))
+          }
           placeholder={language === 'en' ? 'Your message...' : 'உங்கள் செய்தி...'}
           rows={5}
           className="bg-background/50 border-border/50 focus:border-primary resize-none"
