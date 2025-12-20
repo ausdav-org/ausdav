@@ -18,6 +18,7 @@ import EventsPage from "@/pages/EventsPage";
 import DonatePage from "@/pages/DonatePage";
 import LoginPage from "@/pages/LoginPage";
 import NotFoundPage from "@/pages/NotFoundPage";
+import SignupPortalPage from "@/pages/SignupPortalPage";
 
 // Admin imports
 import { AdminLayout } from "@/components/admin/AdminLayout";
@@ -79,6 +80,7 @@ const App = () => {
                   <Route element={<Layout><SeminarPage /></Layout>} path="/seminar" />
                   <Route element={<Layout><EventsPage /></Layout>} path="/events" />
                   <Route element={<Layout><DonatePage /></Layout>} path="/donate" />
+                  <Route element={<Layout><SignupPortalPage /></Layout>} path="/signup" />
                   <Route element={<Layout><LoginPage /></Layout>} path="/login" />
                   
                   {/* Admin login redirects to unified login */}

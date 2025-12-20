@@ -228,6 +228,14 @@ const LoginPage: React.FC = () => {
                 ? 'Contact admin if you need access' 
                 : 'அணுகல் தேவைப்பட்டால் நிர்வாகியைத் தொடர்பு கொள்ளவும்'}
             </p>
+            <div className="mt-3 text-center text-sm">
+              <Link
+                to="/signup"
+                className="text-primary hover:underline font-medium"
+              >
+                {language === 'en' ? 'Need an account? View signup status' : 'புதிய கணக்கு? பதிவு நிலையைப் பார்க்கவும்'}
+              </Link>
+            </div>
           </div>
         </div>
       </motion.div>

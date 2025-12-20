@@ -22,6 +22,9 @@ const signupSchema = z.object({
 });
 
 export default function AdminLoginPage() {
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'signup' ? 'signup' : 'login';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -30,10 +33,9 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [hasExistingUsers, setHasExistingUsers] = useState<boolean | null>(null);
   const [allowSignup, setAllowSignup] = useState<boolean | null>(null);
-  const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
+  const [activeTab, setActiveTab] = useState<'login' | 'signup'>(initialTab);
   const { signIn, user, role, profile, loading: authLoading, needsProfileSetup } = useAdminAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   // Check if any users exist
   useEffect(() => {
