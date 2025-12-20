@@ -11,21 +11,43 @@ import AnnouncementCarousel from '@/components/AnnouncementCarousel';
 
 // Sample announcements
 const announcements = [
-  { id: 1, en: '📚 A/L Exam Preparation Seminar - January 2025', ta: '📚 உ.த. தேர்வு தயாரிப்பு கருத்தரங்கு - ஜனவரி 2025', type: 'event' as const },
-  { id: 2, en: '🩸 Blood Donation Camp - Save Lives Today', ta: '🩸 இரத்ததான முகாம் - இன்றே உயிர்களைக் காப்பாற்றுங்கள்', type: 'urgent' as const },
-  { id: 3, en: '🌳 Anbuchangamam Tree Planting Event - Join Us!', ta: '🌳 அன்புசங்கமம் மரம் நடும் நிகழ்வு - எங்களுடன் இணையுங்கள்!', type: 'event' as const },
-  { id: 4, en: '🎓 New Scholarship Program Announced for 2025', ta: '🎓 2025 க்கான புதிய உதவித்தொகை திட்டம் அறிவிக்கப்பட்டது', type: 'news' as const },
-];
+  {
+    icon: BookOpen,
+    label: language === 'en' ? 'Exams' : 'தேர்வுகள்',
+    desc: language === 'en' ? 'Academic assessments' : 'கல்வி மதிப்பீடுகள்'
+  },
+  {
+    icon: GraduationCap,
+    label: language === 'en' ? 'Seminars' : 'கருத்தரங்குகள்',
+    desc: language === 'en' ? 'Practical & academic seminars' : 'நடைமுறை மற்றும் கல்வி கருத்தரங்குகள்'
+  },
+  {
+    icon: Calendar,
+    label: language === 'en' ? 'Events' : 'நிகழ்வுகள்',
+    desc: language === 'en' ? 'Community & annual programs' : 'சமூக மற்றும் ஆண்டு நிகழ்வுகள்'
+  },
+  {
+    icon: Users,
+    label: language === 'en' ? 'Mentorship' : 'வழிகாட்டுதல்',
+    desc: language === 'en' ? 'Guidance & leadership' : 'வழிகாட்டல் மற்றும் தலைமை'
+  }
+]
+
 
 // Sample events
 const annualEvents = [
-  { id: 1, month: 'Jan', en: 'A/L Exam Prep Seminar', ta: 'உ.த. தேர்வு தயாரிப்பு கருத்தரங்கு', icon: GraduationCap },
-  { id: 2, month: 'Mar', en: 'Career Guidance Workshop', ta: 'தொழில் வழிகாட்டுதல் பட்டறை', icon: Zap },
-  { id: 3, month: 'May', en: 'University Orientation', ta: 'பல்கலைக்கழக நோக்குநிலை', icon: BookOpen },
-  { id: 4, month: 'Jul', en: 'Anbuchangamam', ta: 'அன்புசங்கமம்', icon: Heart },
-  { id: 5, month: 'Sep', en: 'Blood Donation Camp', ta: 'இரத்ததான முகாம்', icon: Heart },
-  { id: 6, month: 'Nov', en: 'Annual Award Ceremony', ta: 'வருடாந்த விருது வழங்கல்', icon: Sparkles },
+  { id: 1, en: 'Practical Seminars', ta: 'நடைமுறை கருத்தரங்குகள்', icon: GraduationCap },
+  { id: 2, en: 'Monthly Exam', ta: 'மாதாந்திர தேர்வு', icon: BookOpen },
+  { id: 3, en: 'Kalvi Karam', ta: 'கல்வி கரம்', icon: Heart },
+  { id: 4, en: 'Annual Exam', ta: 'வருடாந்திர தேர்வு', icon: BookOpen },
+  { id: 5, en: 'Pentathlon', ta: 'பெண்டாத்லான்', icon: Zap },
+  { id: 6, en: 'Innovia', ta: 'இனோவியா', icon: Sparkles },
+  { id: 7, en: 'Anbuchangamam', ta: 'அன்புசங்கமம்', icon: Heart },
+  { id: 8, en: 'Blood Donation Camp', ta: 'இரத்ததான முகாம்', icon: Heart },
+  { id: 9, en: 'Medical Camp', ta: 'மருத்துவ முகாம்', icon: Heart },
+  { id: 10, en: 'Cricket', ta: 'கிரிக்கெட்', icon: Zap },
 ];
+
 
 // Sample committee
 const committeePreview = [
@@ -357,7 +379,7 @@ const HomePage: React.FC = () => {
                       whileHover={{ scale: 1.02 }}
                       className={`inline-block glass-card rounded-2xl p-6 neon-glow-hover ${idx % 2 === 0 ? 'mr-6' : 'ml-6'}`}
                     >
-                      <span className="text-xs font-bold text-primary uppercase tracking-wider">{event.month}</span>
+                      
                       <p className="font-bold text-lg mt-2">
                         {language === 'en' ? event.en : event.ta}
                       </p>
@@ -460,54 +482,32 @@ const HomePage: React.FC = () => {
               </h2>
             </motion.div>
 
-            <motion.form
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              onSubmit={handleFeedbackSubmit}
-              className="glass-card rounded-2xl p-8 space-y-6"
-            >
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    {t('home.feedback.name')}
-                  </label>
-                  <Input
-                    value={feedbackForm.name}
-                    onChange={(e) => setFeedbackForm({ ...feedbackForm, name: e.target.value })}
-                    placeholder={language === 'en' ? 'John Doe' : 'உங்கள் பெயர்'}
-                    className="bg-background/50 border-border/50 focus:border-primary"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    {t('home.feedback.contact')}
-                  </label>
-                  <Input
-                    value={feedbackForm.contact}
-                    onChange={(e) => setFeedbackForm({ ...feedbackForm, contact: e.target.value })}
-                    placeholder={language === 'en' ? 'Email or Phone' : 'மின்னஞ்சல் அல்லது தொலைபேசி'}
-                    className="bg-background/50 border-border/50 focus:border-primary"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  {t('home.feedback.message')} *
-                </label>
-                <Textarea
-                  value={feedbackForm.message}
-                  onChange={(e) => setFeedbackForm({ ...feedbackForm, message: e.target.value })}
-                  placeholder={language === 'en' ? 'Your message...' : 'உங்கள் செய்தி...'}
-                  rows={5}
-                  className="bg-background/50 border-border/50 focus:border-primary resize-none"
-                />
-              </div>
-              <Button type="submit" size="lg" className="w-full">
-                {t('home.feedback.submit')}
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </motion.form>
+               <motion.form
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      onSubmit={handleFeedbackSubmit}
+      className="glass-card rounded-2xl p-8 space-y-6"
+    >
+      <div>
+        <label className="block text-sm font-medium mb-2">
+          {t('home.feedback.message')} *
+        </label>
+        <Textarea
+          value={feedbackForm.message}
+          onChange={(e) => setFeedbackForm({ message: e.target.value })}
+          placeholder={language === 'en' ? 'Your message...' : 'உங்கள் செய்தி...'}
+          rows={5}
+          className="bg-background/50 border-border/50 focus:border-primary resize-none"
+        />
+      </div>
+    
+      <Button type="submit" size="lg" className="w-full">
+        {t('home.feedback.submit')}
+        <ArrowRight className="w-4 h-4 ml-2" />
+      </Button>
+</motion.form>
+
           </div>
         </div>
       </section>
