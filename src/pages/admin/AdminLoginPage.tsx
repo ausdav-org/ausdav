@@ -29,6 +29,8 @@ export default function AdminLoginPage() {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [hasExistingUsers, setHasExistingUsers] = useState<boolean | null>(null);
+  const [allowSignup, setAllowSignup] = useState<boolean | null>(null);
+  const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
   const { signIn, user, role, profile, loading: authLoading, needsProfileSetup } = useAdminAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -36,13 +38,50 @@ export default function AdminLoginPage() {
   // Check if any users exist
   useEffect(() => {
     const checkExistingUsers = async () => {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from('members' as any)
-        .select('*', { count: 'exact', head: true });
+        .select('mem_id', { count: 'exact', head: true });
+
+      if (error) {
+        console.error('Failed to check existing users', error);
+        setHasExistingUsers(true);
+        return;
+      }
+
       setHasExistingUsers((count ?? 0) > 0);
     };
     checkExistingUsers();
   }, []);
+
+  useEffect(() => {
+    const fetchSignupFlag = async () => {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('allow_signup')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Failed to read signup flag', error);
+        setAllowSignup(false);
+        return;
+      }
+
+      setAllowSignup(data?.allow_signup ?? false);
+    };
+
+    fetchSignupFlag();
+  }, []);
+
+  const signupOpen = allowSignup === true || hasExistingUsers === false;
+
+  useEffect(() => {
+    if (signupOpen) {
+      setActiveTab('signup');
+    } else {
+      setActiveTab('login');
+    }
+  }, [signupOpen]);
 
   useEffect(() => {
     const errorParam = searchParams.get('error');
@@ -95,24 +134,36 @@ export default function AdminLoginPage() {
       return;
     }
 
+    const signupOpen = allowSignup === true || hasExistingUsers === false;
+
+    if (!signupOpen) {
+      setError('Sign ups are disabled by an administrator.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Sign up user
-      const { data: authData, error: signupError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/admin/login`,
-        },
+      const { data, error: fnError } = await supabase.functions.invoke('controlled-signup', {
+        body: { email, password },
       });
 
-      if (signupError) throw signupError;
-      if (!authData.user) throw new Error('Failed to create account');
+      if (fnError) throw fnError;
+      if (!data?.userId) {
+        throw new Error('Failed to create account');
+      }
 
-      setSuccess(
-        'Account created! Please set up your profile to continue.'
-      );
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        setSuccess('Account created. Please sign in to continue.');
+        return;
+      }
+
+      setSuccess('Account created! Redirecting to profile setup...');
       navigate('/admin/profile-setup');
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
@@ -148,12 +199,18 @@ export default function AdminLoginPage() {
 
         {/* Login/Signup Card */}
         <div className="bg-card/50 backdrop-blur-xl border border-border rounded-2xl p-8 shadow-xl">
-          <Tabs defaultValue={hasExistingUsers === false ? 'signup' : 'login'} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6">
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as 'login' | 'signup')}
+            className="w-full"
+          >
+            <TabsList className={`grid w-full ${signupOpen ? 'grid-cols-2' : 'grid-cols-1'} mb-6`}>
               <TabsTrigger value="login">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">
-                {hasExistingUsers === false ? 'Setup Admin' : 'Sign Up'}
-              </TabsTrigger>
+              {signupOpen && (
+                <TabsTrigger value="signup">
+                  {hasExistingUsers === false ? 'Setup Admin' : 'Sign Up'}
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="login">
@@ -215,75 +272,81 @@ export default function AdminLoginPage() {
               </form>
             </TabsContent>
 
-            <TabsContent value="signup">
-              <form onSubmit={handleSignup} className="space-y-4">
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
+            {signupOpen ? (
+              <TabsContent value="signup">
+                <form onSubmit={handleSignup} className="space-y-4">
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
 
-                {success && (
-                  <Alert className="border-green-500/50 bg-green-500/10">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    <AlertDescription className="text-green-500">{success}</AlertDescription>
-                  </Alert>
-                )}
+                  {success && (
+                    <Alert className="border-green-500/50 bg-green-500/10">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <AlertDescription className="text-green-500">{success}</AlertDescription>
+                    </Alert>
+                  )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@ausdav.org"
-                    autoComplete="email"
-                    className="bg-background/50"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
-                  <div className="relative">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-email">Email</Label>
                     <Input
-                      id="signup-password"
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Min. 8 characters"
-                      autoComplete="new-password"
-                      className="bg-background/50 pr-10"
+                      id="signup-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="admin@ausdav.org"
+                      autoComplete="email"
+                      className="bg-background/50"
                       required
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
                   </div>
-                </div>
 
-                <Button type="submit" className="w-full" size="lg" disabled={loading}>
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating account...
-                    </>
-                  ) : (
-                    'Create Account'
-                  )}
-                </Button>
-              </form>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password">Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="signup-password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Min. 8 characters"
+                        autoComplete="new-password"
+                        className="bg-background/50 pr-10"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
 
-              <p className="text-xs text-muted-foreground mt-4 text-center">
-                After creating your account, you’ll be prompted to complete your member profile.
-              </p>
-            </TabsContent>
+                  <Button type="submit" className="w-full" size="lg" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating account...
+                      </>
+                    ) : (
+                      'Create Account'
+                    )}
+                  </Button>
+                </form>
+
+                <p className="text-xs text-muted-foreground mt-4 text-center">
+                  After creating your account, you’ll be prompted to complete your member profile.
+                </p>
+              </TabsContent>
+            ) : (
+              <div className="text-center text-sm text-muted-foreground">
+                Sign ups are currently disabled by a super administrator.
+              </div>
+            )}
           </Tabs>
         </div>
 
