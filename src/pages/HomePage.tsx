@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { ArrowRight, BookOpen, Users, Calendar, MessageSquare, ChevronRight, Sparkles, GraduationCap, Heart, Zap } from 'lucide-react';
@@ -7,6 +7,23 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import AnnouncementCarousel from '@/components/AnnouncementCarousel';
+import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
+
+type DbAnnouncement = Database['public']['Tables']['announcements']['Row'];
+type CarouselAnnouncement = {
+  id: string;
+  en: string;
+  ta: string;
+  type: 'event' | 'news' | 'urgent';
+};
+
+const fallbackAnnouncements: CarouselAnnouncement[] = [
+  { id: 'seed-1', en: '📚 A/L Exam Preparation Seminar - January 2025', ta: '📚 உ.த. தேர்வு தயாரிப்பு கருத்தரங்கு - ஜனவரி 2025', type: 'event' },
+  { id: 'seed-2', en: '🩸 Blood Donation Camp - Save Lives Today', ta: '🩸 இரத்ததான முகாம் - இன்றே உயிர்களைக் காப்பாற்றுங்கள்', type: 'urgent' },
+  { id: 'seed-3', en: '🌳 Anbuchangamam Tree Planting Event - Join Us!', ta: '🌳 அன்புசங்கமம் மரம் நடும் நிகழ்வு - எங்களுடன் இணையுங்கள்!', type: 'event' },
+  { id: 'seed-4', en: '🎓 New Scholarship Program Announced for 2025', ta: '🎓 2025 க்கான புதிய உதவித்தொகை திட்டம் அறிவிக்கப்பட்டது', type: 'news' },
+];
 
 // Sample events
 const annualEvents = [
@@ -39,39 +56,64 @@ const stats = [
 
 const HomePage: React.FC = () => {
   const { language, t } = useLanguage();
-  const [feedbackForm, setFeedbackForm] = useState({ message: '' });
+  const [feedbackForm, setFeedbackForm] = useState({ name: '', contact: '', message: '' });
+  const [announcements, setAnnouncements] = useState<CarouselAnnouncement[]>(fallbackAnnouncements);
+  const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
 
-  const announcements = useMemo(
-    () => [
-      {
-        id: 1,
-        en: 'Monthly exam registrations are open. Submit your forms by the 25th.',
-        ta: 'மாதாந்திர தேர்வுக்கான பதிவு தொடங்கியுள்ளது. 25-ஆம் தேதிக்குள் உங்கள் விண்ணப்பங்களை சமர்ப்பிக்கவும்.',
-        type: 'event' as const,
-      },
-      {
-        id: 2,
-        en: 'Kalvi Karam mentorship intake begins next week.',
-        ta: 'கல்வி கரம் வழிகாட்டுதல் சேர்க்கை அடுத்த வாரம் தொடங்குகிறது.',
-        type: 'news' as const,
-      },
-      {
-        id: 3,
-        en: 'Blood donation camp this Sunday at the main hall.',
-        ta: 'இந்த ஞாயிறு முதன்மை மண்டபத்தில் இரத்ததான முகாம்.',
-        type: 'event' as const,
-      },
-      {
-        id: 4,
-        en: 'Share your suggestions to improve our community programs.',
-        ta: 'எங்கள் சமூக நிகழ்ச்சிகளை மேம்படுத்த உங்கள் பரிந்துரைகளை பகிரவும்.',
-        type: 'news' as const,
-      },
-    ],
-    []
-  );
+  const mapTagToType = (tag: DbAnnouncement['tag']): CarouselAnnouncement['type'] => {
+    const normalized = (tag || '').toLowerCase();
+    if (normalized === 'urgent') return 'urgent';
+    if (normalized === 'event') return 'event';
+    return 'news';
+  };
+
+  const buildAnnouncementText = (primary?: string | null, fallback?: string | null) => {
+    const text = primary?.trim() || fallback?.trim() || '';
+    return text || 'Announcement';
+  };
+
+  const loadAnnouncements = useCallback(async () => {
+    setIsLoadingAnnouncements(true);
+    const nowIso = new Date().toISOString();
+
+    try {
+      const { data, error } = await supabase
+        .from('announcements')
+        .select('id,title_en,title_ta,message_en,message_ta,tag,is_active,start_at,end_at,priority')
+        .eq('is_active', true)
+        .order('priority', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const activeItems = (data || []).filter((item) => {
+        const withinStart = !item.start_at || item.start_at <= nowIso;
+        const withinEnd = !item.end_at || item.end_at >= nowIso;
+        return item.is_active && withinStart && withinEnd;
+      });
+
+      const mapped = activeItems.map<CarouselAnnouncement>((item) => ({
+        id: item.id,
+        en: buildAnnouncementText(item.message_en, item.title_en),
+        ta: buildAnnouncementText(item.message_ta, item.title_ta || item.message_en || item.title_en),
+        type: mapTagToType(item.tag),
+      }));
+
+      setAnnouncements(mapped.length ? mapped : fallbackAnnouncements);
+    } catch (error) {
+      console.error('Error loading announcements:', error);
+      toast.error('Unable to load announcements right now.');
+      setAnnouncements(fallbackAnnouncements);
+    } finally {
+      setIsLoadingAnnouncements(false);
+    }
+  }, []);
   
+  useEffect(() => {
+    loadAnnouncements();
+  }, [loadAnnouncements]);
+
   const { scrollYProgress } = useScroll({
     target: heroRef,
     offset: ["start start", "end start"]
@@ -87,7 +129,7 @@ const HomePage: React.FC = () => {
       return;
     }
     toast.success(t('home.feedback.success'));
-    setFeedbackForm({ message: '' });
+    setFeedbackForm({ name: '', contact: '', message: '' });
   };
 
   return (
@@ -95,6 +137,11 @@ const HomePage: React.FC = () => {
       {/* Announcement Carousel */}
       <div className="pt-24">
         <AnnouncementCarousel announcements={announcements} />
+        {isLoadingAnnouncements && (
+          <p className="text-center text-sm text-muted-foreground mt-2">
+            Loading announcements...
+          </p>
+        )}
       </div>
 
       {/* Hero Section with Parallax */}
