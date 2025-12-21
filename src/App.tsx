@@ -18,6 +18,7 @@ import EventsPage from "@/pages/EventsPage";
 import DonatePage from "@/pages/DonatePage";
 import LoginPage from "@/pages/LoginPage";
 import NotFoundPage from "@/pages/NotFoundPage";
+import SignupPortalPage from "@/pages/SignupPortalPage";
 
 // Admin imports
 import { AdminLayout } from "@/components/admin/AdminLayout";
@@ -33,6 +34,7 @@ import AdminEventsPage from "@/pages/admin/AdminEventsPage";
 import FinanceSubmitPage from "@/pages/admin/finance/FinanceSubmitPage";
 import FinanceVerifyPage from "@/pages/admin/finance/FinanceVerifyPage";
 import FinanceLedgerPage from "@/pages/admin/finance/FinanceLedgerPage";
+import ProfileSetupPage from "@/pages/admin/ProfileSetupPage";
 
 const queryClient = new QueryClient();
 
@@ -68,7 +70,7 @@ const App = () => {
             {showSplash && <NeuralNetworkSplash onComplete={handleSplashComplete} />}
             
             {appReady && (
-              <BrowserRouter>
+              <BrowserRouter basename={import.meta.env.BASE_URL}>
                 <Routes>
                   {/* Public routes with Layout */}
                   <Route element={<Layout><HomePage /></Layout>} path="/" />
@@ -78,6 +80,7 @@ const App = () => {
                   <Route element={<Layout><SeminarPage /></Layout>} path="/seminar" />
                   <Route element={<Layout><EventsPage /></Layout>} path="/events" />
                   <Route element={<Layout><DonatePage /></Layout>} path="/donate" />
+                  <Route element={<Layout><SignupPortalPage /></Layout>} path="/signup" />
                   <Route element={<Layout><LoginPage /></Layout>} path="/login" />
                   
                   {/* Admin login redirects to unified login */}
@@ -89,6 +92,7 @@ const App = () => {
                   }>
                     <Route index element={<AdminDashboardPage />} />
                     <Route path="dashboard" element={<AdminDashboardPage />} />
+                    <Route path="profile-setup" element={<ProfileSetupPage />} />
                     <Route path="profile" element={<AdminProfilePage />} />
                     <Route path="members" element={<AdminMembersPage />} />
                     <Route path="events" element={<AdminEventsPage />} />
