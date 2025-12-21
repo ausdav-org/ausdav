@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AdminAuthProvider } from "@/contexts/AdminAuthContext";
 import NeuralNetworkSplash from "@/components/NeuralNetworkSplash";
 import Layout from "@/components/layout/Layout";
+
 import HomePage from "@/pages/HomePage";
 import AboutPage from "@/pages/AboutPage";
 import CommitteePage from "@/pages/CommitteePage";
@@ -19,10 +20,10 @@ import DonatePage from "@/pages/DonatePage";
 import LoginPage from "@/pages/LoginPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import SignupPortalPage from "@/pages/SignupPortalPage";
+import ProfilePage from "@/pages/ProfilePage";
 
 // Admin imports
 import { AdminLayout } from "@/components/admin/AdminLayout";
-import AdminLoginPage from "@/pages/admin/AdminLoginPage";
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
 import AdminProfilePage from "@/pages/admin/AdminProfilePage";
 import AdminMembersPage from "@/pages/admin/AdminMembersPage";
@@ -43,21 +44,15 @@ const App = () => {
   const [appReady, setAppReady] = useState(false);
 
   useEffect(() => {
-    // Apply dark theme immediately to prevent flash
-    document.documentElement.classList.add('dark');
-    
-    // Check if splash was already shown this session
-    const hasSeenSplash = sessionStorage.getItem('ausdav-splash-shown');
-    
+    document.documentElement.classList.add("dark");
+    const hasSeenSplash = sessionStorage.getItem("ausdav-splash-shown");
     if (hasSeenSplash) {
       setShowSplash(false);
       setAppReady(true);
     }
   }, []);
 
-  const handleSplashComplete = () => {
-    setAppReady(true);
-  };
+  const handleSplashComplete = () => setAppReady(true);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -66,30 +61,41 @@ const App = () => {
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            
+
             {showSplash && <NeuralNetworkSplash onComplete={handleSplashComplete} />}
-            
+
             {appReady && (
               <BrowserRouter basename={import.meta.env.BASE_URL}>
                 <Routes>
                   {/* Public routes with Layout */}
-                  <Route element={<Layout><HomePage /></Layout>} path="/" />
-                  <Route element={<Layout><AboutPage /></Layout>} path="/about" />
-                  <Route element={<Layout><CommitteePage /></Layout>} path="/committee" />
-                  <Route element={<Layout><ExamPage /></Layout>} path="/exam" />
-                  <Route element={<Layout><SeminarPage /></Layout>} path="/seminar" />
-                  <Route element={<Layout><EventsPage /></Layout>} path="/events" />
-                  <Route element={<Layout><DonatePage /></Layout>} path="/donate" />
-                  <Route element={<Layout><SignupPortalPage /></Layout>} path="/signup" />
-                  <Route element={<Layout><LoginPage /></Layout>} path="/login" />
-                  
+                  <Route path="/" element={<Layout><HomePage /></Layout>} />
+                  <Route path="/about" element={<Layout><AboutPage /></Layout>} />
+                  <Route path="/committee" element={<Layout><CommitteePage /></Layout>} />
+                  <Route path="/exam" element={<Layout><ExamPage /></Layout>} />
+                  <Route path="/seminar" element={<Layout><SeminarPage /></Layout>} />
+                  <Route path="/events" element={<Layout><EventsPage /></Layout>} />
+                  <Route path="/donate" element={<Layout><DonatePage /></Layout>} />
+                  <Route path="/login" element={<Layout><LoginPage /></Layout>} />
+
+                  {/* ✅ Recommended clean profile route */}
+                  <Route path="/profile" element={<Layout><ProfilePage /></Layout>} />
+
+                  {/* ✅ Backward-compat: old (file-like) path redirects to /profile */}
+                  <Route
+                    path="/ausdav/src/pages/ProfilePage.tsx"
+                    element={<Navigate to="/profile" replace />}
+                  />
+
                   {/* Admin login redirects to unified login */}
                   <Route path="/admin/login" element={<Navigate to="/login" replace />} />
-                  <Route path="/admin" element={
-                    <AdminAuthProvider>
-                      <AdminLayout />
-                    </AdminAuthProvider>
-                  }>
+                  <Route
+                    path="/admin"
+                    element={
+                      <AdminAuthProvider>
+                        <AdminLayout />
+                      </AdminAuthProvider>
+                    }
+                  >
                     <Route index element={<AdminDashboardPage />} />
                     <Route path="dashboard" element={<AdminDashboardPage />} />
                     <Route path="profile-setup" element={<ProfileSetupPage />} />
@@ -104,7 +110,7 @@ const App = () => {
                     <Route path="finance/verify" element={<FinanceVerifyPage />} />
                     <Route path="finance/ledger" element={<FinanceLedgerPage />} />
                   </Route>
-                  
+
                   {/* 404 */}
                   <Route path="*" element={<Layout><NotFoundPage /></Layout>} />
                 </Routes>
