@@ -47,6 +47,8 @@ interface Gallery {
   event_id: number;
   year: number;
   title: string | null;
+  description_en: string | null;
+  description_ta: string | null;
   max_images?: number | null;
   created_at: string;
 }
@@ -70,6 +72,8 @@ type GalleryInsert = {
   event_id: number;
   year: number;
   title?: string | null;
+  description_en?: string | null;
+  description_ta?: string | null;
   created_at?: string;
 };
 
@@ -137,6 +141,8 @@ const AdminEventsPage: React.FC = () => {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [createdGalleryId, setCreatedGalleryId] = useState<string | null>(null);
   const [newGalleryYear, setNewGalleryYear] = useState('');
+  const [newGalleryDescriptionEn, setNewGalleryDescriptionEn] = useState('');
+  const [newGalleryDescriptionTa, setNewGalleryDescriptionTa] = useState('');
   const [formData, setFormData] = useState<EventFormState>({
     title_en: '',
     title_ta: '',
@@ -171,7 +177,7 @@ const AdminEventsPage: React.FC = () => {
       const year = new Date(selectedEventForGallery.event_date).getFullYear();
       const { data, error } = await supabaseDb
         .from('galleries')
-        .select('id, event_id, year, title, max_images, created_at')
+        .select('id, event_id, year, title, description_en, description_ta, max_images, created_at')
         .eq('event_id', selectedEventForGallery.id)
         .eq('year', year)
         .order('created_at', { ascending: false });
@@ -240,11 +246,17 @@ const AdminEventsPage: React.FC = () => {
 
   // Create gallery mutation
   const createGalleryMutation = useMutation({
-    mutationFn: async ({ year, title }: { year: number; title: string }) => {
+    mutationFn: async ({ year, title, description_en, description_ta }: { year: number; title: string; description_en?: string | null; description_ta?: string | null }) => {
       if (!selectedEventForGallery) throw new Error('No event selected');
       const { data, error } = await supabaseDb
         .from('galleries')
-        .insert([{ event_id: selectedEventForGallery.id, year, title }])
+        .insert([{ 
+          event_id: selectedEventForGallery.id, 
+          year, 
+          title,
+          description_en,
+          description_ta
+        }])
         .select()
         .single();
       if (error) throw error;
@@ -402,7 +414,12 @@ const AdminEventsPage: React.FC = () => {
       toast.error('Please enter a valid year');
       return;
     }
-    createGalleryMutation.mutate({ year, title: `Gallery ${year}` });
+    createGalleryMutation.mutate({
+      year,
+      title: `Gallery ${year}`,
+      description_en: newGalleryDescriptionEn || null,
+      description_ta: newGalleryDescriptionTa || null
+    });
   };
 
   const handleEdit = (event: Event) => {
@@ -613,7 +630,17 @@ const AdminEventsPage: React.FC = () => {
       </div>
 
       {/* Gallery Management Dialog */}
-      <Dialog open={galleryDialogOpen} onOpenChange={setGalleryDialogOpen}>
+      <Dialog open={galleryDialogOpen} onOpenChange={(open) => {
+        setGalleryDialogOpen(open);
+        if (!open) {
+          setNewGalleryYear('');
+          setNewGalleryDescriptionEn('');
+          setNewGalleryDescriptionTa('');
+          setSelectedEventForGallery(null);
+          setShowBulkUpload(false);
+          setCreatedGalleryId(null);
+        }
+      }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
@@ -679,20 +706,44 @@ const AdminEventsPage: React.FC = () => {
               )}
 
               <div className="border-t pt-4">
-                <Label htmlFor="gallery-year">Create New Gallery</Label>
-                <div className="flex gap-2 mt-2">
-                  <Input
-                    id="gallery-year"
-                    type="number"
-                    placeholder="Enter year"
-                    value={newGalleryYear}
-                    onChange={(e) => setNewGalleryYear(e.target.value)}
-                    min="1900"
-                    max="2100"
-                  />
+                <h3 className="text-lg font-medium mb-4">Create New Gallery</h3>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="gallery-year">Year</Label>
+                    <Input
+                      id="gallery-year"
+                      type="number"
+                      placeholder="Enter year"
+                      value={newGalleryYear}
+                      onChange={(e) => setNewGalleryYear(e.target.value)}
+                      min="1900"
+                      max="2100"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="gallery-description-en">Description (English)</Label>
+                    <Textarea
+                      id="gallery-description-en"
+                      placeholder="Enter gallery description in English"
+                      value={newGalleryDescriptionEn}
+                      onChange={(e) => setNewGalleryDescriptionEn(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="gallery-description-ta">Description (Tamil)</Label>
+                    <Textarea
+                      id="gallery-description-ta"
+                      placeholder="Enter gallery description in Tamil"
+                      value={newGalleryDescriptionTa}
+                      onChange={(e) => setNewGalleryDescriptionTa(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
                   <Button
                     onClick={handleCreateGallery}
                     disabled={createGalleryMutation.isPending}
+                    className="w-full"
                   >
                     {createGalleryMutation.isPending ? (
                       <>
@@ -700,7 +751,7 @@ const AdminEventsPage: React.FC = () => {
                         Creating...
                       </>
                     ) : (
-                      'Create'
+                      'Create Gallery'
                     )}
                   </Button>
                 </div>
