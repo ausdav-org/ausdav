@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 
 type AppSettings = {
   allow_exam_applications: boolean;
+  allow_results_view: boolean;
 };
 
 const MOCK_RESULTS = {
@@ -101,6 +102,8 @@ const ExamPage: React.FC = () => {
   const [downloading, setDownloading] = useState(false);
   const [examApplicationsOpen, setExamApplicationsOpen] = useState(true);
   const [examSettingLoading, setExamSettingLoading] = useState(true);
+  const [resultsPublished, setResultsPublished] = useState(false);
+  const [resultsSettingLoading, setResultsSettingLoading] = useState(true);
 
   // ✅ Now we capture the WHOLE sheet (including header)
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -108,22 +111,27 @@ const ExamPage: React.FC = () => {
   useEffect(() => {
     const loadSetting = async () => {
       setExamSettingLoading(true);
+      setResultsSettingLoading(true);
       try {
         const { data, error } = await supabase
           .from('app_settings' as any)
-          .select('allow_exam_applications')
+          .select('*')
           .eq('id', 1)
-          .maybeSingle<AppSettings>();
+          .maybeSingle();
 
         if (error) throw error;
-        const setting = data as AppSettings | null;
-        setExamApplicationsOpen(setting?.allow_exam_applications ?? false);
+        // Handle both old schema (without allow_results_view) and new schema
+        const settings = data as unknown as AppSettings | null;
+        setExamApplicationsOpen(settings?.allow_exam_applications ?? false);
+        setResultsPublished(settings?.allow_results_view ?? false);
       } catch (error) {
         console.error('Error loading exam application setting:', error);
         toast.error(language === 'en' ? 'Unable to load exam application status' : 'தேர்வு விண்ணப்ப நிலையை ஏற்ற முடியவில்லை');
         setExamApplicationsOpen(false);
+        setResultsPublished(false);
       } finally {
         setExamSettingLoading(false);
+        setResultsSettingLoading(false);
       }
     };
 
@@ -571,6 +579,20 @@ const ExamPage: React.FC = () => {
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card rounded-xl p-6 md:p-8 shadow-lg">
                 <div className="min-h-[40vh] flex items-center justify-center">
                   <div className="w-full max-w-3xl">
+                    {!resultsSettingLoading && !resultsPublished ? (
+                      <Card className="border-destructive/30 bg-destructive/5">
+                        <CardContent className="p-6 space-y-2">
+                          <h3 className="text-xl font-semibold text-destructive">
+                            {language === 'en' ? 'Results not published yet' : 'முடிவுகள் இன்னும் வெளியிடப்படவில்லை'}
+                          </h3>
+                          <p className="text-muted-foreground">
+                            {language === 'en'
+                              ? 'Examination results are not yet available. Please check back later.'
+                              : 'தேர்வு முடிவுகள் இன்னும் கிடைக்கவில்லை. தயவுசெய்து பின்னர் மீண்டும் பார்க்கவும்.'}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
                     <AnimatePresence mode="wait">
                       {!showResultSheet ? (
                         <motion.div key="results-form" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.2 }}>
@@ -729,6 +751,7 @@ const ExamPage: React.FC = () => {
                         </motion.div>
                       )}
                     </AnimatePresence>
+                    )}
                   </div>
                 </div>
               </motion.div>

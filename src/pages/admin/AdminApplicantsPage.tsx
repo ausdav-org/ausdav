@@ -71,6 +71,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, 
 
 type AppSettings = {
   allow_exam_applications: boolean;
+  allow_results_view: boolean;
 };
 
 interface Applicant {
@@ -89,7 +90,7 @@ interface Applicant {
 }
 
 export default function AdminApplicantsPage() {
-  const { isSuperAdmin } = useAdminAuth();
+  const { isSuperAdmin, isAdmin } = useAdminAuth();
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,8 +99,10 @@ export default function AdminApplicantsPage() {
   const [filterSchool, setFilterSchool] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [allowExamApplications, setAllowExamApplications] = useState<boolean | null>(null);
+  const [allowResultsView, setAllowResultsView] = useState<boolean | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [resultsSaving, setResultsSaving] = useState(false);
 
   // CSV Upload dialog
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -126,14 +129,19 @@ export default function AdminApplicantsPage() {
   const loadExamSetting = async () => {
     setSettingsLoading(true);
     try {
+      // First try to get both columns
       const { data, error } = await supabase
         .from('app_settings' as any)
-        .select('allow_exam_applications')
+        .select('*')
         .eq('id', 1)
-        .maybeSingle<AppSettings>();
+        .maybeSingle();
 
       if (error) throw error;
-      setAllowExamApplications(data?.allow_exam_applications ?? false);
+      
+      // Handle both old schema (without allow_results_view) and new schema
+      const settings = data as unknown as AppSettings | null;
+      setAllowExamApplications(settings?.allow_exam_applications ?? false);
+      setAllowResultsView(settings?.allow_results_view ?? false);
     } catch (error) {
       console.error('Error loading exam setting:', error);
       toast.error('Failed to load exam application setting');
@@ -161,6 +169,28 @@ export default function AdminApplicantsPage() {
       toast.error('Failed to update exam application setting');
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const toggleResultsSetting = async () => {
+    if (allowResultsView === null || resultsSaving) return;
+    setResultsSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('app_settings' as any)
+        .update({ allow_results_view: !allowResultsView })
+        .eq('id', 1)
+        .select('allow_results_view')
+        .maybeSingle<AppSettings>();
+
+      if (error) throw error;
+      setAllowResultsView(data?.allow_results_view ?? false);
+      toast.success(data?.allow_results_view ? 'Results published' : 'Results unpublished');
+    } catch (error) {
+      console.error('Error updating results setting:', error);
+      toast.error('Failed to update results setting');
+    } finally {
+      setResultsSaving(false);
     }
   };
 
@@ -433,14 +463,27 @@ export default function AdminApplicantsPage() {
                 <Badge className={allowExamApplications ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}>
                   {settingsLoading ? 'Loading...' : allowExamApplications ? 'Applications Open' : 'Applications Closed'}
                 </Badge>
+                <Badge className={allowResultsView ? 'bg-blue-500/20 text-blue-500' : 'bg-muted text-muted-foreground'}>
+                  {settingsLoading ? 'Loading...' : allowResultsView ? 'Results Published' : 'Results Not Published'}
+                </Badge>
               </div>
               <div className="flex gap-2">
+                <Button
+                  variant={allowResultsView ? 'destructive' : 'default'}
+                  size="sm"
+                  onClick={toggleResultsSetting}
+                  disabled={!isAdmin || settingsLoading || resultsSaving || allowResultsView === null}
+                  title={isAdmin ? undefined : 'Only admins can change this setting'}
+                >
+                  {resultsSaving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                  {allowResultsView ? 'Unpublish Results' : 'Publish Results'}
+                </Button>
                 <Button
                   variant={allowExamApplications ? 'destructive' : 'default'}
                   size="sm"
                   onClick={toggleExamSetting}
-                  disabled={!isSuperAdmin || settingsLoading || settingsSaving || allowExamApplications === null}
-                  title={isSuperAdmin ? undefined : 'Only super admins can change this setting'}
+                  disabled={!isAdmin || settingsLoading || settingsSaving || allowExamApplications === null}
+                  title={isAdmin ? undefined : 'Only admins can change this setting'}
                 >
                   {settingsSaving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
                   {allowExamApplications ? 'Close Applications' : 'Open Applications'}
