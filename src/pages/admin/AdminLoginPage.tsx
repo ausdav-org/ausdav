@@ -17,36 +17,73 @@ const loginSchema = z.object({
 });
 
 const signupSchema = z.object({
-  fullName: z.string().min(2, 'Full name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  phone: z.string().optional(),
 });
 
 export default function AdminLoginPage() {
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'signup' ? 'signup' : 'login';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [hasExistingUsers, setHasExistingUsers] = useState<boolean | null>(null);
-  const { signIn, user, role, profile, loading: authLoading } = useAdminAuth();
+  const [allowSignup, setAllowSignup] = useState<boolean | null>(null);
+  const [activeTab, setActiveTab] = useState<'login' | 'signup'>(initialTab);
+  const { signIn, user, role, profile, loading: authLoading, needsProfileSetup } = useAdminAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   // Check if any users exist
   useEffect(() => {
     const checkExistingUsers = async () => {
-      const { count } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true });
+      const { count, error } = await supabase
+        .from('members' as any)
+        .select('mem_id', { count: 'exact', head: true });
+
+      if (error) {
+        console.error('Failed to check existing users', error);
+        setHasExistingUsers(true);
+        return;
+      }
+
       setHasExistingUsers((count ?? 0) > 0);
     };
     checkExistingUsers();
   }, []);
+
+  useEffect(() => {
+    const fetchSignupFlag = async () => {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('allow_signup')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Failed to read signup flag', error);
+        setAllowSignup(false);
+        return;
+      }
+
+      setAllowSignup(data?.allow_signup ?? false);
+    };
+
+    fetchSignupFlag();
+  }, []);
+
+  const signupOpen = allowSignup === true || hasExistingUsers === false;
+
+  useEffect(() => {
+    if (signupOpen) {
+      setActiveTab('signup');
+    } else {
+      setActiveTab('login');
+    }
+  }, [signupOpen]);
 
   useEffect(() => {
     const errorParam = searchParams.get('error');
@@ -56,14 +93,18 @@ export default function AdminLoginPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!authLoading && user && role && profile?.is_active) {
+    if (!authLoading && user) {
+      if (!profile || needsProfileSetup) {
+        navigate('/admin/profile-setup');
+        return;
+      }
       if (role === 'admin' || role === 'super_admin') {
         navigate('/admin/dashboard');
       } else {
         navigate('/admin/profile');
       }
     }
-  }, [user, role, profile, authLoading, navigate]);
+  }, [user, role, profile, authLoading, needsProfileSetup, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,69 +130,43 @@ export default function AdminLoginPage() {
     setError('');
     setSuccess('');
 
-    const result = signupSchema.safeParse({ fullName, email, password, phone });
+    const result = signupSchema.safeParse({ email, password });
     if (!result.success) {
       setError(result.error.errors[0].message);
+      return;
+    }
+
+    const signupOpen = allowSignup === true || hasExistingUsers === false;
+
+    if (!signupOpen) {
+      setError('Sign ups are disabled by an administrator.');
       return;
     }
 
     setLoading(true);
 
     try {
-      // Sign up user
-      const { data: authData, error: signupError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/admin/login`,
-        },
+      const { data, error: fnError } = await supabase.functions.invoke('controlled-signup', {
+        body: { email, password },
       });
 
-      if (signupError) throw signupError;
-      if (!authData.user) throw new Error('Failed to create account');
+      if (fnError) throw fnError;
+      if (!data?.userId) {
+        throw new Error('Failed to create account');
+      }
 
-      // Create profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: authData.user.id,
-          email,
-          full_name: fullName,
-          phone: phone || null,
-          is_active: true,
-          can_submit_finance: true,
-        });
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-      if (profileError) throw profileError;
+      if (signInError) {
+        setSuccess('Account created. Please sign in to continue.');
+        return;
+      }
 
-      // If this is the first user, make them super_admin
-      const { count } = await supabase
-        .from('user_roles')
-        .select('*', { count: 'exact', head: true });
-
-      const isFirstUser = (count ?? 0) === 0;
-
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .insert({
-          user_id: authData.user.id,
-          role: isFirstUser ? 'super_admin' : 'member',
-        });
-
-      if (roleError) throw roleError;
-
-      setSuccess(
-        isFirstUser
-          ? 'Super Admin account created! You can now sign in.'
-          : 'Account created! Please wait for an admin to activate your account.'
-      );
-
-      // Clear form
-      setFullName('');
-      setEmail('');
-      setPassword('');
-      setPhone('');
-      setHasExistingUsers(true);
+      setSuccess('Account created! Redirecting to profile setup...');
+      navigate('/admin/profile-setup');
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
     } finally {
@@ -186,12 +201,18 @@ export default function AdminLoginPage() {
 
         {/* Login/Signup Card */}
         <div className="bg-card/50 backdrop-blur-xl border border-border rounded-2xl p-8 shadow-xl">
-          <Tabs defaultValue={hasExistingUsers === false ? 'signup' : 'login'} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6">
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as 'login' | 'signup')}
+            className="w-full"
+          >
+            <TabsList className={`grid w-full ${signupOpen ? 'grid-cols-2' : 'grid-cols-1'} mb-6`}>
               <TabsTrigger value="login">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">
-                {hasExistingUsers === false ? 'Setup Admin' : 'Sign Up'}
-              </TabsTrigger>
+              {signupOpen && (
+                <TabsTrigger value="signup">
+                  {hasExistingUsers === false ? 'Setup Admin' : 'Sign Up'}
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="login">
@@ -253,112 +274,81 @@ export default function AdminLoginPage() {
               </form>
             </TabsContent>
 
-            <TabsContent value="signup">
-              <form onSubmit={handleSignup} className="space-y-4">
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
+            {signupOpen ? (
+              <TabsContent value="signup">
+                <form onSubmit={handleSignup} className="space-y-4">
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
 
-                {success && (
-                  <Alert className="border-green-500/50 bg-green-500/10">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    <AlertDescription className="text-green-500">{success}</AlertDescription>
-                  </Alert>
-                )}
+                  {success && (
+                    <Alert className="border-green-500/50 bg-green-500/10">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <AlertDescription className="text-green-500">{success}</AlertDescription>
+                    </Alert>
+                  )}
 
-                {hasExistingUsers === false && (
-                  <Alert className="border-primary/50 bg-primary/10">
-                    <AlertDescription className="text-primary text-sm">
-                      No admin accounts exist. The first account will be created as Super Admin.
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
-                  <Input
-                    id="fullName"
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Your full name"
-                    className="bg-background/50"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@ausdav.org"
-                    autoComplete="email"
-                    className="bg-background/50"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone (optional)</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+61 4XX XXX XXX"
-                    className="bg-background/50"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
-                  <div className="relative">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-email">Email</Label>
                     <Input
-                      id="signup-password"
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Min. 8 characters"
-                      autoComplete="new-password"
-                      className="bg-background/50 pr-10"
+                      id="signup-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="admin@ausdav.org"
+                      autoComplete="email"
+                      className="bg-background/50"
                       required
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
                   </div>
-                </div>
 
-                <Button type="submit" className="w-full" size="lg" disabled={loading}>
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating account...
-                    </>
-                  ) : hasExistingUsers === false ? (
-                    'Create Super Admin'
-                  ) : (
-                    'Request Access'
-                  )}
-                </Button>
-              </form>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password">Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="signup-password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Min. 8 characters"
+                        autoComplete="new-password"
+                        className="bg-background/50 pr-10"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
 
-              {hasExistingUsers && (
+                  <Button type="submit" className="w-full" size="lg" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating account...
+                      </>
+                    ) : (
+                      'Create Account'
+                    )}
+                  </Button>
+                </form>
+
                 <p className="text-xs text-muted-foreground mt-4 text-center">
-                  New accounts require admin approval before access is granted.
+                  After creating your account, you’ll be prompted to complete your member profile.
                 </p>
-              )}
-            </TabsContent>
+              </TabsContent>
+            ) : (
+              <div className="text-center text-sm text-muted-foreground">
+                Sign ups are currently disabled by a super administrator.
+              </div>
+            )}
           </Tabs>
         </div>
 

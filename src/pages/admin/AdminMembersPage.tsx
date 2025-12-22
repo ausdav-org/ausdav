@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import {
   Users,
   Search,
-  Filter,
   MoreVertical,
   UserPlus,
   Check,
@@ -53,17 +51,24 @@ import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 interface Member {
-  id: string;
-  user_id: string;
-  full_name: string;
-  email: string;
-  phone: string | null;
-  batch: string | null;
-  is_active: boolean;
-  can_submit_finance: boolean;
+  mem_id: number;
+  auth_user_id: string | null;
+  fullname: string;
+  username: string;
+  phone: string;
+  batch: number | null;
   created_at: string;
-  role?: string;
+  role: string;
+  designation: string;
+  // Legacy flags kept for UI continuity; members table does not provide these.
+  is_active?: boolean;
+  can_submit_finance?: boolean;
 }
+
+type RawMember = Pick<
+  Member,
+  'mem_id' | 'auth_user_id' | 'fullname' | 'username' | 'phone' | 'batch' | 'created_at' | 'role' | 'designation'
+>;
 
 export default function AdminMembersPage() {
   const { isSuperAdmin } = useAdminAuth();
@@ -71,7 +76,7 @@ export default function AdminMembersPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterBatch, setFilterBatch] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterRole, setFilterRole] = useState<string>('all');
 
   // Invite dialog
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -86,25 +91,25 @@ export default function AdminMembersPage() {
 
   const fetchMembers = async () => {
     try {
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*')
+      const { data, error } = await supabase
+        // Cast to any until generated types include the new members table.
+        .from('members' as any)
+        .select(
+          'mem_id, auth_user_id, fullname, username, phone, batch, created_at, role, designation'
+        )
         .order('created_at', { ascending: false });
 
-      if (profilesError) throw profilesError;
+      if (error) throw error;
 
-      const { data: roles, error: rolesError } = await supabase
-        .from('user_roles')
-        .select('user_id, role');
-
-      if (rolesError) throw rolesError;
-
-      const membersWithRoles = (profiles || []).map((profile) => ({
-        ...profile,
-        role: roles?.find((r) => r.user_id === profile.user_id)?.role || 'member',
+      const rows = ((data ?? []) as unknown) as RawMember[];
+      const normalized: Member[] = rows.map((m) => ({
+        ...m,
+        // Keep legacy flags defined to avoid UI undefined access; server table lacks these.
+        is_active: true,
+        can_submit_finance: false,
       }));
 
-      setMembers(membersWithRoles);
+      setMembers(normalized as Member[]);
     } catch (error) {
       console.error('Error fetching members:', error);
       toast.error('Failed to fetch members');
@@ -113,48 +118,12 @@ export default function AdminMembersPage() {
     }
   };
 
-  const toggleActive = async (member: Member) => {
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ is_active: !member.is_active })
-        .eq('id', member.id);
-
-      if (error) throw error;
-
-      setMembers((prev) =>
-        prev.map((m) =>
-          m.id === member.id ? { ...m, is_active: !m.is_active } : m
-        )
-      );
-      toast.success(
-        `Member ${!member.is_active ? 'activated' : 'deactivated'} successfully`
-      );
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to update member');
-    }
+  const toggleActive = async () => {
+    toast.error('Activation toggle is not supported with the current members schema.');
   };
 
-  const toggleFinancePermission = async (member: Member) => {
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ can_submit_finance: !member.can_submit_finance })
-        .eq('id', member.id);
-
-      if (error) throw error;
-
-      setMembers((prev) =>
-        prev.map((m) =>
-          m.id === member.id
-            ? { ...m, can_submit_finance: !m.can_submit_finance }
-            : m
-        )
-      );
-      toast.success('Finance permission updated');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to update permission');
-    }
+  const toggleFinancePermission = async () => {
+    toast.error('Finance permission toggle is not supported with the current members schema.');
   };
 
   const changeRole = async (member: Member, newRole: string) => {
@@ -165,15 +134,15 @@ export default function AdminMembersPage() {
 
     try {
       const { error } = await supabase
-        .from('user_roles')
+        .from('members' as any)
         .update({ role: newRole as any })
-        .eq('user_id', member.user_id);
+        .eq('mem_id', member.mem_id);
 
       if (error) throw error;
 
       setMembers((prev) =>
         prev.map((m) =>
-          m.id === member.id ? { ...m, role: newRole } : m
+          m.mem_id === member.mem_id ? { ...m, role: newRole } : m
         )
       );
       toast.success('Role updated successfully');
@@ -205,18 +174,15 @@ export default function AdminMembersPage() {
 
   const filteredMembers = members.filter((member) => {
     const matchesSearch =
-      member.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      member.email.toLowerCase().includes(searchQuery.toLowerCase());
+      member.fullname.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      member.username.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesBatch =
-      filterBatch === 'all' || member.batch === filterBatch;
-    const matchesStatus =
-      filterStatus === 'all' ||
-      (filterStatus === 'active' && member.is_active) ||
-      (filterStatus === 'inactive' && !member.is_active);
-    return matchesSearch && matchesBatch && matchesStatus;
+      filterBatch === 'all' || String(member.batch) === filterBatch;
+    const matchesRole = filterRole === 'all' || member.role === filterRole;
+    return matchesSearch && matchesBatch && matchesRole;
   });
 
-  const uniqueBatches = [...new Set(members.map((m) => m.batch).filter(Boolean))];
+  const uniqueBatches = [...new Set(members.map((m) => m.batch).filter((b) => b !== null))];
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
@@ -258,21 +224,23 @@ export default function AdminMembersPage() {
               <SelectContent>
                 <SelectItem value="all">All Batches</SelectItem>
                 {uniqueBatches.map((batch) => (
-                  <SelectItem key={batch} value={batch!}>
+                  <SelectItem key={batch} value={String(batch)}>
                     {batch}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-[140px] bg-background/50">
-                <SelectValue placeholder="All Status" />
+            <Select value={filterRole} onValueChange={setFilterRole}>
+              <SelectTrigger className="w-[180px] bg-background/50">
+                <SelectValue placeholder="Everyone" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="all">Everyone</SelectItem>
+                <SelectItem value="member">Members</SelectItem>
+                <SelectItem value="admin">Admins</SelectItem>
+                <SelectItem value="honourable">Honourables</SelectItem>
+                <SelectItem value="super_admin">Super Admins</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -306,16 +274,16 @@ export default function AdminMembersPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredMembers.map((member) => (
-                    <TableRow key={member.id}>
+                    <TableRow key={member.mem_id}>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{member.full_name}</p>
+                          <p className="font-medium">{member.fullname}</p>
                           <p className="text-sm text-muted-foreground">
-                            {member.email}
+                            {member.username}
                           </p>
                         </div>
                       </TableCell>
-                      <TableCell>{member.batch || '-'}</TableCell>
+                      <TableCell>{member.batch ?? '-'}</TableCell>
                       <TableCell>
                         <Badge className={cn('capitalize', getRoleBadgeColor(member.role || ''))}>
                           {member.role?.replace('_', ' ') || 'Unknown'}
@@ -352,7 +320,7 @@ export default function AdminMembersPage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
-                              onClick={() => toggleActive(member)}
+                              onClick={() => toggleActive()}
                             >
                               {member.is_active ? (
                                 <>
@@ -367,7 +335,7 @@ export default function AdminMembersPage() {
                               )}
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => toggleFinancePermission(member)}
+                              onClick={() => toggleFinancePermission()}
                             >
                               Toggle Finance Permission
                             </DropdownMenuItem>

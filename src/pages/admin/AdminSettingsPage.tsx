@@ -1,12 +1,67 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Shield, Users, DollarSign, Lock, Key } from 'lucide-react';
+import { Settings, Shield, Users, DollarSign, Lock, Key, Loader2 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 export default function AdminSettingsPage() {
-  const { isSuperAdmin } = useAdminAuth();
+  const { isSuperAdmin, user } = useAdminAuth();
+  const [settings, setSettings] = useState<{ allow_signup: boolean; updated_at: string | null; updated_by: string | null } | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+
+    const loadSettings = async () => {
+      setSettingsError(null);
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('allow_signup, updated_at, updated_by')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (error) {
+        setSettingsError('Unable to load signup setting.');
+      } else if (data) {
+        setSettings(data);
+      }
+
+      setSettingsLoading(false);
+    };
+
+    loadSettings();
+  }, [isSuperAdmin]);
+
+  const toggleSignup = async () => {
+    if (!settings || saving) return;
+
+    setSaving(true);
+    setSettingsError(null);
+
+    const { data, error } = await supabase
+      .from('app_settings')
+      .update({
+        allow_signup: !settings.allow_signup,
+        updated_by: user?.id ?? null,
+      })
+      .eq('id', 1)
+      .select('allow_signup, updated_at, updated_by')
+      .maybeSingle();
+
+    if (error) {
+      setSettingsError(error.message);
+    } else if (data) {
+      setSettings(data);
+    }
+
+    setSaving(false);
+  };
 
   if (!isSuperAdmin) {
     return (
@@ -74,6 +129,58 @@ export default function AdminSettingsPage() {
       <AdminHeader title="Settings" breadcrumb="System" />
 
       <div className="p-6 space-y-6 max-w-4xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Card className="bg-card/60 backdrop-blur-sm border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-primary" />
+                Signup Access Control
+              </CardTitle>
+              <CardDescription>
+                Toggle the visibility and enforcement of admin signups. When disabled, the Edge Function rejects new accounts.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-2">
+                  <Badge className={settings?.allow_signup ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}>
+                    {settingsLoading ? 'Checking...' : settings?.allow_signup ? 'Enabled' : 'Disabled'}
+                  </Badge>
+                  <p className="text-sm text-muted-foreground">
+                    Hiding Sign Up is cosmetic unless this switch is ON. The Edge Function enforces the same gate server-side.
+                  </p>
+                  {settings?.updated_at && (
+                    <p className="text-xs text-muted-foreground">
+                      Last updated {new Date(settings.updated_at).toLocaleString()}
+                    </p>
+                  )}
+                  {settingsError && (
+                    <p className="text-sm text-destructive">{settingsError}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant={settings?.allow_signup ? 'destructive' : 'default'}
+                    onClick={toggleSignup}
+                    disabled={settingsLoading || saving || !settings}
+                  >
+                    {saving ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Updating...
+                      </span>
+                    ) : settings?.allow_signup ? 'Disable Sign Ups' : 'Enable Sign Ups'}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
         {/* Security Notice */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
