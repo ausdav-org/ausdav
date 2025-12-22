@@ -11,6 +11,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -168,8 +169,9 @@ export default function FinanceLedgerPage() {
   };
 
   return (
-    <div className="min-h-screen">
-      <AdminHeader title="Finance Ledger" breadcrumb="Finance" />
+    <PermissionGate permissionKey="finance" permissionName="Finance Handling">
+      <div className="min-h-screen">
+        <AdminHeader title="Finance Ledger" breadcrumb="Finance" />
 
       <div className="p-6 space-y-6">
         {/* Summary Cards */}
@@ -370,6 +372,7 @@ export default function FinanceLedgerPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+      </div>
+    </PermissionGate>
   );
 }

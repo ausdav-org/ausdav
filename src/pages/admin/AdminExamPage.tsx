@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -270,8 +271,9 @@ export default function AdminExamPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <PermissionGate permissionKey="exam" permissionName="Exam Handling">
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Exam Management</h1>
           <p className="text-muted-foreground">Manage past papers, exam papers, and marking schemes</p>
@@ -430,6 +432,7 @@ export default function AdminExamPage() {
           </Table>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PermissionGate>
   );
 }

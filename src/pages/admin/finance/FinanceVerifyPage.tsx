@@ -10,6 +10,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -184,8 +185,9 @@ export default function FinanceVerifyPage() {
   };
 
   return (
-    <div className="min-h-screen">
-      <AdminHeader title="Verify Submissions" breadcrumb="Finance" />
+    <PermissionGate permissionKey="finance" permissionName="Finance Handling">
+      <div className="min-h-screen">
+        <AdminHeader title="Verify Submissions" breadcrumb="Finance" />
 
       <div className="p-6 space-y-6">
         <Card className="bg-card/50 backdrop-blur-sm border-border">
@@ -367,6 +369,7 @@ export default function FinanceVerifyPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PermissionGate>
   );
 }
