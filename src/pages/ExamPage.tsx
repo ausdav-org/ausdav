@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
 import emblemImg from '@/assets/Exam/AUSDAV logo.png';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
 type AppSettings = {
   allow_exam_applications: boolean;
@@ -31,36 +32,16 @@ const MOCK_RESULTS = {
 type ResultRow = (typeof MOCK_RESULTS)[keyof typeof MOCK_RESULTS];
 
 type PastPaper = {
-  id: number;
-  year: string;
+  pp_id: number;
+  yrs: number;
   subject: string;
-  stream: string;
-  paperUrl: string;
-  schemeUrl: string;
+  exam_paper_bucket: string;
+  exam_paper_path: string | null;
+  scheme_bucket: string;
+  scheme_path: string | null;
+  created_at: string;
+  updated_at: string;
 };
-
-const pastPapers: PastPaper[] = [
-  { id: 1, year: '2025', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 2, year: '2025', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 3, year: '2025', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 4, year: '2025', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 5, year: '2024', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 6, year: '2024', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 7, year: '2024', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 8, year: '2024', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 9, year: '2023', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 10, year: '2023', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 11, year: '2023', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 12, year: '2023', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 13, year: '2022', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 14, year: '2022', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 15, year: '2022', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 16, year: '2022', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 17, year: '2021', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 18, year: '2021', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 19, year: '2021', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 20, year: '2021', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-];
 
 // Apply form options
 const applyExams = ['-- Select Your Stream --', 'Maths', 'Biology'];
@@ -147,6 +128,20 @@ const ExamPage: React.FC = () => {
     loadSetting();
   }, [language]);
 
+  // Fetch past papers from database
+  const { data: pastPapers = [], isLoading: papersLoading } = useQuery({
+    queryKey: ['past-papers'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('past_papers')
+        .select('*')
+        .order('yrs', { ascending: false });
+
+      if (error) throw error;
+      return data as PastPaper[];
+    },
+  });
+
   const handleApplyReset = () => setApplyForm(initialApplyForm);
 
   const handleApplySubmit = (e: React.FormEvent) => {
@@ -196,20 +191,32 @@ const ExamPage: React.FC = () => {
   };
 
   const availableYears = useMemo(
-    () => Array.from(new Set(pastPapers.map((p) => String(p.year)))).sort((a, b) => Number(b) - Number(a)),
-    []
+    () => Array.from(new Set(pastPapers.map((p) => String(p.yrs)))).sort((a, b) => Number(b) - Number(a)),
+    [pastPapers]
   );
 
   const papersForYear = (year: string) =>
     pastPapers.filter((paper) => {
-      if (paper.year !== year) return false;
+      if (String(paper.yrs) !== year) return false;
       if (paperFilter.subject && !paper.subject.toLowerCase().includes(paperFilter.subject.toLowerCase())) return false;
       return true;
     });
 
-  const openDownload = (url: string) => {
-    if (!url || url === '#') return toast.error(language === 'en' ? 'Download link not available' : 'பதிவிறக்க இணைப்பு கிடைக்கவில்லை');
-    window.open(url, '_blank');
+  const openDownload = (paper: PastPaper, type: 'paper' | 'scheme') => {
+    const bucket = type === 'paper' ? paper.exam_paper_bucket : paper.scheme_bucket;
+    const path = type === 'paper' ? paper.exam_paper_path : paper.scheme_path;
+
+    if (!path) {
+      toast.error(language === 'en' ? `${type === 'paper' ? 'Paper' : 'Scheme'} not available` : `${type === 'paper' ? 'வினாத்தாள்' : 'திட்டம்'} கிடைக்கவில்லை`);
+      return;
+    }
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    if (data?.publicUrl) {
+      window.open(data.publicUrl, '_blank');
+    } else {
+      toast.error(language === 'en' ? 'Download link not available' : 'பதிவிறக்க இணைப்பு கிடைக்கவில்லை');
+    }
   };
 
   // Certificate display (from resultData)
@@ -414,7 +421,15 @@ const ExamPage: React.FC = () => {
                 </div>
 
                 <div className="space-y-4">
-                  {availableYears.map((year) => {
+                  {papersLoading ? (
+                    <div className="text-center py-8">
+                      <div className="text-muted-foreground">{language === 'en' ? 'Loading past papers...' : 'கடந்த கால வினாத்தாள்களை ஏற்றுகிறது...'}</div>
+                    </div>
+                  ) : availableYears.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-muted-foreground">{language === 'en' ? 'No past papers available' : 'கடந்த கால வினாத்தாள்கள் கிடைக்கவில்லை'}</div>
+                    </div>
+                  ) : availableYears.map((year) => {
                     const yearPapers = papersForYear(year);
                     const isOpen = expandedYear === year;
 
@@ -451,7 +466,7 @@ const ExamPage: React.FC = () => {
                                 ) : (
                                   yearPapers.map((paper) => (
                                     <motion.div
-                                      key={paper.id}
+                                      key={paper.pp_id}
                                       variants={itemVariants}
                                       initial="hidden"
                                       animate="visible"
@@ -462,16 +477,28 @@ const ExamPage: React.FC = () => {
                                         <FileText className="w-5 h-5 text-secondary" />
                                         <div>
                                           <p className="font-medium text-foreground">{paper.subject}</p>
-                                          <p className="text-sm text-muted-foreground">{paper.year}</p>
+                                          <p className="text-sm text-muted-foreground">{paper.yrs}</p>
                                         </div>
                                       </div>
 
                                       <div className="flex w-full sm:w-auto gap-2 sm:justify-end">
-                                        <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => openDownload(paper.paperUrl)}>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="flex-1 sm:flex-none"
+                                          onClick={() => openDownload(paper, 'paper')}
+                                          disabled={!paper.exam_paper_path}
+                                        >
                                           <Download className="w-4 h-4 mr-1" />
                                           {language === 'en' ? 'Paper' : 'வினாத்தாள்'}
                                         </Button>
-                                        <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => openDownload(paper.schemeUrl)}>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="flex-1 sm:flex-none"
+                                          onClick={() => openDownload(paper, 'scheme')}
+                                          disabled={!paper.scheme_path}
+                                        >
                                           <Download className="w-4 h-4 mr-1" />
                                           {language === 'en' ? 'Scheme' : 'திட்டம்'}
                                         </Button>
