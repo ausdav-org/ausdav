@@ -29,7 +29,7 @@ import { format } from 'date-fns';
 import GalleryBulkUpload from './GalleryBulkUpload';
 
 interface Event {
-  id: string;
+  id: number;
   title_en: string;
   title_ta: string | null;
   description_en: string | null;
@@ -44,8 +44,10 @@ interface Event {
 
 interface Gallery {
   id: string;
+  event_id: number;
   year: number;
-  title: string;
+  title: string | null;
+  max_images?: number | null;
   created_at: string;
 }
 
@@ -65,22 +67,23 @@ type EventInsert = {
 
 type GalleryInsert = {
   id?: string;
+  event_id: number;
   year: number;
-  title: string;
+  title?: string | null;
   created_at?: string;
 };
 
 type GalleryImageRow = {
   id: string;
   gallery_id: string;
-  image_path: string;
+  file_path: string;
   created_at: string;
 };
 
 type GalleryImageInsert = {
   id?: string;
   gallery_id: string;
-  image_path: string;
+  file_path: string;
   created_at?: string;
 };
 
@@ -162,13 +165,14 @@ const AdminEventsPage: React.FC = () => {
 
   // Fetch galleries for a specific year
   const { data: galleries, isLoading: galleriesLoading } = useQuery({
-    queryKey: ['galleries', selectedEventForGallery?.event_date ? new Date(selectedEventForGallery.event_date).getFullYear() : null],
+    queryKey: ['galleries', selectedEventForGallery?.id ?? null],
     queryFn: async () => {
       if (!selectedEventForGallery) return [];
       const year = new Date(selectedEventForGallery.event_date).getFullYear();
       const { data, error } = await supabaseDb
         .from('galleries')
-        .select('id, year, title, created_at')
+        .select('id, event_id, year, title, max_images, created_at')
+        .eq('event_id', selectedEventForGallery.id)
         .eq('year', year)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -213,11 +217,11 @@ const AdminEventsPage: React.FC = () => {
 
   // Update event mutation
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: EventFormState }) => {
+    mutationFn: async ({ id, data }: { id: number; data: EventFormState }) => {
       const { error } = await supabase
         .from('events')
         .update(data)
-        .eq('id', id);
+        .eq('id', id.toString());
       if (error) throw error;
     },
     onSuccess: () => {
@@ -237,16 +241,17 @@ const AdminEventsPage: React.FC = () => {
   // Create gallery mutation
   const createGalleryMutation = useMutation({
     mutationFn: async ({ year, title }: { year: number; title: string }) => {
+      if (!selectedEventForGallery) throw new Error('No event selected');
       const { data, error } = await supabaseDb
         .from('galleries')
-        .insert([{ year, title }])
+        .insert([{ event_id: selectedEventForGallery.id, year, title }])
         .select()
         .single();
       if (error) throw error;
       return data as Gallery;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['galleries'] });
+      queryClient.invalidateQueries({ queryKey: ['galleries', selectedEventForGallery?.id ?? null] });
       toast.success('Gallery created successfully');
       setCreatedGalleryId(data.id);
       setShowBulkUpload(true);
@@ -258,11 +263,11 @@ const AdminEventsPage: React.FC = () => {
 
   // Delete event mutation
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async (id: number) => {
       const { error } = await supabase
         .from('events')
         .delete()
-        .eq('id', id);
+        .eq('id', id.toString());
       if (error) throw error;
     },
     onSuccess: () => {
@@ -276,11 +281,11 @@ const AdminEventsPage: React.FC = () => {
 
   // Toggle active status
   const toggleMutation = useMutation({
-    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
+    mutationFn: async ({ id, is_active }: { id: number; is_active: boolean }) => {
       const { error } = await supabase
         .from('events')
         .update({ is_active })
-        .eq('id', id);
+        .eq('id', id.toString());
       if (error) throw error;
     },
     onSuccess: () => {
@@ -546,6 +551,7 @@ const AdminEventsPage: React.FC = () => {
           {showBulkUpload && selectedEventForGallery ? (
             <GalleryBulkUpload
               galleryId={createdGalleryId || galleries?.[0]?.id || ''}
+              eventId={selectedEventForGallery.id}
               year={new Date(selectedEventForGallery.event_date).getFullYear()}
               onBack={() => setShowBulkUpload(false)}
             />
@@ -558,13 +564,16 @@ const AdminEventsPage: React.FC = () => {
                   {galleries.map((gallery) => (
                     <Card key={gallery.id}>
                       <CardHeader>
-                        <CardTitle>{gallery.title}</CardTitle>
+                        <CardTitle>{gallery.title || `Gallery ${gallery.year}`}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <p>Year: {gallery.year}</p>
                         <p>Created: {format(new Date(gallery.created_at), 'MMM d, yyyy')}</p>
                         <Button
-                          onClick={() => setShowBulkUpload(true)}
+                          onClick={() => {
+                            setCreatedGalleryId(gallery.id);
+                            setShowBulkUpload(true);
+                          }}
                           className="mt-2"
                         >
                           Add Images

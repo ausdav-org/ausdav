@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 
 interface GalleryBulkUploadProps {
   galleryId: string;
+  eventId: number;
   year: number;
   onBack: () => void;
 }
@@ -18,14 +19,14 @@ interface GalleryBulkUploadProps {
 type GalleryImageRow = {
   id: string;
   gallery_id: string;
-  image_path: string;
+  file_path: string;
   created_at: string;
 };
 
 type GalleryImageInsert = {
   id?: string;
   gallery_id: string;
-  image_path: string;
+  file_path: string;
   created_at?: string;
 };
 
@@ -45,7 +46,7 @@ type Database = {
   };
 };
 
-const GalleryBulkUpload: React.FC<GalleryBulkUploadProps> = ({ galleryId, year, onBack }) => {
+const GalleryBulkUpload: React.FC<GalleryBulkUploadProps> = ({ galleryId, eventId, year, onBack }) => {
   const queryClient = useQueryClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabaseDb = supabase as unknown as SupabaseClient<any, any, any, any>;
@@ -56,10 +57,10 @@ const GalleryBulkUpload: React.FC<GalleryBulkUploadProps> = ({ galleryId, year, 
     mutationFn: async (files: File[]) => {
       const uploadPromises = files.map(async (file) => {
         const ext = file.name.split('.').pop() || 'jpg';
-        const path = `galleries/${galleryId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const path = `${eventId}/${galleryId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
-          .from('galleries')
+          .from('event-gallery')
           .upload(path, file, { upsert: true, contentType: file.type });
 
         if (uploadError) throw uploadError;
@@ -67,7 +68,7 @@ const GalleryBulkUpload: React.FC<GalleryBulkUploadProps> = ({ galleryId, year, 
         // Insert into gallery_images
         const { error: dbError } = await supabaseDb
           .from('gallery_images')
-          .insert([{ gallery_id: galleryId, image_path: path }]);
+          .insert([{ gallery_id: galleryId, file_path: path }]);
 
         if (dbError) throw dbError;
 
@@ -77,7 +78,7 @@ const GalleryBulkUpload: React.FC<GalleryBulkUploadProps> = ({ galleryId, year, 
       await Promise.all(uploadPromises);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['galleries'] });
+      queryClient.invalidateQueries({ queryKey: ['galleries', eventId] });
       toast.success('Images uploaded successfully');
       setSelectedFiles([]);
     },
