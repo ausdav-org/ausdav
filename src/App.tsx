@@ -41,6 +41,7 @@ import ProfileSetupPage from "@/pages/admin/ProfileSetupPage";
 import AdminExamPage from "@/pages/admin/AdminExamPage";
 import AdminSeminarPage from "@/pages/admin/AdminSeminarPage";
 import AdminApplicantsPage from "@/pages/admin/AdminApplicantsPage";
+import ClaimPermissionPage from "@/pages/admin/ClaimPermissionPage";
 
 const queryClient = new QueryClient();
 
@@ -115,6 +116,7 @@ const App = () => {
                     <Route path="exam" element={<AdminExamPage />} />
                     <Route path="seminar" element={<AdminSeminarPage />} />
                     <Route path="announcements" element={<AdminAnnouncementsPage />} />
+                    <Route path="claim-permission" element={<ClaimPermissionPage />} />
                     <Route path="permissions" element={<AdminPermissionsPage />} />
                     <Route path="audit" element={<AdminAuditPage />} />
                     <Route path="settings" element={<AdminSettingsPage />} />
