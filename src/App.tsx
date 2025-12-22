@@ -16,6 +16,7 @@ import CommitteePage from "@/pages/CommitteePage";
 import ExamPage from "@/pages/ExamPage";
 import SeminarPage from "@/pages/SeminarPage";
 import EventsPage from "@/pages/EventsPage";
+import EventDetailsPage from "@/pages/EventDetailsPage";
 import GalleryPage from "@/pages/GalleryPage";
 import DonatePage from "@/pages/DonatePage";
 import LoginPage from "@/pages/LoginPage";
@@ -78,6 +79,7 @@ const App = () => {
                   <Route path="/exam" element={<Layout><ExamPage /></Layout>} />
                   <Route path="/seminar" element={<Layout><SeminarPage /></Layout>} />
                   <Route path="/events" element={<Layout><EventsPage /></Layout>} />
+                  <Route path="/events/:id" element={<Layout><EventDetailsPage /></Layout>} />
                   <Route path="/gallery" element={<Layout><GalleryPage /></Layout>} />
                   <Route path="/donate" element={<Layout><DonatePage /></Layout>} />
                   <Route path="/login" element={<Layout><LoginPage /></Layout>} />
