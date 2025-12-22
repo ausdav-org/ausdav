@@ -10,6 +10,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -280,8 +281,9 @@ export default function AdminAnnouncementsPage() {
   };
 
   return (
-    <div className="min-h-screen">
-      <AdminHeader title="Announcements" breadcrumb="Content" />
+    <PermissionGate permissionKey="announcement" permissionName="Announcement Handling">
+      <div className="min-h-screen">
+        <AdminHeader title="Announcements" breadcrumb="Content" />
 
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
@@ -552,6 +554,7 @@ export default function AdminAnnouncementsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PermissionGate>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -240,8 +241,9 @@ export default function AdminSeminarPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <PermissionGate permissionKey="seminar" permissionName="Seminar Handling">
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Seminar Management</h1>
           <p className="text-muted-foreground">Manage seminar papers and answers</p>
@@ -383,6 +385,7 @@ export default function AdminSeminarPage() {
           </Table>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PermissionGate>
   );
 }

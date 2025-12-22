@@ -9,6 +9,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -319,10 +320,11 @@ export default function AdminApplicantsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <AdminHeader
-        title="Applicants Management"
-      />
+    <PermissionGate permissionKey="applicant" permissionName="Applicant Handling">
+      <div className="space-y-6">
+        <AdminHeader
+          title="Applicants Management"
+        />
 
       <Card>
         <CardHeader>
@@ -546,6 +548,7 @@ export default function AdminApplicantsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PermissionGate>
   );
 }
