@@ -83,6 +83,8 @@ const App = () => {
                   <Route path="/gallery" element={<Layout><GalleryPage /></Layout>} />
                   <Route path="/donate" element={<Layout><DonatePage /></Layout>} />
                   <Route path="/login" element={<Layout><LoginPage /></Layout>} />
+                  <Route path="/signup" element={<Layout><SignupPortalPage /></Layout>} />
+                  <Route path="/register" element={<Navigate to="/signup" replace />} />
 
                   {/* ✅ Recommended clean profile route */}
                   <Route path="/profile" element={<Layout><ProfilePage /></Layout>} />
