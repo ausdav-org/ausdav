@@ -36,6 +36,7 @@ import FinanceSubmitPage from "@/pages/admin/finance/FinanceSubmitPage";
 import FinanceVerifyPage from "@/pages/admin/finance/FinanceVerifyPage";
 import FinanceLedgerPage from "@/pages/admin/finance/FinanceLedgerPage";
 import ProfileSetupPage from "@/pages/admin/ProfileSetupPage";
+import AdminExamPage from "@/pages/admin/AdminExamPage";
 
 const queryClient = new QueryClient();
 
@@ -102,6 +103,7 @@ const App = () => {
                     <Route path="profile" element={<AdminProfilePage />} />
                     <Route path="members" element={<AdminMembersPage />} />
                     <Route path="events" element={<AdminEventsPage />} />
+                    <Route path="exam" element={<AdminExamPage />} />
                     <Route path="announcements" element={<AdminAnnouncementsPage />} />
                     <Route path="permissions" element={<AdminPermissionsPage />} />
                     <Route path="audit" element={<AdminAuditPage />} />

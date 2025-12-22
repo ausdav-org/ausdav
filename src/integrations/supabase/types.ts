@@ -364,6 +364,132 @@ export type Database = {
         }
         Relationships: []
       }
+      members: {
+        Row: {
+          auth_user_id: string | null
+          batch: number
+          created_at: string
+          designation: string
+          fullname: string
+          gender: boolean
+          mem_id: number
+          nic: string
+          phone: string
+          profile_bucket: string
+          profile_path: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          school: string
+          university: string
+          updated_at: string
+          username: string
+        }
+        Insert: {
+          auth_user_id?: string | null
+          batch: number
+          created_at?: string
+          designation: string
+          fullname: string
+          gender: boolean
+          mem_id?: number
+          nic: string
+          phone: string
+          profile_bucket?: string
+          profile_path?: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          school: string
+          university: string
+          updated_at?: string
+          username: string
+        }
+        Update: {
+          auth_user_id?: string | null
+          batch?: number
+          created_at?: string
+          designation?: string
+          fullname?: string
+          gender?: boolean
+          mem_id?: number
+          nic?: string
+          phone?: string
+          profile_bucket?: string
+          profile_path?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          school?: string
+          university?: string
+          updated_at?: string
+          username?: string
+        }
+        Relationships: []
+      }
+      past_papers: {
+        Row: {
+          created_at: string
+          exam_paper_bucket: string
+          exam_paper_path: string | null
+          pp_id: number
+          scheme_bucket: string
+          scheme_path: string | null
+          subject: string
+          updated_at: string
+          yrs: number
+        }
+        Insert: {
+          created_at?: string
+          exam_paper_bucket?: string
+          exam_paper_path?: string | null
+          pp_id?: number
+          scheme_bucket?: string
+          scheme_path?: string | null
+          subject: string
+          updated_at?: string
+          yrs: number
+        }
+        Update: {
+          created_at?: string
+          exam_paper_bucket?: string
+          exam_paper_path?: string | null
+          pp_id?: number
+          scheme_bucket?: string
+          scheme_path?: string | null
+          subject?: string
+          updated_at?: string
+          yrs?: number
+        }
+        Relationships: []
+      }
+      seminars: {
+        Row: {
+          created_at: string
+          seminar_paper_bucket: string
+          seminar_paper_path: string | null
+          sem_id: number
+          answers_bucket: string
+          answers_path: string | null
+          updated_at: string
+          yrs: number
+        }
+        Insert: {
+          created_at?: string
+          seminar_paper_bucket?: string
+          seminar_paper_path?: string | null
+          sem_id?: number
+          answers_bucket?: string
+          answers_path?: string | null
+          updated_at?: string
+          yrs: number
+        }
+        Update: {
+          created_at?: string
+          seminar_paper_bucket?: string
+          seminar_paper_path?: string | null
+          sem_id?: number
+          answers_bucket?: string
+          answers_path?: string | null
+          updated_at?: string
+          yrs?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
