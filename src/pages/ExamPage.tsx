@@ -1,15 +1,20 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileText, Download, Search, ClipboardList, Award, ImageDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
 import emblemImg from '@/assets/Exam/AUSDAV logo.png';
+import { supabase } from '@/integrations/supabase/client';
 
+type AppSettings = {
+  allow_exam_applications: boolean;
+};
 
 const MOCK_RESULTS = {
   'Maths|2024|Index No|1234': {
@@ -59,8 +64,15 @@ const pastPapers: PastPaper[] = [
 
 // Apply form options
 const applyExams = ['-- Select Your Stream --', 'Maths', 'Biology'];
-const schoolOptions = ['Vavniya Tamil Madhya Maha Vidyalayam',"V/Rambaikulam girls' maha vidyalayam",'Saivapragasa Ladies College','Vipulanantha College Vavuniya',
-  'Puthukkulam Maha Vidiyalyam','Vavuniya Nelukkulam Kalaimakal Maha Vidyalayam','Cheddikulam Maha Vidyalayam'];
+const schoolOptions = [
+  'Vavniya Tamil Madhya Maha Vidyalayam',
+  "V/Rambaikulam girls' maha vidyalayam",
+  'Saivapragasa Ladies College',
+  'Vipulanantha College Vavuniya',
+  'Puthukkulam Maha Vidiyalyam',
+  'Vavuniya Nelukkulam Kalaimakal Maha Vidyalayam',
+  'Cheddikulam Maha Vidyalayam',
+];
 
 const resultsStreams = ['Maths', 'Biology', 'Commerce'];
 const resultsYears = ['2025', '2024'];
@@ -104,9 +116,36 @@ const ExamPage: React.FC = () => {
   const [expandedYear, setExpandedYear] = useState<string | null>(null);
 
   const [downloading, setDownloading] = useState(false);
+  const [examApplicationsOpen, setExamApplicationsOpen] = useState(true);
+  const [examSettingLoading, setExamSettingLoading] = useState(true);
 
   // ✅ Now we capture the WHOLE sheet (including header)
   const sheetRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const loadSetting = async () => {
+      setExamSettingLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('app_settings' as any)
+          .select('allow_exam_applications')
+          .eq('id', 1)
+          .maybeSingle<AppSettings>();
+
+        if (error) throw error;
+        const setting = data as AppSettings | null;
+        setExamApplicationsOpen(setting?.allow_exam_applications ?? false);
+      } catch (error) {
+        console.error('Error loading exam application setting:', error);
+        toast.error(language === 'en' ? 'Unable to load exam application status' : 'தேர்வு விண்ணப்ப நிலையை ஏற்ற முடியவில்லை');
+        setExamApplicationsOpen(false);
+      } finally {
+        setExamSettingLoading(false);
+      }
+    };
+
+    loadSetting();
+  }, [language]);
 
   const handleApplyReset = () => setApplyForm(initialApplyForm);
 
@@ -120,6 +159,11 @@ const ExamPage: React.FC = () => {
 
     if (applyForm.phone.length !== 10) {
       toast.error(language === 'en' ? 'Phone number must be 10 digits' : 'தொலைபேசி எண் 10 இலக்கங்கள் இருக்க வேண்டும்');
+      return;
+    }
+
+    if (!examApplicationsOpen) {
+      toast.error(language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது');
       return;
     }
 
@@ -264,70 +308,85 @@ const ExamPage: React.FC = () => {
                     </div>
 
                     <div className="p-5 md:p-6 bg-card">
-                      <form onSubmit={handleApplySubmit} className="space-y-5">
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Full Name' : 'முழு பெயர்'}</label>
-                          <Input value={applyForm.fullName} onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })} required />
-                        </div>
+                      {!examSettingLoading && !examApplicationsOpen ? (
+                        <Card className="border-destructive/30 bg-destructive/5">
+                          <CardContent className="p-6 space-y-2">
+                            <h3 className="text-xl font-semibold text-destructive">
+                              {language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது'}
+                            </h3>
+                            <p className="text-muted-foreground">
+                              {language === 'en'
+                                ? 'Exam applications are currently closed. Please check back later.'
+                                : 'தேர்வு விண்ணப்பங்கள் தற்போது மூடப்பட்டுள்ளது. தயவுசெய்து பின்னர் மீண்டும் பார்க்கவும்.'}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <form onSubmit={handleApplySubmit} className="space-y-5">
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Full Name' : 'முழு பெயர்'}</label>
+                            <Input value={applyForm.fullName} onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })} required />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
-                          <Input type="email" value={applyForm.email} onChange={(e) => setApplyForm({ ...applyForm, email: e.target.value })} required />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
+                            <Input type="email" value={applyForm.email} onChange={(e) => setApplyForm({ ...applyForm, email: e.target.value })} required />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}</label>
-                          <Input inputMode="numeric" value={applyForm.phone} onChange={(e) => setApplyForm({ ...applyForm, phone: onlyDigitsMax(e.target.value, 10) })} required />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}</label>
+                            <Input inputMode="numeric" value={applyForm.phone} onChange={(e) => setApplyForm({ ...applyForm, phone: onlyDigitsMax(e.target.value, 10) })} required />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</label>
-                          <Input value={applyForm.nic} onChange={(e) => setApplyForm({ ...applyForm, nic: e.target.value })} required />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</label>
+                            <Input value={applyForm.nic} onChange={(e) => setApplyForm({ ...applyForm, nic: e.target.value })} required />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Select Stream' : 'தேர்வைத் தேர்ந்தெடுக்கவும்'}</label>
-                          <Select value={applyForm.exam} onValueChange={(v) => setApplyForm({ ...applyForm, exam: v })}>
-                            <SelectTrigger>
-                              <SelectValue placeholder={language === 'en' ? '-- Select Your Stream --' : '-- தேர்வு --'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {applyExams
-                                .filter((x) => x !== '-- Select Your Stream --')
-                                .map((exam) => (
-                                  <SelectItem key={exam} value={exam}>
-                                    {exam}
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Select Stream' : 'தேர்வைத் தேர்ந்தெடுக்கவும்'}</label>
+                            <Select value={applyForm.exam} onValueChange={(v) => setApplyForm({ ...applyForm, exam: v })}>
+                              <SelectTrigger>
+                                <SelectValue placeholder={language === 'en' ? '-- Select Your Stream --' : '-- தேர்வு --'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {applyExams
+                                  .filter((x) => x !== '-- Select Your Stream --')
+                                  .map((exam) => (
+                                    <SelectItem key={exam} value={exam}>
+                                      {exam}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'School Name' : 'பள்ளி பெயர்'}</label>
+                            <Select value={applyForm.schoolName} onValueChange={(v) => setApplyForm({ ...applyForm, schoolName: v })}>
+                              <SelectTrigger>
+                                <SelectValue placeholder={language === 'en' ? 'Select school' : 'பள்ளியை தேர்வு செய்க'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {schoolOptions.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s}
                                   </SelectItem>
                                 ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'School Name' : 'பள்ளி பெயர்'}</label>
-                          <Select value={applyForm.schoolName} onValueChange={(v) => setApplyForm({ ...applyForm, schoolName: v })}>
-                            <SelectTrigger>
-                              <SelectValue placeholder={language === 'en' ? 'Select school' : 'பள்ளியை தேர்வு செய்க'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {schoolOptions.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset}>
-                            {language === 'en' ? 'Reset' : 'மீட்டமை'}
-                          </Button>
-                          <Button type="submit" variant="donate" className="w-full">
-                            {language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்'}
-                          </Button>
-                        </div>
-                      </form>
+                          <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset} disabled={examSettingLoading}>
+                              {language === 'en' ? 'Reset' : 'மீட்டமை'}
+                            </Button>
+                            <Button type="submit" variant="donate" className="w-full" disabled={!examApplicationsOpen || examSettingLoading}>
+                              {language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்'}
+                            </Button>
+                          </div>
+                        </form>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -343,7 +402,14 @@ const ExamPage: React.FC = () => {
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
                   <div className="flex items-center gap-2 flex-1">
                     <Search className="w-4 h-4 text-muted-foreground" />
-                    <Input placeholder={language === 'en' ? 'Search subject...' : 'பாடத்தைத் தேடு...'} value={paperFilter.subject} onChange={(e) => { setPaperFilter({ subject: e.target.value }); setExpandedYear(null); }} />
+                    <Input
+                      placeholder={language === 'en' ? 'Search subject...' : 'பாடத்தைத் தேடு...'}
+                      value={paperFilter.subject}
+                      onChange={(e) => {
+                        setPaperFilter({ subject: e.target.value });
+                        setExpandedYear(null);
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -354,12 +420,15 @@ const ExamPage: React.FC = () => {
 
                     return (
                       <div key={year} className="bg-muted rounded-lg p-4">
-                        <button type="button" onClick={() => setExpandedYear(isOpen ? null : year)} className="w-full flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedYear(isOpen ? null : year)}
+                          className="w-full flex items-center justify-between"
+                        >
                           <div className="text-left">
                             <p className="font-semibold text-foreground">{year}</p>
                             <p className="text-sm text-muted-foreground">
-                              {yearPapers.length}{' '}
-                              {yearPapers.length === 1 ? (language === 'en' ? 'paper' : 'வினாத்தாள்') : language === 'en' ? 'papers' : 'வினாத்தாள்கள்'}
+                              {yearPapers.length} {yearPapers.length === 1 ? (language === 'en' ? 'paper' : 'வினாத்தாள்') : language === 'en' ? 'papers' : 'வினாத்தாள்கள்'}
                             </p>
                           </div>
                           <span className="text-sm text-muted-foreground">{isOpen ? (language === 'en' ? 'Hide' : 'மூடு') : language === 'en' ? 'View' : 'காண'}</span>
@@ -367,13 +436,28 @@ const ExamPage: React.FC = () => {
 
                         <AnimatePresence initial={false}>
                           {isOpen && (
-                            <motion.div key={`panel-${year}`} variants={collapseVariants} initial="hidden" animate="visible" exit="exit" transition={{ duration: 0.25, ease: 'easeInOut' }} className="overflow-hidden">
+                            <motion.div
+                              key={`panel-${year}`}
+                              variants={collapseVariants}
+                              initial="hidden"
+                              animate="visible"
+                              exit="exit"
+                              transition={{ duration: 0.25, ease: 'easeInOut' }}
+                              className="overflow-hidden"
+                            >
                               <div className="mt-4 space-y-3">
                                 {yearPapers.length === 0 ? (
                                   <p className="text-center text-muted-foreground py-6">{t('common.noResults')}</p>
                                 ) : (
                                   yearPapers.map((paper) => (
-                                    <motion.div key={paper.id} variants={itemVariants} initial="hidden" animate="visible" transition={{ duration: 0.2 }} className="flex items-center justify-between p-4 bg-card rounded-lg hover:bg-card/80 transition-colors">
+                                    <motion.div
+                                      key={paper.id}
+                                      variants={itemVariants}
+                                      initial="hidden"
+                                      animate="visible"
+                                      transition={{ duration: 0.2 }}
+                                      className="flex items-center justify-between p-4 bg-card rounded-lg hover:bg-card/80 transition-colors"
+                                    >
                                       <div className="flex items-center gap-3">
                                         <FileText className="w-5 h-5 text-secondary" />
                                         <div>
@@ -449,7 +533,11 @@ const ExamPage: React.FC = () => {
                                     ))}
                                   </SelectContent>
                                 </Select>
-                                <Input value={resultsForm.idValue} onChange={(e) => setResultsForm({ ...resultsForm, idValue: e.target.value })} placeholder={language === 'en' ? 'Enter value' : 'உள்ளிடவும்'} />
+                                <Input
+                                  value={resultsForm.idValue}
+                                  onChange={(e) => setResultsForm({ ...resultsForm, idValue: e.target.value })}
+                                  placeholder={language === 'en' ? 'Enter value' : 'உள்ளிடவும்'}
+                                />
                               </div>
                             </div>
 
@@ -492,7 +580,6 @@ const ExamPage: React.FC = () => {
                                 <div className="flex flex-col items-center text-center">
                                   <div className="h-16 w-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 flex items-center justify-center overflow-hidden">
                                     <img src={emblemImg} alt="Emblem" className="h-full w-full object-cover" onError={e => (e.currentTarget.style.display = 'none')} />
-
                                   </div>
 
                                   <div className="mt-4 flex items-center gap-3 w-full max-w-2xl">

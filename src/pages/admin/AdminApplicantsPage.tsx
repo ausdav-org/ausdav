@@ -47,7 +47,10 @@ import {
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { cn } from '@/lib/utils';
+
+type AppSettings = {
+  allow_exam_applications: boolean;
+};
 
 interface Applicant {
   applicant_id: number;
@@ -73,6 +76,9 @@ export default function AdminApplicantsPage() {
   const [filterGender, setFilterGender] = useState<string>('all');
   const [filterSchool, setFilterSchool] = useState<string>('all');
   const [filterYear, setFilterYear] = useState<string>('all');
+  const [allowExamApplications, setAllowExamApplications] = useState<boolean | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   // CSV Upload dialog
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -81,7 +87,49 @@ export default function AdminApplicantsPage() {
 
   useEffect(() => {
     fetchApplicants();
+    loadExamSetting();
   }, []);
+
+  const loadExamSetting = async () => {
+    setSettingsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('app_settings' as any)
+        .select('allow_exam_applications')
+        .eq('id', 1)
+        .maybeSingle<AppSettings>();
+
+      if (error) throw error;
+      setAllowExamApplications(data?.allow_exam_applications ?? false);
+    } catch (error) {
+      console.error('Error loading exam setting:', error);
+      toast.error('Failed to load exam application setting');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const toggleExamSetting = async () => {
+    if (allowExamApplications === null || settingsSaving) return;
+    setSettingsSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('app_settings' as any)
+        .update({ allow_exam_applications: !allowExamApplications })
+        .eq('id', 1)
+        .select('allow_exam_applications')
+        .maybeSingle<AppSettings>();
+
+      if (error) throw error;
+      setAllowExamApplications(data?.allow_exam_applications ?? false);
+      toast.success(data?.allow_exam_applications ? 'Exam applications opened' : 'Exam applications closed');
+    } catch (error) {
+      console.error('Error updating exam setting:', error);
+      toast.error('Failed to update exam application setting');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   const fetchApplicants = async () => {
     try {
@@ -279,11 +327,26 @@ export default function AdminApplicantsPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5" />
-              Applicants ({filteredApplicants.length})
-            </CardTitle>
+            <div className="flex items-center gap-3">
+              <CardTitle className="flex items-center gap-2">
+                <UserPlus className="h-5 w-5" />
+                Applicants ({filteredApplicants.length})
+              </CardTitle>
+              <Badge className={allowExamApplications ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}>
+                {settingsLoading ? 'Loading...' : allowExamApplications ? 'Exam Applications Open' : 'Exam Applications Closed'}
+              </Badge>
+            </div>
             <div className="flex gap-2">
+              <Button
+                variant={allowExamApplications ? 'destructive' : 'default'}
+                onClick={toggleExamSetting}
+                disabled={!isSuperAdmin || settingsLoading || settingsSaving || allowExamApplications === null}
+                title={isSuperAdmin ? undefined : 'Only super admins can change this setting'}
+                className="flex items-center gap-2"
+              >
+                {settingsSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {allowExamApplications ? 'Close Exam Applications' : 'Open Exam Applications'}
+              </Button>
               <Button
                 variant="destructive"
                 onClick={handleBulkDeleteByYear}
