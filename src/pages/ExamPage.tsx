@@ -75,6 +75,7 @@ const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
 const ExamPage: React.FC = () => {
   const { t, language } = useLanguage();
   const [activeTab, setActiveTab] = useState('apply');
+  const [submitting, setSubmitting] = useState(false);
 
   const initialApplyForm = {
     fullName: '',
@@ -83,6 +84,7 @@ const ExamPage: React.FC = () => {
     nic: '',
     exam: '',
     schoolName: '',
+    gender: '' as 'male' | 'female' | '',
     agree: true,
   };
   const [applyForm, setApplyForm] = useState(initialApplyForm);
@@ -144,10 +146,10 @@ const ExamPage: React.FC = () => {
 
   const handleApplyReset = () => setApplyForm(initialApplyForm);
 
-  const handleApplySubmit = (e: React.FormEvent) => {
+  const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!applyForm.fullName || !applyForm.email || !applyForm.phone || !applyForm.nic || !applyForm.schoolName || !applyForm.exam) {
+    if (!applyForm.fullName || !applyForm.email || !applyForm.phone || !applyForm.nic || !applyForm.schoolName || !applyForm.exam || !applyForm.gender) {
       toast.error(language === 'en' ? 'Please fill all required fields' : 'தயவுசெய்து அனைத்து தேவையான புலங்களையும் நிரப்பவும்');
       return;
     }
@@ -162,9 +164,43 @@ const ExamPage: React.FC = () => {
       return;
     }
 
-    const refNumber = `AUSDAV-${Date.now().toString(36).toUpperCase()}`;
-    toast.success(`${language === 'en' ? 'Application submitted. Reference:' : 'விண்ணப்பம் சமர்ப்பிக்கப்பட்டது. குறிப்பு:'} ${refNumber}`);
-    handleApplyReset();
+    setSubmitting(true);
+    try {
+      // Generate a unique index number: AUSDAV-YEAR-RANDOM
+      const year = new Date().getFullYear();
+      const randomPart = Date.now().toString(36).toUpperCase();
+      const indexNo = `AUSDAV-${year}-${randomPart}`;
+
+      const { error } = await supabase
+        .from('applicants' as any)
+        .insert({
+          index_no: indexNo,
+          fullname: applyForm.fullName.trim(),
+          gender: applyForm.gender === 'male', // true for male, false for female
+          stream: applyForm.exam,
+          nic: applyForm.nic.trim(),
+          phone: applyForm.phone.trim(),
+          email: applyForm.email.trim().toLowerCase(),
+          school: applyForm.schoolName,
+          year: year,
+        });
+
+      if (error) throw error;
+
+      toast.success(
+        `${language === 'en' ? 'Application submitted successfully! Your reference number is:' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது! உங்கள் குறிப்பு எண்:'} ${indexNo}`
+      );
+      handleApplyReset();
+    } catch (error: any) {
+      console.error('Error submitting application:', error);
+      toast.error(
+        language === 'en'
+          ? 'Failed to submit application. Please try again.'
+          : 'விண்ணப்பத்தை சமர்ப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleResultsSubmit = (e: React.FormEvent) => {
@@ -384,12 +420,25 @@ const ExamPage: React.FC = () => {
                             </Select>
                           </div>
 
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Gender' : 'பாலினம்'}</label>
+                            <Select value={applyForm.gender} onValueChange={(v) => setApplyForm({ ...applyForm, gender: v as 'male' | 'female' })}>
+                              <SelectTrigger>
+                                <SelectValue placeholder={language === 'en' ? 'Select gender' : 'பாலினத்தைத் தேர்ந்தெடுக்கவும்'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="male">{language === 'en' ? 'Male' : 'ஆண்'}</SelectItem>
+                                <SelectItem value="female">{language === 'en' ? 'Female' : 'பெண்'}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
                           <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset} disabled={examSettingLoading}>
+                            <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset} disabled={examSettingLoading || submitting}>
                               {language === 'en' ? 'Reset' : 'மீட்டமை'}
                             </Button>
-                            <Button type="submit" variant="donate" className="w-full" disabled={!examApplicationsOpen || examSettingLoading}>
-                              {language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்'}
+                            <Button type="submit" variant="donate" className="w-full" disabled={!examApplicationsOpen || examSettingLoading || submitting}>
+                              {submitting ? (language === 'en' ? 'Submitting...' : 'சமர்ப்பிக்கிறது...') : (language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்')}
                             </Button>
                           </div>
                         </form>

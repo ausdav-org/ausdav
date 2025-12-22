@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   UserPlus,
   Search,
@@ -7,13 +7,16 @@ import {
   Download,
   Loader2,
   FileText,
+  Trash2,
+  Users,
+  TrendingUp,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { PermissionGate } from '@/components/admin/PermissionGate';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -27,7 +30,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -45,9 +47,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartConfig,
+} from '@/components/ui/chart';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Legend } from 'recharts';
 
 type AppSettings = {
   allow_exam_applications: boolean;
@@ -76,7 +96,7 @@ export default function AdminApplicantsPage() {
   const [filterStream, setFilterStream] = useState<string>('all');
   const [filterGender, setFilterGender] = useState<string>('all');
   const [filterSchool, setFilterSchool] = useState<string>('all');
-  const [filterYear, setFilterYear] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [allowExamApplications, setAllowExamApplications] = useState<boolean | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -85,6 +105,18 @@ export default function AdminApplicantsPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+
+  // Get unique years from all applicants (descending order)
+  const uniqueYears = useMemo(() => {
+    return [...new Set(applicants.map(a => a.year))].sort((a, b) => b - a);
+  }, [applicants]);
+
+  // Auto-select the latest year when data is loaded
+  useEffect(() => {
+    if (uniqueYears.length > 0 && selectedYear === null) {
+      setSelectedYear(uniqueYears[0]);
+    }
+  }, [uniqueYears, selectedYear]);
 
   useEffect(() => {
     fetchApplicants();
@@ -149,26 +181,60 @@ export default function AdminApplicantsPage() {
     }
   };
 
-  const filteredApplicants = applicants.filter((applicant) => {
-    const matchesSearch =
-      applicant.fullname.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      applicant.index_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      applicant.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      applicant.school.toLowerCase().includes(searchQuery.toLowerCase());
+  // First filter by selected year, then apply other filters
+  const yearApplicants = useMemo(() => {
+    if (selectedYear === null) return [];
+    return applicants.filter(a => a.year === selectedYear);
+  }, [applicants, selectedYear]);
 
-    const matchesStream = filterStream === 'all' || applicant.stream === filterStream;
-    const matchesGender = filterGender === 'all' || 
-      (filterGender === 'male' && applicant.gender) || 
-      (filterGender === 'female' && !applicant.gender);
-    const matchesSchool = filterSchool === 'all' || applicant.school === filterSchool;
-    const matchesYear = filterYear === 'all' || applicant.year.toString() === filterYear;
+  const filteredApplicants = useMemo(() => {
+    return yearApplicants.filter((applicant) => {
+      const matchesSearch =
+        applicant.fullname.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        applicant.index_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        applicant.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        applicant.school.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesSearch && matchesStream && matchesGender && matchesSchool && matchesYear;
-  });
+      const matchesStream = filterStream === 'all' || applicant.stream === filterStream;
+      const matchesGender = filterGender === 'all' || 
+        (filterGender === 'male' && applicant.gender) || 
+        (filterGender === 'female' && !applicant.gender);
+      const matchesSchool = filterSchool === 'all' || applicant.school === filterSchool;
 
-  const uniqueStreams = [...new Set(applicants.map(a => a.stream))];
-  const uniqueSchools = [...new Set(applicants.map(a => a.school))];
-  const uniqueYears = [...new Set(applicants.map(a => a.year))].sort((a, b) => b - a);
+      return matchesSearch && matchesStream && matchesGender && matchesSchool;
+    });
+  }, [yearApplicants, searchQuery, filterStream, filterGender, filterSchool]);
+
+  // Statistics based on filtered applicants
+  const stats = useMemo(() => {
+    const maleCount = filteredApplicants.filter(a => a.gender).length;
+    const femaleCount = filteredApplicants.filter(a => !a.gender).length;
+    
+    // School distribution
+    const schoolCounts: { [key: string]: number } = {};
+    filteredApplicants.forEach(a => {
+      schoolCounts[a.school] = (schoolCounts[a.school] || 0) + 1;
+    });
+    const schoolData = Object.entries(schoolCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10); // Top 10 schools
+
+    // Results distribution
+    const resultsCounts: { [key: string]: number } = {};
+    filteredApplicants.forEach(a => {
+      const result = a.results || 'Not Available';
+      resultsCounts[result] = (resultsCounts[result] || 0) + 1;
+    });
+    const resultsData = Object.entries(resultsCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return { maleCount, femaleCount, schoolData, resultsData };
+  }, [filteredApplicants]);
+
+  const uniqueStreams = useMemo(() => [...new Set(yearApplicants.map(a => a.stream))], [yearApplicants]);
+  const uniqueSchools = useMemo(() => [...new Set(yearApplicants.map(a => a.school))], [yearApplicants]);
 
   const handleCsvUpload = async () => {
     if (!csvFile) {
@@ -284,32 +350,66 @@ export default function AdminApplicantsPage() {
   };
 
   const handleBulkDeleteByYear = async () => {
-    if (filteredApplicants.length === 0) {
-      toast.error('No applicants to delete');
+    if (selectedYear === null) {
+      toast.error('Please select a year');
       return;
     }
 
-    const yearToDelete = filterYear === 'all' ? 'all years' : filterYear;
-    if (!confirm(`Are you sure you want to delete ${filteredApplicants.length} applicants from ${yearToDelete}? This action cannot be undone.`)) {
+    const applicantsToDelete = applicants.filter(a => a.year === selectedYear);
+    if (applicantsToDelete.length === 0) {
+      toast.error('No applicants to delete for this year');
       return;
     }
 
     try {
-      const idsToDelete = filteredApplicants.map(a => a.applicant_id);
       const { error } = await supabase
         .from('applicants' as any)
         .delete()
-        .in('applicant_id', idsToDelete);
+        .eq('year', selectedYear);
 
       if (error) throw error;
 
-      toast.success(`Successfully deleted ${filteredApplicants.length} applicants from ${yearToDelete}`);
-      fetchApplicants();
+      toast.success(`Successfully deleted ${applicantsToDelete.length} applicants from ${selectedYear}`);
+      
+      // Update local state and select next available year
+      const remainingApplicants = applicants.filter(a => a.year !== selectedYear);
+      setApplicants(remainingApplicants);
+      
+      const remainingYears = [...new Set(remainingApplicants.map(a => a.year))].sort((a, b) => b - a);
+      setSelectedYear(remainingYears.length > 0 ? remainingYears[0] : null);
     } catch (error) {
       console.error('Error deleting applicants:', error);
       toast.error('Failed to delete applicants');
     }
   };
+
+  // Chart configurations
+  const schoolChartConfig: ChartConfig = {
+    count: {
+      label: "Students",
+      color: "hsl(var(--chart-1))",
+    },
+  };
+
+  const resultsChartConfig: ChartConfig = {
+    count: {
+      label: "Count",
+      color: "hsl(var(--chart-2))",
+    },
+  };
+
+  const COLORS = [
+    'hsl(var(--chart-1))',
+    'hsl(var(--chart-2))',
+    'hsl(var(--chart-3))',
+    'hsl(var(--chart-4))',
+    'hsl(var(--chart-5))',
+    '#8884d8',
+    '#82ca9d',
+    '#ffc658',
+    '#ff7300',
+    '#00C49F',
+  ];
 
   if (loading) {
     return (
@@ -322,232 +422,432 @@ export default function AdminApplicantsPage() {
   return (
     <PermissionGate permissionKey="applicant" permissionName="Applicant Handling">
       <div className="space-y-6">
-        <AdminHeader
-          title="Applicants Management"
-        />
+        <AdminHeader title="Applicants Management" />
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <CardTitle className="flex items-center gap-2">
-                <UserPlus className="h-5 w-5" />
-                Applicants ({filteredApplicants.length})
-              </CardTitle>
-              <Badge className={allowExamApplications ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}>
-                {settingsLoading ? 'Loading...' : allowExamApplications ? 'Exam Applications Open' : 'Exam Applications Closed'}
-              </Badge>
+        {/* Year Selection Buttons - Pagination Style */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CardTitle className="text-lg">Select Year</CardTitle>
+                <Badge className={allowExamApplications ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}>
+                  {settingsLoading ? 'Loading...' : allowExamApplications ? 'Applications Open' : 'Applications Closed'}
+                </Badge>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant={allowExamApplications ? 'destructive' : 'default'}
+                  size="sm"
+                  onClick={toggleExamSetting}
+                  disabled={!isSuperAdmin || settingsLoading || settingsSaving || allowExamApplications === null}
+                  title={isSuperAdmin ? undefined : 'Only super admins can change this setting'}
+                >
+                  {settingsSaving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                  {allowExamApplications ? 'Close Applications' : 'Open Applications'}
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant={allowExamApplications ? 'destructive' : 'default'}
-                onClick={toggleExamSetting}
-                disabled={!isSuperAdmin || settingsLoading || settingsSaving || allowExamApplications === null}
-                title={isSuperAdmin ? undefined : 'Only super admins can change this setting'}
-                className="flex items-center gap-2"
-              >
-                {settingsSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {allowExamApplications ? 'Close Exam Applications' : 'Open Exam Applications'}
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleBulkDeleteByYear}
-                disabled={filteredApplicants.length === 0}
-                className="flex items-center gap-2"
-              >
-                <FileText className="h-4 w-4" />
-                Delete Filtered ({filteredApplicants.length})
-              </Button>
-              <Button
-                variant="outline"
-                onClick={downloadCsvTemplate}
-                className="flex items-center gap-2"
-              >
-                <Download className="h-4 w-4" />
-                Template
-              </Button>
-              <Button
-                variant="outline"
-                onClick={downloadFilteredApplicantsCsv}
-                className="flex items-center gap-2"
-              >
-                <Download className="h-4 w-4" />
-                Download CSV
-              </Button>
-              <Button
-                onClick={() => setUploadOpen(true)}
-                className="flex items-center gap-2"
-              >
-                <Upload className="h-4 w-4" />
-                Upload CSV
-              </Button>
+          </CardHeader>
+          <CardContent>
+            {uniqueYears.length === 0 ? (
+              <p className="text-muted-foreground text-center py-4">No applicants found</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {uniqueYears.map((year) => {
+                  const yearCount = applicants.filter(a => a.year === year).length;
+                  return (
+                    <Button
+                      key={year}
+                      variant={selectedYear === year ? 'default' : 'outline'}
+                      onClick={() => setSelectedYear(year)}
+                      className="min-w-[100px]"
+                    >
+                      {year}
+                      <Badge variant="secondary" className="ml-2 bg-background/20">
+                        {yearCount}
+                      </Badge>
+                    </Button>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {selectedYear !== null && (
+          <>
+            {/* Filters Section */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Search className="h-5 w-5" />
+                  Filters for {selectedYear}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by name, index, email, school..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  <Select value={filterStream} onValueChange={setFilterStream}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Stream" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Streams</SelectItem>
+                      {uniqueStreams.map((stream) => (
+                        <SelectItem key={stream} value={stream}>
+                          {stream}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterGender} onValueChange={setFilterGender}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Genders</SelectItem>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterSchool} onValueChange={setFilterSchool}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="School" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Schools</SelectItem>
+                      {uniqueSchools.map((school) => (
+                        <SelectItem key={school} value={school}>
+                          {school}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadCsvTemplate}
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Template
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadFilteredApplicantsCsv}
+                      disabled={filteredApplicants.length === 0}
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Export CSV
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setUploadOpen(true)}
+                    >
+                      <Upload className="h-4 w-4 mr-1" />
+                      Import
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Statistics Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Total Count */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Total Applicants</CardDescription>
+                  <CardTitle className="text-3xl flex items-center gap-2">
+                    <Users className="h-6 w-6 text-primary" />
+                    {filteredApplicants.length}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+
+              {/* Male Count */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Male</CardDescription>
+                  <CardTitle className="text-3xl flex items-center gap-2">
+                    <div className="h-6 w-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+                      <span className="text-blue-500 text-sm font-bold">M</span>
+                    </div>
+                    {stats.maleCount}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      ({filteredApplicants.length > 0 ? Math.round((stats.maleCount / filteredApplicants.length) * 100) : 0}%)
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+
+              {/* Female Count */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Female</CardDescription>
+                  <CardTitle className="text-3xl flex items-center gap-2">
+                    <div className="h-6 w-6 rounded-full bg-pink-500/20 flex items-center justify-center">
+                      <span className="text-pink-500 text-sm font-bold">F</span>
+                    </div>
+                    {stats.femaleCount}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      ({filteredApplicants.length > 0 ? Math.round((stats.femaleCount / filteredApplicants.length) * 100) : 0}%)
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+
+              {/* Schools Count */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Schools Represented</CardDescription>
+                  <CardTitle className="text-3xl flex items-center gap-2">
+                    <TrendingUp className="h-6 w-6 text-green-500" />
+                    {stats.schoolData.length}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4 mb-6">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* School Distribution Pie Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">School Distribution (Top 10)</CardTitle>
+                  <CardDescription>Distribution of applicants by school</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stats.schoolData.length > 0 ? (
+                    <ChartContainer config={schoolChartConfig} className="h-[300px]">
+                      <PieChart>
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Pie
+                          data={stats.schoolData}
+                          dataKey="count"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={100}
+                          label={({ name, percent }) => `${name.substring(0, 15)}${name.length > 15 ? '...' : ''} (${(percent * 100).toFixed(0)}%)`}
+                          labelLine={false}
+                        >
+                          {stats.schoolData.map((_, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Legend />
+                      </PieChart>
+                    </ChartContainer>
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                      No data available
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Results Distribution Bar Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Results Distribution</CardTitle>
+                  <CardDescription>Distribution of applicants by results</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stats.resultsData.length > 0 ? (
+                    <ChartContainer config={resultsChartConfig} className="h-[300px]">
+                      <BarChart data={stats.resultsData} layout="vertical">
+                        <XAxis type="number" />
+                        <YAxis 
+                          type="category" 
+                          dataKey="name" 
+                          width={100}
+                          tick={{ fontSize: 12 }}
+                        />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Bar dataKey="count" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ChartContainer>
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                      No data available
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Applicants Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserPlus className="h-5 w-5" />
+                  Applicants List ({filteredApplicants.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Index No</TableHead>
+                        <TableHead>Full Name</TableHead>
+                        <TableHead>Gender</TableHead>
+                        <TableHead>Stream</TableHead>
+                        <TableHead>NIC</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>School</TableHead>
+                        <TableHead>Results</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead className="w-10"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredApplicants.map((applicant) => (
+                        <TableRow key={applicant.applicant_id}>
+                          <TableCell className="font-medium">{applicant.index_no}</TableCell>
+                          <TableCell>{applicant.fullname}</TableCell>
+                          <TableCell>
+                            <Badge variant={applicant.gender ? 'default' : 'secondary'} className={applicant.gender ? 'bg-blue-500/20 text-blue-600' : 'bg-pink-500/20 text-pink-600'}>
+                              {applicant.gender ? 'Male' : 'Female'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{applicant.stream}</Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">{applicant.nic}</TableCell>
+                          <TableCell>{applicant.phone || '-'}</TableCell>
+                          <TableCell className="max-w-[150px] truncate" title={applicant.email || ''}>
+                            {applicant.email || '-'}
+                          </TableCell>
+                          <TableCell className="max-w-[150px] truncate" title={applicant.school}>
+                            {applicant.school}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-muted">
+                              {applicant.results || '-'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {new Date(applicant.created_at).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem>
+                                  <FileText className="h-4 w-4 mr-2" />
+                                  View Details
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {filteredApplicants.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No applicants found for the selected filters
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Delete Year Data Button */}
+            <Card className="border-destructive/50">
+              <CardHeader>
+                <CardTitle className="text-lg text-destructive flex items-center gap-2">
+                  <Trash2 className="h-5 w-5" />
+                  Danger Zone
+                </CardTitle>
+                <CardDescription>
+                  Permanently delete all applicants for {selectedYear}. This action cannot be undone.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" className="w-full sm:w-auto">
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete All {selectedYear} Applicants ({yearApplicants.length})
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete all <strong>{yearApplicants.length}</strong> applicants from year <strong>{selectedYear}</strong>. 
+                        This action cannot be undone and the data cannot be recovered.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleBulkDeleteByYear}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Delete All
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {/* CSV Upload Dialog */}
+        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Upload Applicants CSV</DialogTitle>
+              <DialogDescription>
+                Upload a CSV file with applicant data. The file should have the following columns:
+                index_no, fullname, gender, stream, nic, phone, email, school, results
+                (year will be automatically set based on creation date)
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="csv-file">CSV File</Label>
                 <Input
-                  placeholder="Search applicants..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
+                  id="csv-file"
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
                 />
               </div>
             </div>
-            <Select value={filterStream} onValueChange={setFilterStream}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by stream" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Streams</SelectItem>
-                {uniqueStreams.map((stream) => (
-                  <SelectItem key={stream} value={stream}>
-                    {stream}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filterGender} onValueChange={setFilterGender}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by gender" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Genders</SelectItem>
-                <SelectItem value="male">Male</SelectItem>
-                <SelectItem value="female">Female</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filterSchool} onValueChange={setFilterSchool}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by school" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Schools</SelectItem>
-                {uniqueSchools.map((school) => (
-                  <SelectItem key={school} value={school}>
-                    {school}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filterYear} onValueChange={setFilterYear}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by year" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Years</SelectItem>
-                {uniqueYears.map((year) => (
-                  <SelectItem key={year} value={year.toString()}>
-                    {year}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Index No</TableHead>
-                  <TableHead>Full Name</TableHead>
-                  <TableHead>Gender</TableHead>
-                  <TableHead>Stream</TableHead>
-                  <TableHead>NIC</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>School</TableHead>
-                  <TableHead>Results</TableHead>
-                  <TableHead>Year</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredApplicants.map((applicant) => (
-                  <TableRow key={applicant.applicant_id}>
-                    <TableCell className="font-medium">{applicant.index_no}</TableCell>
-                    <TableCell>{applicant.fullname}</TableCell>
-                    <TableCell>
-                      <Badge variant={applicant.gender ? 'default' : 'secondary'}>
-                        {applicant.gender ? 'Male' : 'Female'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{applicant.stream}</TableCell>
-                    <TableCell>{applicant.nic}</TableCell>
-                    <TableCell>{applicant.phone || '-'}</TableCell>
-                    <TableCell>{applicant.email || '-'}</TableCell>
-                    <TableCell>{applicant.school}</TableCell>
-                    <TableCell>{applicant.results || '-'}</TableCell>
-                    <TableCell>{applicant.year}</TableCell>
-                    <TableCell>
-                      {new Date(applicant.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <FileText className="h-4 w-4 mr-2" />
-                            View Details
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {filteredApplicants.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              No applicants found
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* CSV Upload Dialog */}
-      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upload Applicants CSV</DialogTitle>
-            <DialogDescription>
-              Upload a CSV file with applicant data. The file should have the following columns:
-              index_no, fullname, gender, stream, nic, phone, email, school, results
-              (year will be automatically set based on creation date)
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="csv-file">CSV File</Label>
-              <Input
-                id="csv-file"
-                type="file"
-                accept=".csv"
-                onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUploadOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCsvUpload} disabled={uploading}>
-              {uploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Upload
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setUploadOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCsvUpload} disabled={uploading}>
+                {uploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Upload
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PermissionGate>
   );
