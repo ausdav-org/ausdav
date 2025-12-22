@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Upload, X, Loader2 } from 'lucide-react';
+import { ArrowLeft, Upload, X, Loader2, Trash2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface GalleryBulkUploadProps {
@@ -21,6 +21,7 @@ type GalleryImageRow = {
   gallery_id: string;
   file_path: string;
   created_at: string;
+  created_by?: string;
 };
 
 type GalleryImageInsert = {
@@ -79,6 +80,7 @@ const GalleryBulkUpload: React.FC<GalleryBulkUploadProps> = ({ galleryId, eventI
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['galleries', eventId] });
+      queryClient.invalidateQueries({ queryKey: ['gallery-images', galleryId] });
       toast.success('Images uploaded successfully');
       setSelectedFiles([]);
     },
@@ -87,6 +89,63 @@ const GalleryBulkUpload: React.FC<GalleryBulkUploadProps> = ({ galleryId, eventI
     },
     onSettled: () => {
       setIsUploading(false);
+    },
+  });
+
+  // Fetch existing gallery images
+  const { data: existingImages, isLoading: imagesLoading } = useQuery({
+    queryKey: ['gallery-images', galleryId],
+    queryFn: async () => {
+      const { data, error } = await supabaseDb
+        .from('gallery_images')
+        .select('id, file_path, created_at, created_by')
+        .eq('gallery_id', galleryId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data as (GalleryImageRow & { created_by: string })[];
+    },
+  });
+
+  // Delete image mutation
+  const deleteImageMutation = useMutation({
+    mutationFn: async ({ imageId, filePath }: { imageId: string; filePath: string }) => {
+      console.log('Attempting to delete image:', { imageId, filePath });
+
+      // First delete from database to ensure we don't lose the record if storage fails
+      const { error: dbError } = await supabaseDb
+        .from('gallery_images')
+        .delete()
+        .eq('id', imageId);
+
+      if (dbError) {
+        console.error('Database deletion failed:', dbError);
+        throw new Error('Failed to delete from database: ' + dbError.message);
+      }
+
+      // Then delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('event-gallery')
+        .remove([filePath]);
+
+      if (storageError) {
+        console.error('Storage deletion failed:', storageError);
+        // Don't throw here - database record is already deleted
+        // Log the error but don't fail the operation
+        console.warn('File may still exist in storage:', filePath);
+      } else {
+        console.log('Successfully deleted from storage:', filePath);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['gallery-images', galleryId] });
+      queryClient.invalidateQueries({ queryKey: ['galleries', eventId] });
+      toast.success('Image deleted successfully');
+    },
+    onError: (error) => {
+      console.error('Delete operation failed:', error);
+      toast.error('Failed to delete image: ' + error.message);
+      // Refresh queries to show current state
+      queryClient.invalidateQueries({ queryKey: ['gallery-images', galleryId] });
     },
   });
 
@@ -190,6 +249,76 @@ const GalleryBulkUpload: React.FC<GalleryBulkUploadProps> = ({ galleryId, eventI
               )}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Existing Images Management */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Eye className="w-5 h-5 text-accent" />
+            Gallery Images ({existingImages?.length || 0})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {imagesLoading ? (
+            <div className="text-center py-8">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+              Loading images...
+            </div>
+          ) : existingImages && existingImages.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {existingImages.map((image) => {
+                const { data: imageUrl } = supabase.storage
+                  .from('event-gallery')
+                  .getPublicUrl(image.file_path);
+
+                return (
+                  <div key={image.id} className="relative group">
+                    <img
+                      src={imageUrl?.publicUrl}
+                      alt="Gallery image"
+                      className="w-full h-24 object-cover rounded border"
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded flex items-center justify-center gap-2">
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="w-8 h-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => window.open(imageUrl?.publicUrl, '_blank')}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                      {image.created_by && (
+                        <Button
+                          variant="destructive"
+                          size="icon"
+                          className="w-8 h-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => {
+                            if (confirm('Are you sure you want to delete this image?')) {
+                              deleteImageMutation.mutate({ imageId: image.id, filePath: image.file_path });
+                            }
+                          }}
+                          disabled={deleteImageMutation.isPending}
+                          title="Delete image"
+                        >
+                          {deleteImageMutation.isPending ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No images in this gallery yet. Upload some images above.
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

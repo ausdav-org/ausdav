@@ -261,7 +261,79 @@ const AdminEventsPage: React.FC = () => {
     },
   });
 
-  // Delete event mutation
+  // Delete gallery mutation
+  const deleteGalleryMutation = useMutation({
+    mutationFn: async (galleryId: string) => {
+      console.log('Starting gallery deletion for:', galleryId);
+
+      // First, get all images associated with this gallery
+      const { data: galleryImages, error: fetchError } = await supabaseDb
+        .from('gallery_images')
+        .select('id, file_path')
+        .eq('gallery_id', galleryId);
+
+      if (fetchError) {
+        console.error('Failed to fetch gallery images:', fetchError);
+        throw new Error('Failed to fetch gallery images: ' + fetchError.message);
+      }
+
+      console.log('Found images to delete:', galleryImages?.length || 0);
+
+      // Delete images from storage if any exist
+      if (galleryImages && galleryImages.length > 0) {
+        const filePaths = galleryImages.map(img => img.file_path);
+        console.log('Deleting files from storage:', filePaths);
+
+        const { error: storageError } = await supabase.storage
+          .from('event-gallery')
+          .remove(filePaths);
+
+        if (storageError) {
+          console.error('Storage deletion failed:', storageError);
+          // Continue with database deletion even if storage fails
+          console.warn('Continuing with database deletion despite storage error');
+        } else {
+          console.log('Successfully deleted files from storage');
+        }
+
+        // Delete all gallery_images records
+        const { error: imagesDeleteError } = await supabaseDb
+          .from('gallery_images')
+          .delete()
+          .eq('gallery_id', galleryId);
+
+        if (imagesDeleteError) {
+          console.error('Failed to delete gallery images from database:', imagesDeleteError);
+          throw new Error('Failed to delete gallery images: ' + imagesDeleteError.message);
+        }
+
+        console.log('Successfully deleted gallery images from database');
+      }
+
+      // Finally, delete the gallery record
+      const { error: galleryDeleteError } = await supabaseDb
+        .from('galleries')
+        .delete()
+        .eq('id', galleryId);
+
+      if (galleryDeleteError) {
+        console.error('Failed to delete gallery:', galleryDeleteError);
+        throw new Error('Failed to delete gallery: ' + galleryDeleteError.message);
+      }
+
+      console.log('Successfully deleted gallery record');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['galleries', selectedEventForGallery?.id ?? null] });
+      toast.success('Gallery and all associated images deleted successfully');
+    },
+    onError: (error) => {
+      console.error('Gallery deletion failed:', error);
+      toast.error('Failed to delete gallery: ' + error.message);
+      // Refresh queries to show current state
+      queryClient.invalidateQueries({ queryKey: ['galleries', selectedEventForGallery?.id ?? null] });
+    },
+  });
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const { error } = await supabase
@@ -569,15 +641,31 @@ const AdminEventsPage: React.FC = () => {
                       <CardContent>
                         <p>Year: {gallery.year}</p>
                         <p>Created: {format(new Date(gallery.created_at), 'MMM d, yyyy')}</p>
-                        <Button
-                          onClick={() => {
-                            setCreatedGalleryId(gallery.id);
-                            setShowBulkUpload(true);
-                          }}
-                          className="mt-2"
-                        >
-                          Add Images
-                        </Button>
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            onClick={() => {
+                              setCreatedGalleryId(gallery.id);
+                              setShowBulkUpload(true);
+                            }}
+                          >
+                            Add Images
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this gallery? This will also delete all images in the gallery.')) {
+                                deleteGalleryMutation.mutate(gallery.id);
+                              }
+                            }}
+                            disabled={deleteGalleryMutation.isPending}
+                          >
+                            {deleteGalleryMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
