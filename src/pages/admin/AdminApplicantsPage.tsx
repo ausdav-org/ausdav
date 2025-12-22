@@ -61,6 +61,7 @@ interface Applicant {
   school: string;
   results: string | null;
   created_at: string;
+  year: number;
 }
 
 export default function AdminApplicantsPage() {
@@ -69,6 +70,9 @@ export default function AdminApplicantsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStream, setFilterStream] = useState<string>('all');
+  const [filterGender, setFilterGender] = useState<string>('all');
+  const [filterSchool, setFilterSchool] = useState<string>('all');
+  const [filterYear, setFilterYear] = useState<string>('all');
 
   // CSV Upload dialog
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -104,11 +108,18 @@ export default function AdminApplicantsPage() {
       applicant.school.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesStream = filterStream === 'all' || applicant.stream === filterStream;
+    const matchesGender = filterGender === 'all' || 
+      (filterGender === 'male' && applicant.gender) || 
+      (filterGender === 'female' && !applicant.gender);
+    const matchesSchool = filterSchool === 'all' || applicant.school === filterSchool;
+    const matchesYear = filterYear === 'all' || applicant.year.toString() === filterYear;
 
-    return matchesSearch && matchesStream;
+    return matchesSearch && matchesStream && matchesGender && matchesSchool && matchesYear;
   });
 
   const uniqueStreams = [...new Set(applicants.map(a => a.stream))];
+  const uniqueSchools = [...new Set(applicants.map(a => a.school))];
+  const uniqueYears = [...new Set(applicants.map(a => a.year))].sort((a, b) => b - a);
 
   const handleCsvUpload = async () => {
     if (!csvFile) {
@@ -188,6 +199,69 @@ export default function AdminApplicantsPage() {
     window.URL.revokeObjectURL(url);
   };
 
+  const downloadFilteredApplicantsCsv = () => {
+    if (filteredApplicants.length === 0) {
+      toast.error('No applicants to download');
+      return;
+    }
+
+    const headers = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results', 'year', 'created_at'];
+    const csvRows = [
+      headers.join(','),
+      ...filteredApplicants.map(applicant => [
+        `"${applicant.index_no}"`,
+        `"${applicant.fullname}"`,
+        applicant.gender ? 'male' : 'female',
+        `"${applicant.stream}"`,
+        `"${applicant.nic}"`,
+        `"${applicant.phone || ''}"`,
+        `"${applicant.email || ''}"`,
+        `"${applicant.school}"`,
+        `"${applicant.results || ''}"`,
+        applicant.year,
+        `"${applicant.created_at}"`
+      ].join(','))
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `applicants_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${filteredApplicants.length} applicants`);
+  };
+
+  const handleBulkDeleteByYear = async () => {
+    if (filteredApplicants.length === 0) {
+      toast.error('No applicants to delete');
+      return;
+    }
+
+    const yearToDelete = filterYear === 'all' ? 'all years' : filterYear;
+    if (!confirm(`Are you sure you want to delete ${filteredApplicants.length} applicants from ${yearToDelete}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const idsToDelete = filteredApplicants.map(a => a.applicant_id);
+      const { error } = await supabase
+        .from('applicants' as any)
+        .delete()
+        .in('applicant_id', idsToDelete);
+
+      if (error) throw error;
+
+      toast.success(`Successfully deleted ${filteredApplicants.length} applicants from ${yearToDelete}`);
+      fetchApplicants();
+    } catch (error) {
+      console.error('Error deleting applicants:', error);
+      toast.error('Failed to delete applicants');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -211,12 +285,29 @@ export default function AdminApplicantsPage() {
             </CardTitle>
             <div className="flex gap-2">
               <Button
+                variant="destructive"
+                onClick={handleBulkDeleteByYear}
+                disabled={filteredApplicants.length === 0}
+                className="flex items-center gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                Delete Filtered ({filteredApplicants.length})
+              </Button>
+              <Button
                 variant="outline"
                 onClick={downloadCsvTemplate}
                 className="flex items-center gap-2"
               >
                 <Download className="h-4 w-4" />
                 Template
+              </Button>
+              <Button
+                variant="outline"
+                onClick={downloadFilteredApplicantsCsv}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Download CSV
               </Button>
               <Button
                 onClick={() => setUploadOpen(true)}
@@ -254,6 +345,42 @@ export default function AdminApplicantsPage() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={filterGender} onValueChange={setFilterGender}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Filter by gender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Genders</SelectItem>
+                <SelectItem value="male">Male</SelectItem>
+                <SelectItem value="female">Female</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterSchool} onValueChange={setFilterSchool}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Filter by school" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Schools</SelectItem>
+                {uniqueSchools.map((school) => (
+                  <SelectItem key={school} value={school}>
+                    {school}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterYear} onValueChange={setFilterYear}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Filter by year" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Years</SelectItem>
+                {uniqueYears.map((year) => (
+                  <SelectItem key={year} value={year.toString()}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="rounded-md border">
@@ -269,6 +396,7 @@ export default function AdminApplicantsPage() {
                   <TableHead>Email</TableHead>
                   <TableHead>School</TableHead>
                   <TableHead>Results</TableHead>
+                  <TableHead>Year</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
@@ -289,6 +417,7 @@ export default function AdminApplicantsPage() {
                     <TableCell>{applicant.email || '-'}</TableCell>
                     <TableCell>{applicant.school}</TableCell>
                     <TableCell>{applicant.results || '-'}</TableCell>
+                    <TableCell>{applicant.year}</TableCell>
                     <TableCell>
                       {new Date(applicant.created_at).toLocaleDateString()}
                     </TableCell>
@@ -329,6 +458,7 @@ export default function AdminApplicantsPage() {
             <DialogDescription>
               Upload a CSV file with applicant data. The file should have the following columns:
               index_no, fullname, gender, stream, nic, phone, email, school, results
+              (year will be automatically set based on creation date)
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
