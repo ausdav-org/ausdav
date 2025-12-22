@@ -8,10 +8,8 @@ import {
   Loader2,
   Eye,
   EyeOff,
-  GripVertical,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
-import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,13 +24,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -41,36 +32,40 @@ interface Announcement {
   id: string;
   title_en: string;
   title_ta: string | null;
-  message_en: string | null;
-  message_ta: string | null;
-  tag: string;
-  link_url: string | null;
-  cta_label: string | null;
+  description_en: string | null;
+  description_ta: string | null;
+  category: string;
   is_active: boolean;
-  priority: number;
   created_at: string;
+  updated_at?: string | null;
+  start_at: string | null;
+  end_at: string | null;
+  is_permanent: boolean;
+  img_bucket?: string | null;
+  img_path?: string | null;
 }
 
-const tags = ['General', 'Event', 'Exam', 'Notice', 'Urgent'];
-
 export default function AdminAnnouncementsPage() {
-  const { user } = useAdminAuth();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     title_en: '',
     title_ta: '',
-    message_en: '',
-    message_ta: '',
-    tag: 'General',
-    link_url: '',
-    cta_label: '',
+    description_en: '',
+    description_ta: '',
+    category: 'General',
     is_active: true,
-    priority: 0,
+    start_at: '',
+    end_at: '',
+    is_permanent: false,
+    img_bucket: 'announcements',
+    img_path: '',
   });
 
   useEffect(() => {
@@ -82,11 +77,26 @@ export default function AdminAnnouncementsPage() {
       const { data, error } = await supabase
         .from('announcements')
         .select('*')
-        .order('priority', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setAnnouncements(data || []);
+      const mapped: Announcement[] = (data || []).map((a: any) => ({
+        id: a.id ?? a.announcement_id ?? a.announcementId ?? '',
+        title_en: a.title_en ?? a.title ?? '',
+        title_ta: a.title_ta ?? null,
+        description_en: a.description_en ?? a.message_en ?? a.description ?? null,
+        description_ta: a.description_ta ?? a.message_ta ?? null,
+        category: a.category ?? 'General',
+        is_active: a.is_active ?? true,
+        created_at: a.created_at ?? new Date().toISOString(),
+        updated_at: a.updated_at ?? null,
+        start_at: a.start_at ?? null,
+        end_at: a.end_at ?? null,
+        is_permanent: a.is_permanent ?? false,
+        img_bucket: a.img_bucket ?? 'announcements',
+        img_path: a.img_path ?? null,
+      }));
+      setAnnouncements(mapped);
     } catch (error) {
       console.error('Error fetching announcements:', error);
       toast.error('Failed to fetch announcements');
@@ -95,19 +105,27 @@ export default function AdminAnnouncementsPage() {
     }
   };
 
+  const toInputValue = (iso: string) => new Date(iso).toISOString().slice(0, 16);
+
+  const toIsoOrNull = (value: string) => (value ? new Date(value).toISOString() : null);
+
   const resetForm = () => {
     setFormData({
       title_en: '',
       title_ta: '',
-      message_en: '',
-      message_ta: '',
-      tag: 'General',
-      link_url: '',
-      cta_label: '',
+      description_en: '',
+      description_ta: '',
+      category: 'General',
       is_active: true,
-      priority: 0,
+      start_at: '',
+      end_at: '',
+      is_permanent: false,
+      img_bucket: 'announcements',
+      img_path: '',
     });
     setEditingId(null);
+    setImageFile(null);
+    setImagePreviewUrl(null);
   };
 
   const openCreateDialog = () => {
@@ -119,16 +137,47 @@ export default function AdminAnnouncementsPage() {
     setFormData({
       title_en: announcement.title_en,
       title_ta: announcement.title_ta || '',
-      message_en: announcement.message_en || '',
-      message_ta: announcement.message_ta || '',
-      tag: announcement.tag || 'General',
-      link_url: announcement.link_url || '',
-      cta_label: announcement.cta_label || '',
+      description_en: announcement.description_en || '',
+      description_ta: announcement.description_ta || '',
+      category: announcement.category || 'General',
       is_active: announcement.is_active,
-      priority: announcement.priority,
+      start_at: announcement.start_at ? toInputValue(announcement.start_at) : '',
+      end_at: announcement.end_at ? toInputValue(announcement.end_at) : '',
+      is_permanent: announcement.is_permanent,
+      img_bucket: announcement.img_bucket || 'announcements',
+      img_path: announcement.img_path || '',
     });
     setEditingId(announcement.id);
+    if (announcement.img_path) {
+      const { data } = supabase.storage
+        .from(announcement.img_bucket || 'announcements')
+        .getPublicUrl(announcement.img_path);
+      setImagePreviewUrl(data?.publicUrl || null);
+    } else {
+      setImagePreviewUrl(null);
+    }
+    setImageFile(null);
     setDialogOpen(true);
+  };
+
+  const uploadImageIfNeeded = async () => {
+    if (!imageFile) {
+      return formData.img_path
+        ? { bucket: formData.img_bucket || 'announcements', path: formData.img_path }
+        : null;
+    }
+
+    const ext = imageFile.name.split('.').pop() || 'jpg';
+    const bucket = 'announcements';
+    const path = `announcements/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(path, imageFile, { upsert: true, contentType: imageFile.type });
+
+    if (uploadError) throw uploadError;
+
+    return { bucket, path };
   };
 
   const handleSave = async () => {
@@ -137,19 +186,30 @@ export default function AdminAnnouncementsPage() {
       return;
     }
 
+    if (!formData.category) {
+      toast.error('Category is required');
+      return;
+    }
+
     setSaving(true);
     try {
+      const uploaded = await uploadImageIfNeeded();
+
+      const img_bucket = uploaded?.bucket || formData.img_bucket || 'announcements';
+      const img_path = uploaded?.path || formData.img_path || null;
+
       const payload = {
         title_en: formData.title_en,
         title_ta: formData.title_ta || null,
-        message_en: formData.message_en || null,
-        message_ta: formData.message_ta || null,
-        tag: formData.tag,
-        link_url: formData.link_url || null,
-        cta_label: formData.cta_label || null,
+        description_en: formData.description_en || null,
+        description_ta: formData.description_ta || null,
+        category: formData.category,
         is_active: formData.is_active,
-        priority: formData.priority,
-        created_by: user?.id,
+        start_at: toIsoOrNull(formData.start_at),
+        end_at: formData.is_permanent ? null : toIsoOrNull(formData.end_at),
+        is_permanent: formData.is_permanent,
+        img_bucket,
+        img_path,
       };
 
       if (editingId) {
@@ -164,9 +224,6 @@ export default function AdminAnnouncementsPage() {
         if (error) throw error;
         toast.success('Announcement created');
       }
-
-      setDialogOpen(false);
-      resetForm();
       fetchAnnouncements();
     } catch (error: any) {
       toast.error(error.message || 'Failed to save announcement');
@@ -207,15 +264,15 @@ export default function AdminAnnouncementsPage() {
     }
   };
 
-  const getTagColor = (tag: string) => {
-    switch (tag) {
-      case 'Urgent':
+  const getCategoryColor = (category: string) => {
+    switch (category.toLowerCase()) {
+      case 'urgent':
         return 'bg-red-500/20 text-red-400';
-      case 'Event':
+      case 'event':
         return 'bg-purple-500/20 text-purple-400';
-      case 'Exam':
+      case 'exam':
         return 'bg-blue-500/20 text-blue-400';
-      case 'Notice':
+      case 'notice':
         return 'bg-yellow-500/20 text-yellow-400';
       default:
         return 'bg-muted text-muted-foreground';
@@ -268,17 +325,14 @@ export default function AdminAnnouncementsPage() {
                     <div className="flex items-start gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                          <Badge className={getTagColor(announcement.tag)}>
-                            {announcement.tag}
+                          <Badge className={getCategoryColor(announcement.category)}>
+                            {announcement.category}
                           </Badge>
                           {!announcement.is_active && (
                             <Badge className="bg-muted text-muted-foreground">
                               Hidden
                             </Badge>
                           )}
-                          <span className="text-xs text-muted-foreground ml-auto">
-                            Priority: {announcement.priority}
-                          </span>
                         </div>
                         <h3 className="font-semibold">{announcement.title_en}</h3>
                         {announcement.title_ta && (
@@ -286,9 +340,14 @@ export default function AdminAnnouncementsPage() {
                             {announcement.title_ta}
                           </p>
                         )}
-                        {announcement.message_en && (
+                        {announcement.description_en && (
                           <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                            {announcement.message_en}
+                            {announcement.description_en}
+                          </p>
+                        )}
+                        {announcement.description_ta && (
+                          <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                            {announcement.description_ta}
                           </p>
                         )}
                       </div>
@@ -360,101 +419,118 @@ export default function AdminAnnouncementsPage() {
                 />
               </div>
             </div>
-
+            <div className="space-y-2">
+              <Label>Category *</Label>
+              <Input
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                placeholder="General"
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Message (English)</Label>
+                <Label>Description (English)</Label>
                 <Textarea
-                  value={formData.message_en}
+                  value={formData.description_en}
                   onChange={(e) =>
-                    setFormData({ ...formData, message_en: e.target.value })
+                    setFormData({ ...formData, description_en: e.target.value })
                   }
-                  placeholder="Optional message"
+                  placeholder="Optional description"
                   rows={3}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Message (Tamil)</Label>
+                <Label>Description (Tamil)</Label>
                 <Textarea
-                  value={formData.message_ta}
+                  value={formData.description_ta}
                   onChange={(e) =>
-                    setFormData({ ...formData, message_ta: e.target.value })
+                    setFormData({ ...formData, description_ta: e.target.value })
                   }
-                  placeholder="விருப்பமான செய்தி"
+                  placeholder="விருப்பமான விளக்கம்"
                   rows={3}
                 />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Active</Label>
+              <div className="flex items-center gap-2 pt-2">
+                <Switch
+                  checked={formData.is_active}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, is_active: checked })
+                  }
+                />
+                <span className="text-sm text-muted-foreground">
+                  {formData.is_active ? 'Visible' : 'Hidden'}
+                </span>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Tag</Label>
-                <Select
-                  value={formData.tag}
-                  onValueChange={(v) => setFormData({ ...formData, tag: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tags.map((tag) => (
-                      <SelectItem key={tag} value={tag}>
-                        {tag}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Priority</Label>
+                <Label>Start At</Label>
                 <Input
-                  type="number"
-                  value={formData.priority}
-                  onChange={(e) =>
-                    setFormData({ ...formData, priority: parseInt(e.target.value) || 0 })
-                  }
-                  placeholder="0"
+                  type="datetime-local"
+                  value={formData.start_at}
+                  onChange={(e) => setFormData({ ...formData, start_at: e.target.value })}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>Active</Label>
+                <Label>End At</Label>
+                <Input
+                  type="datetime-local"
+                  value={formData.end_at}
+                  onChange={(e) => setFormData({ ...formData, end_at: e.target.value })}
+                  disabled={formData.is_permanent}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Permanent</Label>
                 <div className="flex items-center gap-2 pt-2">
                   <Switch
-                    checked={formData.is_active}
+                    checked={formData.is_permanent}
                     onCheckedChange={(checked) =>
-                      setFormData({ ...formData, is_active: checked })
+                      setFormData({
+                        ...formData,
+                        is_permanent: checked,
+                        end_at: checked ? '' : formData.end_at,
+                      })
                     }
                   />
                   <span className="text-sm text-muted-foreground">
-                    {formData.is_active ? 'Visible' : 'Hidden'}
+                    {formData.is_permanent ? 'No end date' : 'Ends at time'}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Link URL</Label>
+            <div className="space-y-2">
+              <Label>Announcement Image</Label>
+              <div className="flex items-center gap-4">
                 <Input
-                  value={formData.link_url}
-                  onChange={(e) =>
-                    setFormData({ ...formData, link_url: e.target.value })
-                  }
-                  placeholder="https://..."
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    setImageFile(file || null);
+                    setImagePreviewUrl(file ? URL.createObjectURL(file) : null);
+                  }}
                 />
+                {imagePreviewUrl && (
+                  <img
+                    src={imagePreviewUrl}
+                    alt="Preview"
+                    className="h-16 w-16 rounded object-cover border"
+                  />
+                )}
               </div>
-              <div className="space-y-2">
-                <Label>CTA Label</Label>
-                <Input
-                  value={formData.cta_label}
-                  onChange={(e) =>
-                    setFormData({ ...formData, cta_label: e.target.value })
-                  }
-                  placeholder="Learn More"
-                />
-              </div>
+              {formData.img_path && !imagePreviewUrl && (
+                <div className="text-sm text-muted-foreground">
+                  Existing image stored at {formData.img_path}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
