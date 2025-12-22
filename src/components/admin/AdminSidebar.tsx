@@ -16,6 +16,7 @@ import {
   Megaphone,
   Shield,
   GraduationCap,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { title: 'Members', href: '/admin/members', icon: Users, roles: ['admin', 'super_admin'] },
   { title: 'Events', href: '/admin/events', icon: CalendarDays, roles: ['admin', 'super_admin'] },
   { title: 'Exam', href: '/admin/exam', icon: GraduationCap, roles: ['admin', 'super_admin'] },
+  { title: 'Seminar', href: '/admin/seminar', icon: BookOpen, roles: ['admin', 'super_admin'] },
   { title: 'Submit Finance', href: '/admin/finance/submit', icon: Receipt, roles: ['member'] },
   { title: 'Verify Finance', href: '/admin/finance/verify', icon: CheckSquare, roles: ['admin', 'super_admin'] },
   { title: 'Finance Ledger', href: '/admin/finance/ledger', icon: DollarSign, roles: ['admin', 'super_admin'] },
