@@ -1,0 +1,358 @@
+import { useEffect, useState } from 'react';
+import {
+  UserPlus,
+  Search,
+  MoreVertical,
+  Upload,
+  Download,
+  Loader2,
+  FileText,
+} from 'lucide-react';
+import { AdminHeader } from '@/components/admin/AdminHeader';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { cn } from '@/lib/utils';
+
+interface Applicant {
+  applicant_id: number;
+  index_no: string;
+  fullname: string;
+  gender: boolean;
+  stream: string;
+  nic: string;
+  phone: string | null;
+  email: string | null;
+  school: string;
+  results: string | null;
+  created_at: string;
+}
+
+export default function AdminApplicantsPage() {
+  const { isSuperAdmin } = useAdminAuth();
+  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStream, setFilterStream] = useState<string>('all');
+
+  // CSV Upload dialog
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    fetchApplicants();
+  }, []);
+
+  const fetchApplicants = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('applicants' as any)
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setApplicants((data as unknown as Applicant[]) || []);
+    } catch (error) {
+      console.error('Error fetching applicants:', error);
+      toast.error('Failed to fetch applicants');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredApplicants = applicants.filter((applicant) => {
+    const matchesSearch =
+      applicant.fullname.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      applicant.index_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      applicant.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      applicant.school.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesStream = filterStream === 'all' || applicant.stream === filterStream;
+
+    return matchesSearch && matchesStream;
+  });
+
+  const uniqueStreams = [...new Set(applicants.map(a => a.stream))];
+
+  const handleCsvUpload = async () => {
+    if (!csvFile) {
+      toast.error('Please select a CSV file');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const text = await csvFile.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+
+      // Expected headers: index_no,fullname,gender,stream,nic,phone,email,school,results
+      const expectedHeaders = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results'];
+      const headerMap: { [key: string]: number } = {};
+
+      expectedHeaders.forEach(expected => {
+        const index = headers.indexOf(expected);
+        if (index === -1) {
+          throw new Error(`Missing required column: ${expected}`);
+        }
+        headerMap[expected] = index;
+      });
+
+      const records = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        if (values.length !== headers.length) continue; // Skip malformed lines
+
+        const record = {
+          index_no: values[headerMap.index_no],
+          fullname: values[headerMap.fullname],
+          gender: values[headerMap.gender].toLowerCase() === 'male' || values[headerMap.gender] === '1' || values[headerMap.gender].toLowerCase() === 'true',
+          stream: values[headerMap.stream],
+          nic: values[headerMap.nic],
+          phone: values[headerMap.phone] || null,
+          email: values[headerMap.email] || null,
+          school: values[headerMap.school],
+          results: values[headerMap.results] || null,
+        };
+
+        records.push(record);
+      }
+
+      if (records.length === 0) {
+        throw new Error('No valid records found in CSV');
+      }
+
+      const { error } = await supabase
+        .from('applicants' as any)
+        .insert(records);
+
+      if (error) throw error;
+
+      toast.success(`Successfully uploaded ${records.length} applicants`);
+      setUploadOpen(false);
+      setCsvFile(null);
+      fetchApplicants();
+    } catch (error: any) {
+      console.error('Error uploading CSV:', error);
+      toast.error(error.message || 'Failed to upload CSV');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const downloadCsvTemplate = () => {
+    const headers = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results'];
+    const csvContent = headers.join(',') + '\n';
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'applicants_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <AdminHeader
+        title="Applicants Management"
+      />
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Applicants ({filteredApplicants.length})
+            </CardTitle>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={downloadCsvTemplate}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Template
+              </Button>
+              <Button
+                onClick={() => setUploadOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <Upload className="h-4 w-4" />
+                Upload CSV
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-4 mb-6">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search applicants..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <Select value={filterStream} onValueChange={setFilterStream}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Filter by stream" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Streams</SelectItem>
+                {uniqueStreams.map((stream) => (
+                  <SelectItem key={stream} value={stream}>
+                    {stream}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Index No</TableHead>
+                  <TableHead>Full Name</TableHead>
+                  <TableHead>Gender</TableHead>
+                  <TableHead>Stream</TableHead>
+                  <TableHead>NIC</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>School</TableHead>
+                  <TableHead>Results</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="w-10"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredApplicants.map((applicant) => (
+                  <TableRow key={applicant.applicant_id}>
+                    <TableCell className="font-medium">{applicant.index_no}</TableCell>
+                    <TableCell>{applicant.fullname}</TableCell>
+                    <TableCell>
+                      <Badge variant={applicant.gender ? 'default' : 'secondary'}>
+                        {applicant.gender ? 'Male' : 'Female'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{applicant.stream}</TableCell>
+                    <TableCell>{applicant.nic}</TableCell>
+                    <TableCell>{applicant.phone || '-'}</TableCell>
+                    <TableCell>{applicant.email || '-'}</TableCell>
+                    <TableCell>{applicant.school}</TableCell>
+                    <TableCell>{applicant.results || '-'}</TableCell>
+                    <TableCell>
+                      {new Date(applicant.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem>
+                            <FileText className="h-4 w-4 mr-2" />
+                            View Details
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {filteredApplicants.length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              No applicants found
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* CSV Upload Dialog */}
+      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Applicants CSV</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file with applicant data. The file should have the following columns:
+              index_no, fullname, gender, stream, nic, phone, email, school, results
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="csv-file">CSV File</Label>
+              <Input
+                id="csv-file"
+                type="file"
+                accept=".csv"
+                onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCsvUpload} disabled={uploading}>
+              {uploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Upload
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

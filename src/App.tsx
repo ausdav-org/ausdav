@@ -38,6 +38,7 @@ import FinanceLedgerPage from "@/pages/admin/finance/FinanceLedgerPage";
 import ProfileSetupPage from "@/pages/admin/ProfileSetupPage";
 import AdminExamPage from "@/pages/admin/AdminExamPage";
 import AdminSeminarPage from "@/pages/admin/AdminSeminarPage";
+import AdminApplicantsPage from "@/pages/admin/AdminApplicantsPage";
 
 const queryClient = new QueryClient();
 
@@ -103,6 +104,7 @@ const App = () => {
                     <Route path="profile-setup" element={<ProfileSetupPage />} />
                     <Route path="profile" element={<AdminProfilePage />} />
                     <Route path="members" element={<AdminMembersPage />} />
+                    <Route path="applicants" element={<AdminApplicantsPage />} />
                     <Route path="events" element={<AdminEventsPage />} />
                     <Route path="exam" element={<AdminExamPage />} />
                     <Route path="seminar" element={<AdminSeminarPage />} />

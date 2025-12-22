@@ -17,6 +17,7 @@ import {
   Shield,
   GraduationCap,
   BookOpen,
+  UserPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
@@ -33,6 +34,7 @@ const navItems: NavItem[] = [
   { title: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard, roles: ['admin', 'super_admin'] },
   { title: 'Profile', href: '/admin/profile', icon: User, roles: ['member', 'honourable', 'admin', 'super_admin'] },
   { title: 'Members', href: '/admin/members', icon: Users, roles: ['admin', 'super_admin'] },
+  { title: 'Applicants', href: '/admin/applicants', icon: UserPlus, roles: ['admin', 'super_admin'] },
   { title: 'Events', href: '/admin/events', icon: CalendarDays, roles: ['admin', 'super_admin'] },
   { title: 'Exam', href: '/admin/exam', icon: GraduationCap, roles: ['admin', 'super_admin'] },
   { title: 'Seminar', href: '/admin/seminar', icon: BookOpen, roles: ['admin', 'super_admin'] },
