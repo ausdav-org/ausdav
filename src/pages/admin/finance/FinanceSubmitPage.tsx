@@ -49,43 +49,62 @@ const categories = [
   'Other',
 ];
 
-interface Submission {
-  id: string;
-  txn_type: string;
+interface FinanceRecord {
+  fin_id: number;
+  exp_type: 'income' | 'expense';
+  party_role: 'payer' | 'payee';
   amount: number;
-  txn_date: string;
+  txn_date: string | null;
   category: string;
-  description: string | null;
-  payer_payee: string | null;
-  status: string;
+  description: string;
+  approved: boolean;
   rejection_reason: string | null;
   created_at: string;
 }
 
 export default function FinanceSubmitPage() {
-  const { user, profile } = useAdminAuth();
+  const { user } = useAdminAuth();
   const [loading, setLoading] = useState(false);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [submissions, setSubmissions] = useState<FinanceRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [allowFinanceSubmissions, setAllowFinanceSubmissions] = useState<boolean | null>(null);
+  const [loadingSettings, setLoadingSettings] = useState(true);
 
   const [formData, setFormData] = useState({
-    txn_type: 'income' as 'income' | 'expense',
+    exp_type: 'income' as 'income' | 'expense',
     amount: '',
     txn_date: new Date().toISOString().split('T')[0],
     category: '',
     description: '',
-    payer_payee: '',
   });
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
   useEffect(() => {
+    fetchSettings();
     fetchSubmissions();
   }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const { data: settings } = await supabase
+        .from('app_settings')
+        .select('allow_finance_submissions')
+        .eq('id', 1)
+        .single();
+      
+      setAllowFinanceSubmissions(settings?.allow_finance_submissions ?? false);
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+      setAllowFinanceSubmissions(false);
+    } finally {
+      setLoadingSettings(false);
+    }
+  };
 
   const fetchSubmissions = async () => {
     try {
       const { data, error } = await supabase
-        .from('finance_submissions')
+        .from('finance')
         .select('*')
         .eq('submitted_by', user?.id)
         .order('created_at', { ascending: false });
@@ -102,49 +121,52 @@ export default function FinanceSubmitPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.category || !formData.amount) {
+    if (!formData.category || !formData.amount || !formData.description) {
       toast.error('Please fill in all required fields');
       return;
     }
 
     setLoading(true);
     try {
-      let receipt_path = null;
+      let photo_path: string | null = null;
 
-      // Upload receipt if provided
+      // Upload receipt photo if provided
       if (receiptFile && user) {
         const fileExt = receiptFile.name.split('.').pop();
         const fileName = `${user.id}/${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
-          .from('receipts')
+          .from('finance-photos')
           .upload(fileName, receiptFile);
 
         if (uploadError) throw uploadError;
-        receipt_path = fileName;
+        photo_path = fileName;
       }
 
-      const { error } = await supabase.from('finance_submissions').insert({
+      // Determine party_role based on exp_type
+      const party_role = formData.exp_type === 'income' ? 'payer' : 'payee';
+
+      const { error } = await supabase.from('finance').insert({
         submitted_by: user?.id,
-        txn_type: formData.txn_type,
+        exp_type: formData.exp_type,
+        party_role: party_role,
         amount: parseFloat(formData.amount),
         txn_date: formData.txn_date,
         category: formData.category,
-        description: formData.description || null,
-        payer_payee: formData.payer_payee || null,
-        receipt_path,
+        description: formData.description,
+        photo_path,
+        approved: false, // Member submissions are always unapproved initially
       });
 
       if (error) throw error;
 
       toast.success('Submission sent for approval');
       setFormData({
-        txn_type: 'income',
+        exp_type: 'income',
         amount: '',
         txn_date: new Date().toISOString().split('T')[0],
         category: '',
         description: '',
-        payer_payee: '',
       });
       setReceiptFile(null);
       fetchSubmissions();
@@ -155,29 +177,46 @@ export default function FinanceSubmitPage() {
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return <Check className="h-4 w-4 text-green-400" />;
-      case 'rejected':
-        return <X className="h-4 w-4 text-red-400" />;
-      default:
-        return <Clock className="h-4 w-4 text-yellow-400" />;
+  const getStatusIcon = (approved: boolean, rejectionReason: string | null) => {
+    if (approved) {
+      return <Check className="h-4 w-4 text-green-400" />;
+    } else if (rejectionReason) {
+      return <X className="h-4 w-4 text-red-400" />;
     }
+    return <Clock className="h-4 w-4 text-yellow-400" />;
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return 'bg-green-500/20 text-green-400';
-      case 'rejected':
-        return 'bg-red-500/20 text-red-400';
-      default:
-        return 'bg-yellow-500/20 text-yellow-400';
+  const getStatusBadge = (approved: boolean, rejectionReason: string | null) => {
+    if (approved) {
+      return 'bg-green-500/20 text-green-400';
+    } else if (rejectionReason) {
+      return 'bg-red-500/20 text-red-400';
     }
+    return 'bg-yellow-500/20 text-yellow-400';
   };
 
-  if (!profile?.can_submit_finance) {
+  const getStatusText = (approved: boolean, rejectionReason: string | null) => {
+    if (approved) return 'approved';
+    if (rejectionReason) return 'rejected';
+    return 'pending';
+  };
+
+  // Show loading state while checking settings
+  if (loadingSettings) {
+    return (
+      <div className="min-h-screen">
+        <AdminHeader title="Submit Finance" breadcrumb="Finance" />
+        <div className="p-6 flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <Receipt className="h-12 w-12 mx-auto text-muted-foreground mb-4 animate-pulse" />
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!allowFinanceSubmissions) {
     return (
       <div className="min-h-screen">
         <AdminHeader title="Submit Finance" breadcrumb="Finance" />
@@ -185,10 +224,10 @@ export default function FinanceSubmitPage() {
           <Card className="max-w-md w-full bg-card/50 backdrop-blur-sm border-border">
             <CardContent className="p-8 text-center">
               <Receipt className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Access Restricted</h2>
+              <h2 className="text-xl font-semibold mb-2">Submissions Closed</h2>
               <p className="text-muted-foreground">
-                You don't have permission to submit finance records. Contact an
-                administrator to enable this feature for your account.
+                Finance submissions are currently disabled. Please check back later
+                or contact an administrator for more information.
               </p>
             </CardContent>
           </Card>
@@ -221,9 +260,9 @@ export default function FinanceSubmitPage() {
                     <div className="space-y-2">
                       <Label>Transaction Type *</Label>
                       <Select
-                        value={formData.txn_type}
+                        value={formData.exp_type}
                         onValueChange={(v) =>
-                          setFormData({ ...formData, txn_type: v as any })
+                          setFormData({ ...formData, exp_type: v as any })
                         }
                       >
                         <SelectTrigger className="bg-background/50">
@@ -290,29 +329,16 @@ export default function FinanceSubmitPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>
-                      {formData.txn_type === 'income' ? 'Payer' : 'Payee'}
-                    </Label>
-                    <Input
-                      value={formData.payer_payee}
-                      onChange={(e) =>
-                        setFormData({ ...formData, payer_payee: e.target.value })
-                      }
-                      placeholder="Name of payer/payee"
-                      className="bg-background/50"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Description</Label>
+                    <Label>Description *</Label>
                     <Textarea
                       value={formData.description}
                       onChange={(e) =>
                         setFormData({ ...formData, description: e.target.value })
                       }
-                      placeholder="Additional details..."
+                      placeholder="Details about this transaction..."
                       className="bg-background/50"
                       rows={3}
+                      required
                     />
                   </div>
 
@@ -392,19 +418,19 @@ export default function FinanceSubmitPage() {
                     </TableHeader>
                     <TableBody>
                       {submissions.slice(0, 10).map((sub) => (
-                        <TableRow key={sub.id}>
+                        <TableRow key={sub.fin_id}>
                           <TableCell className="text-sm">
-                            {new Date(sub.txn_date).toLocaleDateString()}
+                            {sub.txn_date ? new Date(sub.txn_date).toLocaleDateString() : '-'}
                           </TableCell>
                           <TableCell>
                             <Badge
                               className={cn(
-                                sub.txn_type === 'income'
+                                sub.exp_type === 'income'
                                   ? 'bg-green-500/20 text-green-400'
                                   : 'bg-red-500/20 text-red-400'
                               )}
                             >
-                              {sub.txn_type}
+                              {sub.exp_type}
                             </Badge>
                           </TableCell>
                           <TableCell className="font-medium">
@@ -412,9 +438,9 @@ export default function FinanceSubmitPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              {getStatusIcon(sub.status)}
-                              <Badge className={cn('capitalize', getStatusBadge(sub.status))}>
-                                {sub.status}
+                              {getStatusIcon(sub.approved, sub.rejection_reason)}
+                              <Badge className={cn('capitalize', getStatusBadge(sub.approved, sub.rejection_reason))}>
+                                {getStatusText(sub.approved, sub.rejection_reason)}
                               </Badge>
                             </div>
                             {sub.rejection_reason && (

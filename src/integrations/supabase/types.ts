@@ -17,18 +17,27 @@ export type Database = {
       app_settings: {
         Row: {
           allow_signup: boolean
+          allow_exam_applications: boolean
+          allow_results_view: boolean
+          allow_finance_submissions: boolean
           id: number
           updated_at: string
           updated_by: string | null
         }
         Insert: {
           allow_signup?: boolean
+          allow_exam_applications?: boolean
+          allow_results_view?: boolean
+          allow_finance_submissions?: boolean
           id?: number
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
           allow_signup?: boolean
+          allow_exam_applications?: boolean
+          allow_results_view?: boolean
+          allow_finance_submissions?: boolean
           id?: number
           updated_at?: string
           updated_by?: string | null
@@ -197,112 +206,67 @@ export type Database = {
         }
         Relationships: []
       }
-      finance_submissions: {
+      finance: {
         Row: {
-          amount: number
+          fin_id: number
+          exp_type: Database["public"]["Enums"]["finance_direction"]
+          party_role: Database["public"]["Enums"]["finance_party_role"]
           category: string
+          amount: number
           created_at: string
-          description: string | null
-          id: string
-          payer_payee: string | null
-          receipt_path: string | null
-          rejection_reason: string | null
-          status: Database["public"]["Enums"]["submission_status"]
+          updated_at: string
+          description: string
+          photo_bucket: string
+          photo_path: string | null
+          approved: boolean
           submitted_by: string | null
-          txn_date: string
-          txn_type: Database["public"]["Enums"]["txn_type"]
-          verified_at: string | null
           verified_by: string | null
+          verified_at: string | null
+          rejection_reason: string | null
+          txn_date: string | null
         }
         Insert: {
-          amount: number
+          fin_id?: number
+          exp_type: Database["public"]["Enums"]["finance_direction"]
+          party_role: Database["public"]["Enums"]["finance_party_role"]
           category: string
+          amount: number
           created_at?: string
-          description?: string | null
-          id?: string
-          payer_payee?: string | null
-          receipt_path?: string | null
-          rejection_reason?: string | null
-          status?: Database["public"]["Enums"]["submission_status"]
+          updated_at?: string
+          description: string
+          photo_bucket?: string
+          photo_path?: string | null
+          approved?: boolean
           submitted_by?: string | null
-          txn_date: string
-          txn_type: Database["public"]["Enums"]["txn_type"]
-          verified_at?: string | null
           verified_by?: string | null
+          verified_at?: string | null
+          rejection_reason?: string | null
+          txn_date?: string | null
         }
         Update: {
-          amount?: number
+          fin_id?: number
+          exp_type?: Database["public"]["Enums"]["finance_direction"]
+          party_role?: Database["public"]["Enums"]["finance_party_role"]
           category?: string
+          amount?: number
           created_at?: string
-          description?: string | null
-          id?: string
-          payer_payee?: string | null
-          receipt_path?: string | null
-          rejection_reason?: string | null
-          status?: Database["public"]["Enums"]["submission_status"]
+          updated_at?: string
+          description?: string
+          photo_bucket?: string
+          photo_path?: string | null
+          approved?: boolean
           submitted_by?: string | null
-          txn_date?: string
-          txn_type?: Database["public"]["Enums"]["txn_type"]
-          verified_at?: string | null
           verified_by?: string | null
+          verified_at?: string | null
+          rejection_reason?: string | null
+          txn_date?: string | null
         }
         Relationships: []
-      }
-      finance_transactions: {
-        Row: {
-          amount: number
-          category: string
-          created_at: string
-          created_by: string | null
-          description: string | null
-          id: string
-          payer_payee: string | null
-          receipt_path: string | null
-          source_submission_id: string | null
-          txn_date: string
-          txn_type: Database["public"]["Enums"]["txn_type"]
-        }
-        Insert: {
-          amount: number
-          category: string
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          id?: string
-          payer_payee?: string | null
-          receipt_path?: string | null
-          source_submission_id?: string | null
-          txn_date: string
-          txn_type: Database["public"]["Enums"]["txn_type"]
-        }
-        Update: {
-          amount?: number
-          category?: string
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          id?: string
-          payer_payee?: string | null
-          receipt_path?: string | null
-          source_submission_id?: string | null
-          txn_date?: string
-          txn_type?: Database["public"]["Enums"]["txn_type"]
-        }
-        Relationships: [
-          {
-            foreignKeyName: "finance_transactions_source_submission_id_fkey"
-            columns: ["source_submission_id"]
-            isOneToOne: false
-            referencedRelation: "finance_submissions"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       profiles: {
         Row: {
           avatar_url: string | null
           batch: string | null
-          can_submit_finance: boolean
           created_at: string
           email: string
           full_name: string
@@ -316,7 +280,6 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           batch?: string | null
-          can_submit_finance?: boolean
           created_at?: string
           email: string
           full_name: string
@@ -330,7 +293,6 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           batch?: string | null
-          can_submit_finance?: boolean
           created_at?: string
           email?: string
           full_name?: string
@@ -519,8 +481,8 @@ export type Database = {
     }
     Enums: {
       app_role: "member" | "honourable" | "admin" | "super_admin"
-      submission_status: "pending" | "approved" | "rejected"
-      txn_type: "income" | "expense"
+      finance_direction: "income" | "expense"
+      finance_party_role: "payer" | "payee"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -649,8 +611,8 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["member", "honourable", "admin", "super_admin"],
-      submission_status: ["pending", "approved", "rejected"],
-      txn_type: ["income", "expense"],
+      finance_direction: ["income", "expense"],
+      finance_party_role: ["payer", "payee"],
     },
   },
 } as const
