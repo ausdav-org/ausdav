@@ -33,6 +33,7 @@ const Navbar: React.FC = () => {
     { href: '/exam', label: t('nav.exam') },
     { href: '/seminar', label: t('nav.seminar') },
     { href: '/events', label: t('nav.events') },
+    { href: '/gallery', label: t('nav.gallery') },
     { href: '/committee', label: t('nav.committee') },
   ];
 

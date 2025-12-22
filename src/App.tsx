@@ -16,6 +16,8 @@ import CommitteePage from "@/pages/CommitteePage";
 import ExamPage from "@/pages/ExamPage";
 import SeminarPage from "@/pages/SeminarPage";
 import EventsPage from "@/pages/EventsPage";
+import EventDetailsPage from "@/pages/EventDetailsPage";
+import GalleryPage from "@/pages/GalleryPage";
 import DonatePage from "@/pages/DonatePage";
 import LoginPage from "@/pages/LoginPage";
 import NotFoundPage from "@/pages/NotFoundPage";
@@ -36,6 +38,10 @@ import FinanceSubmitPage from "@/pages/admin/finance/FinanceSubmitPage";
 import FinanceVerifyPage from "@/pages/admin/finance/FinanceVerifyPage";
 import FinanceLedgerPage from "@/pages/admin/finance/FinanceLedgerPage";
 import ProfileSetupPage from "@/pages/admin/ProfileSetupPage";
+import AdminExamPage from "@/pages/admin/AdminExamPage";
+import AdminSeminarPage from "@/pages/admin/AdminSeminarPage";
+import AdminApplicantsPage from "@/pages/admin/AdminApplicantsPage";
+import ClaimPermissionPage from "@/pages/admin/ClaimPermissionPage";
 
 const queryClient = new QueryClient();
 
@@ -74,8 +80,12 @@ const App = () => {
                   <Route path="/exam" element={<Layout><ExamPage /></Layout>} />
                   <Route path="/seminar" element={<Layout><SeminarPage /></Layout>} />
                   <Route path="/events" element={<Layout><EventsPage /></Layout>} />
+                  <Route path="/events/:id" element={<Layout><EventDetailsPage /></Layout>} />
+                  <Route path="/gallery" element={<Layout><GalleryPage /></Layout>} />
                   <Route path="/donate" element={<Layout><DonatePage /></Layout>} />
                   <Route path="/login" element={<Layout><LoginPage /></Layout>} />
+                  <Route path="/signup" element={<Layout><SignupPortalPage /></Layout>} />
+                  <Route path="/register" element={<Navigate to="/signup" replace />} />
 
                   {/* ✅ Recommended clean profile route */}
                   <Route path="/profile" element={<Layout><ProfilePage /></Layout>} />
@@ -101,8 +111,12 @@ const App = () => {
                     <Route path="profile-setup" element={<ProfileSetupPage />} />
                     <Route path="profile" element={<AdminProfilePage />} />
                     <Route path="members" element={<AdminMembersPage />} />
+                    <Route path="applicants" element={<AdminApplicantsPage />} />
                     <Route path="events" element={<AdminEventsPage />} />
+                    <Route path="exam" element={<AdminExamPage />} />
+                    <Route path="seminar" element={<AdminSeminarPage />} />
                     <Route path="announcements" element={<AdminAnnouncementsPage />} />
+                    <Route path="claim-permission" element={<ClaimPermissionPage />} />
                     <Route path="permissions" element={<AdminPermissionsPage />} />
                     <Route path="audit" element={<AdminAuditPage />} />
                     <Route path="settings" element={<AdminSettingsPage />} />

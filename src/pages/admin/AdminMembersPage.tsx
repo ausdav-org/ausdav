@@ -10,6 +10,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -200,8 +201,9 @@ export default function AdminMembersPage() {
   };
 
   return (
-    <div className="min-h-screen">
-      <AdminHeader title="Members" breadcrumb="Management" />
+    <PermissionGate permissionKey="member" permissionName="Member Handling">
+      <div className="min-h-screen">
+        <AdminHeader title="Members" breadcrumb="Management" />
 
       <div className="p-6 space-y-6">
         {/* Actions Bar */}
@@ -449,6 +451,7 @@ export default function AdminMembersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PermissionGate>
   );
 }

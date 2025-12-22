@@ -8,9 +8,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import AnnouncementCarousel from '@/components/AnnouncementCarousel';
 import { supabase } from '@/integrations/supabase/client';
-import type { Database } from '@/integrations/supabase/types';
-
-type DbAnnouncement = Database['public']['Tables']['announcements']['Row'];
 type CarouselAnnouncement = {
   id: string;
   en: string;
@@ -61,8 +58,8 @@ const HomePage: React.FC = () => {
   const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
 
-  const mapTagToType = (tag: DbAnnouncement['tag']): CarouselAnnouncement['type'] => {
-    const normalized = (tag || '').toLowerCase();
+  const mapCategoryToType = (category?: string | null): CarouselAnnouncement['type'] => {
+    const normalized = (category || '').toLowerCase();
     if (normalized === 'urgent') return 'urgent';
     if (normalized === 'event') return 'event';
     return 'news';
@@ -80,24 +77,28 @@ const HomePage: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('announcements')
-        .select('id,title_en,title_ta,message_en,message_ta,tag,is_active,start_at,end_at,priority')
-        .eq('is_active', true)
-        .order('priority', { ascending: false })
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      const activeItems = (data || []).filter((item) => {
+      const activeItems = (data || []).filter((item: any) => {
         const withinStart = !item.start_at || item.start_at <= nowIso;
-        const withinEnd = !item.end_at || item.end_at >= nowIso;
-        return item.is_active && withinStart && withinEnd;
+        const withinEnd = item.is_permanent || !item.end_at || item.end_at >= nowIso;
+        return item.is_active !== false && withinStart && withinEnd;
       });
 
-      const mapped = activeItems.map<CarouselAnnouncement>((item) => ({
-        id: item.id,
-        en: buildAnnouncementText(item.message_en, item.title_en),
-        ta: buildAnnouncementText(item.message_ta, item.title_ta || item.message_en || item.title_en),
-        type: mapTagToType(item.tag),
+      const mapped = activeItems.map<CarouselAnnouncement>((item: any) => ({
+        id: item.id || item.announcement_id || crypto.randomUUID(),
+        en: buildAnnouncementText(
+          item.description_en ?? item.message_en ?? item.description ?? item.title_en,
+          item.title_en
+        ),
+        ta: buildAnnouncementText(
+          item.description_ta ?? item.message_ta ?? item.title_ta,
+          item.title_ta || item.description_en || item.title_en
+        ),
+        type: mapCategoryToType(item.category ?? item.tag ?? null),
       }));
 
       setAnnouncements(mapped.length ? mapped : fallbackAnnouncements);

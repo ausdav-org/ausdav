@@ -1,0 +1,897 @@
+import { useEffect, useState, useMemo } from 'react';
+import {
+  UserPlus,
+  Search,
+  MoreVertical,
+  Upload,
+  Download,
+  Loader2,
+  FileText,
+  Trash2,
+  Users,
+  TrendingUp,
+} from 'lucide-react';
+import { AdminHeader } from '@/components/admin/AdminHeader';
+import { PermissionGate } from '@/components/admin/PermissionGate';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartConfig,
+} from '@/components/ui/chart';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Legend } from 'recharts';
+
+type AppSettings = {
+  allow_exam_applications: boolean;
+  allow_results_view: boolean;
+};
+
+interface Applicant {
+  applicant_id: number;
+  index_no: string;
+  fullname: string;
+  gender: boolean;
+  stream: string;
+  nic: string;
+  phone: string | null;
+  email: string | null;
+  school: string;
+  results: string | null;
+  created_at: string;
+  year: number;
+}
+
+export default function AdminApplicantsPage() {
+  const { isSuperAdmin, isAdmin } = useAdminAuth();
+  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStream, setFilterStream] = useState<string>('all');
+  const [filterGender, setFilterGender] = useState<string>('all');
+  const [filterSchool, setFilterSchool] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [allowExamApplications, setAllowExamApplications] = useState<boolean | null>(null);
+  const [allowResultsView, setAllowResultsView] = useState<boolean | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [resultsSaving, setResultsSaving] = useState(false);
+
+  // CSV Upload dialog
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+
+  // Get unique years from all applicants (descending order)
+  const uniqueYears = useMemo(() => {
+    return [...new Set(applicants.map(a => a.year))].sort((a, b) => b - a);
+  }, [applicants]);
+
+  // Auto-select the latest year when data is loaded
+  useEffect(() => {
+    if (uniqueYears.length > 0 && selectedYear === null) {
+      setSelectedYear(uniqueYears[0]);
+    }
+  }, [uniqueYears, selectedYear]);
+
+  useEffect(() => {
+    fetchApplicants();
+    loadExamSetting();
+  }, []);
+
+  const loadExamSetting = async () => {
+    setSettingsLoading(true);
+    try {
+      // First try to get both columns
+      const { data, error } = await supabase
+        .from('app_settings' as any)
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (error) throw error;
+      
+      // Handle both old schema (without allow_results_view) and new schema
+      const settings = data as unknown as AppSettings | null;
+      setAllowExamApplications(settings?.allow_exam_applications ?? false);
+      setAllowResultsView(settings?.allow_results_view ?? false);
+    } catch (error) {
+      console.error('Error loading exam setting:', error);
+      toast.error('Failed to load exam application setting');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const toggleExamSetting = async () => {
+    if (allowExamApplications === null || settingsSaving) return;
+    setSettingsSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('app_settings' as any)
+        .update({ allow_exam_applications: !allowExamApplications })
+        .eq('id', 1)
+        .select('allow_exam_applications')
+        .maybeSingle<AppSettings>();
+
+      if (error) throw error;
+      setAllowExamApplications(data?.allow_exam_applications ?? false);
+      toast.success(data?.allow_exam_applications ? 'Exam applications opened' : 'Exam applications closed');
+    } catch (error) {
+      console.error('Error updating exam setting:', error);
+      toast.error('Failed to update exam application setting');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const toggleResultsSetting = async () => {
+    if (allowResultsView === null || resultsSaving) return;
+    setResultsSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('app_settings' as any)
+        .update({ allow_results_view: !allowResultsView })
+        .eq('id', 1)
+        .select('allow_results_view')
+        .maybeSingle<AppSettings>();
+
+      if (error) throw error;
+      setAllowResultsView(data?.allow_results_view ?? false);
+      toast.success(data?.allow_results_view ? 'Results published' : 'Results unpublished');
+    } catch (error) {
+      console.error('Error updating results setting:', error);
+      toast.error('Failed to update results setting');
+    } finally {
+      setResultsSaving(false);
+    }
+  };
+
+  const fetchApplicants = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('applicants' as any)
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setApplicants((data as unknown as Applicant[]) || []);
+    } catch (error) {
+      console.error('Error fetching applicants:', error);
+      toast.error('Failed to fetch applicants');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // First filter by selected year, then apply other filters
+  const yearApplicants = useMemo(() => {
+    if (selectedYear === null) return [];
+    return applicants.filter(a => a.year === selectedYear);
+  }, [applicants, selectedYear]);
+
+  const filteredApplicants = useMemo(() => {
+    return yearApplicants.filter((applicant) => {
+      const matchesSearch =
+        applicant.fullname.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        applicant.index_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        applicant.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        applicant.school.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesStream = filterStream === 'all' || applicant.stream === filterStream;
+      const matchesGender = filterGender === 'all' || 
+        (filterGender === 'male' && applicant.gender) || 
+        (filterGender === 'female' && !applicant.gender);
+      const matchesSchool = filterSchool === 'all' || applicant.school === filterSchool;
+
+      return matchesSearch && matchesStream && matchesGender && matchesSchool;
+    });
+  }, [yearApplicants, searchQuery, filterStream, filterGender, filterSchool]);
+
+  // Statistics based on filtered applicants
+  const stats = useMemo(() => {
+    const maleCount = filteredApplicants.filter(a => a.gender).length;
+    const femaleCount = filteredApplicants.filter(a => !a.gender).length;
+    
+    // School distribution
+    const schoolCounts: { [key: string]: number } = {};
+    filteredApplicants.forEach(a => {
+      schoolCounts[a.school] = (schoolCounts[a.school] || 0) + 1;
+    });
+    const schoolData = Object.entries(schoolCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10); // Top 10 schools
+
+    // Results distribution
+    const resultsCounts: { [key: string]: number } = {};
+    filteredApplicants.forEach(a => {
+      const result = a.results || 'Not Available';
+      resultsCounts[result] = (resultsCounts[result] || 0) + 1;
+    });
+    const resultsData = Object.entries(resultsCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return { maleCount, femaleCount, schoolData, resultsData };
+  }, [filteredApplicants]);
+
+  const uniqueStreams = useMemo(() => [...new Set(yearApplicants.map(a => a.stream))], [yearApplicants]);
+  const uniqueSchools = useMemo(() => [...new Set(yearApplicants.map(a => a.school))], [yearApplicants]);
+
+  const handleCsvUpload = async () => {
+    if (!csvFile) {
+      toast.error('Please select a CSV file');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const text = await csvFile.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+
+      // Expected headers: index_no,fullname,gender,stream,nic,phone,email,school,results
+      const expectedHeaders = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results'];
+      const headerMap: { [key: string]: number } = {};
+
+      expectedHeaders.forEach(expected => {
+        const index = headers.indexOf(expected);
+        if (index === -1) {
+          throw new Error(`Missing required column: ${expected}`);
+        }
+        headerMap[expected] = index;
+      });
+
+      const records = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        if (values.length !== headers.length) continue; // Skip malformed lines
+
+        const record = {
+          index_no: values[headerMap.index_no],
+          fullname: values[headerMap.fullname],
+          gender: values[headerMap.gender].toLowerCase() === 'male' || values[headerMap.gender] === '1' || values[headerMap.gender].toLowerCase() === 'true',
+          stream: values[headerMap.stream],
+          nic: values[headerMap.nic],
+          phone: values[headerMap.phone] || null,
+          email: values[headerMap.email] || null,
+          school: values[headerMap.school],
+          results: values[headerMap.results] || null,
+        };
+
+        records.push(record);
+      }
+
+      if (records.length === 0) {
+        throw new Error('No valid records found in CSV');
+      }
+
+      const { error } = await supabase
+        .from('applicants' as any)
+        .insert(records);
+
+      if (error) throw error;
+
+      toast.success(`Successfully uploaded ${records.length} applicants`);
+      setUploadOpen(false);
+      setCsvFile(null);
+      fetchApplicants();
+    } catch (error: any) {
+      console.error('Error uploading CSV:', error);
+      toast.error(error.message || 'Failed to upload CSV');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const downloadCsvTemplate = () => {
+    const headers = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results'];
+    const csvContent = headers.join(',') + '\n';
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'applicants_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const downloadFilteredApplicantsCsv = () => {
+    if (filteredApplicants.length === 0) {
+      toast.error('No applicants to download');
+      return;
+    }
+
+    const headers = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results', 'year', 'created_at'];
+    const csvRows = [
+      headers.join(','),
+      ...filteredApplicants.map(applicant => [
+        `"${applicant.index_no}"`,
+        `"${applicant.fullname}"`,
+        applicant.gender ? 'male' : 'female',
+        `"${applicant.stream}"`,
+        `"${applicant.nic}"`,
+        `"${applicant.phone || ''}"`,
+        `"${applicant.email || ''}"`,
+        `"${applicant.school}"`,
+        `"${applicant.results || ''}"`,
+        applicant.year,
+        `"${applicant.created_at}"`
+      ].join(','))
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `applicants_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${filteredApplicants.length} applicants`);
+  };
+
+  const handleBulkDeleteByYear = async () => {
+    if (selectedYear === null) {
+      toast.error('Please select a year');
+      return;
+    }
+
+    const applicantsToDelete = applicants.filter(a => a.year === selectedYear);
+    if (applicantsToDelete.length === 0) {
+      toast.error('No applicants to delete for this year');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('applicants' as any)
+        .delete()
+        .eq('year', selectedYear);
+
+      if (error) throw error;
+
+      toast.success(`Successfully deleted ${applicantsToDelete.length} applicants from ${selectedYear}`);
+      
+      // Update local state and select next available year
+      const remainingApplicants = applicants.filter(a => a.year !== selectedYear);
+      setApplicants(remainingApplicants);
+      
+      const remainingYears = [...new Set(remainingApplicants.map(a => a.year))].sort((a, b) => b - a);
+      setSelectedYear(remainingYears.length > 0 ? remainingYears[0] : null);
+    } catch (error) {
+      console.error('Error deleting applicants:', error);
+      toast.error('Failed to delete applicants');
+    }
+  };
+
+  // Chart configurations
+  const schoolChartConfig: ChartConfig = {
+    count: {
+      label: "Students",
+      color: "hsl(var(--chart-1))",
+    },
+  };
+
+  const resultsChartConfig: ChartConfig = {
+    count: {
+      label: "Count",
+      color: "hsl(var(--chart-2))",
+    },
+  };
+
+  const COLORS = [
+    'hsl(var(--chart-1))',
+    'hsl(var(--chart-2))',
+    'hsl(var(--chart-3))',
+    'hsl(var(--chart-4))',
+    'hsl(var(--chart-5))',
+    '#8884d8',
+    '#82ca9d',
+    '#ffc658',
+    '#ff7300',
+    '#00C49F',
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <PermissionGate permissionKey="applicant" permissionName="Applicant Handling">
+      <div className="space-y-6">
+        <AdminHeader title="Applicants Management" />
+
+        {/* Year Selection Buttons - Pagination Style */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CardTitle className="text-lg">Select Year</CardTitle>
+                <Badge className={allowExamApplications ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}>
+                  {settingsLoading ? 'Loading...' : allowExamApplications ? 'Applications Open' : 'Applications Closed'}
+                </Badge>
+                <Badge className={allowResultsView ? 'bg-blue-500/20 text-blue-500' : 'bg-muted text-muted-foreground'}>
+                  {settingsLoading ? 'Loading...' : allowResultsView ? 'Results Published' : 'Results Not Published'}
+                </Badge>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant={allowResultsView ? 'destructive' : 'default'}
+                  size="sm"
+                  onClick={toggleResultsSetting}
+                  disabled={!isAdmin || settingsLoading || resultsSaving || allowResultsView === null}
+                  title={isAdmin ? undefined : 'Only admins can change this setting'}
+                >
+                  {resultsSaving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                  {allowResultsView ? 'Unpublish Results' : 'Publish Results'}
+                </Button>
+                <Button
+                  variant={allowExamApplications ? 'destructive' : 'default'}
+                  size="sm"
+                  onClick={toggleExamSetting}
+                  disabled={!isAdmin || settingsLoading || settingsSaving || allowExamApplications === null}
+                  title={isAdmin ? undefined : 'Only admins can change this setting'}
+                >
+                  {settingsSaving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                  {allowExamApplications ? 'Close Applications' : 'Open Applications'}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {uniqueYears.length === 0 ? (
+              <p className="text-muted-foreground text-center py-4">No applicants found</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {uniqueYears.map((year) => {
+                  const yearCount = applicants.filter(a => a.year === year).length;
+                  return (
+                    <Button
+                      key={year}
+                      variant={selectedYear === year ? 'default' : 'outline'}
+                      onClick={() => setSelectedYear(year)}
+                      className="min-w-[100px]"
+                    >
+                      {year}
+                      <Badge variant="secondary" className="ml-2 bg-background/20">
+                        {yearCount}
+                      </Badge>
+                    </Button>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {selectedYear !== null && (
+          <>
+            {/* Filters Section */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Search className="h-5 w-5" />
+                  Filters for {selectedYear}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by name, index, email, school..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  <Select value={filterStream} onValueChange={setFilterStream}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Stream" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Streams</SelectItem>
+                      {uniqueStreams.map((stream) => (
+                        <SelectItem key={stream} value={stream}>
+                          {stream}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterGender} onValueChange={setFilterGender}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Genders</SelectItem>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterSchool} onValueChange={setFilterSchool}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="School" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Schools</SelectItem>
+                      {uniqueSchools.map((school) => (
+                        <SelectItem key={school} value={school}>
+                          {school}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadCsvTemplate}
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Template
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadFilteredApplicantsCsv}
+                      disabled={filteredApplicants.length === 0}
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Export CSV
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setUploadOpen(true)}
+                    >
+                      <Upload className="h-4 w-4 mr-1" />
+                      Import
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Statistics Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Total Count */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Total Applicants</CardDescription>
+                  <CardTitle className="text-3xl flex items-center gap-2">
+                    <Users className="h-6 w-6 text-primary" />
+                    {filteredApplicants.length}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+
+              {/* Male Count */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Male</CardDescription>
+                  <CardTitle className="text-3xl flex items-center gap-2">
+                    <div className="h-6 w-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+                      <span className="text-blue-500 text-sm font-bold">M</span>
+                    </div>
+                    {stats.maleCount}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      ({filteredApplicants.length > 0 ? Math.round((stats.maleCount / filteredApplicants.length) * 100) : 0}%)
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+
+              {/* Female Count */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Female</CardDescription>
+                  <CardTitle className="text-3xl flex items-center gap-2">
+                    <div className="h-6 w-6 rounded-full bg-pink-500/20 flex items-center justify-center">
+                      <span className="text-pink-500 text-sm font-bold">F</span>
+                    </div>
+                    {stats.femaleCount}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      ({filteredApplicants.length > 0 ? Math.round((stats.femaleCount / filteredApplicants.length) * 100) : 0}%)
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+
+              {/* Schools Count */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Schools Represented</CardDescription>
+                  <CardTitle className="text-3xl flex items-center gap-2">
+                    <TrendingUp className="h-6 w-6 text-green-500" />
+                    {stats.schoolData.length}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+            </div>
+
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* School Distribution Pie Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">School Distribution (Top 10)</CardTitle>
+                  <CardDescription>Distribution of applicants by school</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stats.schoolData.length > 0 ? (
+                    <ChartContainer config={schoolChartConfig} className="h-[300px]">
+                      <PieChart>
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Pie
+                          data={stats.schoolData}
+                          dataKey="count"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={100}
+                          label={({ name, percent }) => `${name.substring(0, 15)}${name.length > 15 ? '...' : ''} (${(percent * 100).toFixed(0)}%)`}
+                          labelLine={false}
+                        >
+                          {stats.schoolData.map((_, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Legend />
+                      </PieChart>
+                    </ChartContainer>
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                      No data available
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Results Distribution Bar Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Results Distribution</CardTitle>
+                  <CardDescription>Distribution of applicants by results</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stats.resultsData.length > 0 ? (
+                    <ChartContainer config={resultsChartConfig} className="h-[300px]">
+                      <BarChart data={stats.resultsData} layout="vertical">
+                        <XAxis type="number" />
+                        <YAxis 
+                          type="category" 
+                          dataKey="name" 
+                          width={100}
+                          tick={{ fontSize: 12 }}
+                        />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Bar dataKey="count" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ChartContainer>
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                      No data available
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Applicants Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserPlus className="h-5 w-5" />
+                  Applicants List ({filteredApplicants.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Index No</TableHead>
+                        <TableHead>Full Name</TableHead>
+                        <TableHead>Gender</TableHead>
+                        <TableHead>Stream</TableHead>
+                        <TableHead>NIC</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>School</TableHead>
+                        <TableHead>Results</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead className="w-10"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredApplicants.map((applicant) => (
+                        <TableRow key={applicant.applicant_id}>
+                          <TableCell className="font-medium">{applicant.index_no}</TableCell>
+                          <TableCell>{applicant.fullname}</TableCell>
+                          <TableCell>
+                            <Badge variant={applicant.gender ? 'default' : 'secondary'} className={applicant.gender ? 'bg-blue-500/20 text-blue-600' : 'bg-pink-500/20 text-pink-600'}>
+                              {applicant.gender ? 'Male' : 'Female'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{applicant.stream}</Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">{applicant.nic}</TableCell>
+                          <TableCell>{applicant.phone || '-'}</TableCell>
+                          <TableCell className="max-w-[150px] truncate" title={applicant.email || ''}>
+                            {applicant.email || '-'}
+                          </TableCell>
+                          <TableCell className="max-w-[150px] truncate" title={applicant.school}>
+                            {applicant.school}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-muted">
+                              {applicant.results || '-'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {new Date(applicant.created_at).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem>
+                                  <FileText className="h-4 w-4 mr-2" />
+                                  View Details
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {filteredApplicants.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No applicants found for the selected filters
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Delete Year Data Button */}
+            <Card className="border-destructive/50">
+              <CardHeader>
+                <CardTitle className="text-lg text-destructive flex items-center gap-2">
+                  <Trash2 className="h-5 w-5" />
+                  Danger Zone
+                </CardTitle>
+                <CardDescription>
+                  Permanently delete all applicants for {selectedYear}. This action cannot be undone.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" className="w-full sm:w-auto">
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete All {selectedYear} Applicants ({yearApplicants.length})
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete all <strong>{yearApplicants.length}</strong> applicants from year <strong>{selectedYear}</strong>. 
+                        This action cannot be undone and the data cannot be recovered.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleBulkDeleteByYear}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Delete All
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {/* CSV Upload Dialog */}
+        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Upload Applicants CSV</DialogTitle>
+              <DialogDescription>
+                Upload a CSV file with applicant data. The file should have the following columns:
+                index_no, fullname, gender, stream, nic, phone, email, school, results
+                (year will be automatically set based on creation date)
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="csv-file">CSV File</Label>
+                <Input
+                  id="csv-file"
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setUploadOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCsvUpload} disabled={uploading}>
+                {uploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Upload
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </PermissionGate>
+  );
+}

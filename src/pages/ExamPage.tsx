@@ -1,15 +1,22 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileText, Download, Search, ClipboardList, Award, ImageDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
 import emblemImg from '@/assets/Exam/AUSDAV logo.png';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
+type AppSettings = {
+  allow_exam_applications: boolean;
+  allow_results_view: boolean;
+};
 
 const MOCK_RESULTS = {
   'Maths|2024|Index No|1234': {
@@ -26,41 +33,28 @@ const MOCK_RESULTS = {
 type ResultRow = (typeof MOCK_RESULTS)[keyof typeof MOCK_RESULTS];
 
 type PastPaper = {
-  id: number;
-  year: string;
+  pp_id: number;
+  yrs: number;
   subject: string;
-  stream: string;
-  paperUrl: string;
-  schemeUrl: string;
+  exam_paper_bucket: string;
+  exam_paper_path: string | null;
+  scheme_bucket: string;
+  scheme_path: string | null;
+  created_at: string;
+  updated_at: string;
 };
-
-const pastPapers: PastPaper[] = [
-  { id: 1, year: '2025', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 2, year: '2025', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 3, year: '2025', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 4, year: '2025', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 5, year: '2024', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 6, year: '2024', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 7, year: '2024', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 8, year: '2024', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 9, year: '2023', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 10, year: '2023', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 11, year: '2023', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 12, year: '2023', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 13, year: '2022', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 14, year: '2022', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 15, year: '2022', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 16, year: '2022', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 17, year: '2021', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 18, year: '2021', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 19, year: '2021', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 20, year: '2021', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-];
 
 // Apply form options
 const applyExams = ['-- Select Your Stream --', 'Maths', 'Biology'];
-const schoolOptions = ['Vavniya Tamil Madhya Maha Vidyalayam',"V/Rambaikulam girls' maha vidyalayam",'Saivapragasa Ladies College','Vipulanantha College Vavuniya',
-  'Puthukkulam Maha Vidiyalyam','Vavuniya Nelukkulam Kalaimakal Maha Vidyalayam','Cheddikulam Maha Vidyalayam'];
+const schoolOptions = [
+  'Vavniya Tamil Madhya Maha Vidyalayam',
+  "V/Rambaikulam girls' maha vidyalayam",
+  'Saivapragasa Ladies College',
+  'Vipulanantha College Vavuniya',
+  'Puthukkulam Maha Vidiyalyam',
+  'Vavuniya Nelukkulam Kalaimakal Maha Vidyalayam',
+  'Cheddikulam Maha Vidyalayam',
+];
 
 const resultsStreams = ['Maths', 'Biology', 'Commerce'];
 const resultsYears = ['2025', '2024'];
@@ -82,6 +76,7 @@ const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
 const ExamPage: React.FC = () => {
   const { t, language } = useLanguage();
   const [activeTab, setActiveTab] = useState('apply');
+  const [submitting, setSubmitting] = useState(false);
 
   const initialApplyForm = {
     fullName: '',
@@ -90,6 +85,7 @@ const ExamPage: React.FC = () => {
     nic: '',
     exam: '',
     schoolName: '',
+    gender: '' as 'male' | 'female' | '',
     agree: true,
   };
   const [applyForm, setApplyForm] = useState(initialApplyForm);
@@ -104,16 +100,64 @@ const ExamPage: React.FC = () => {
   const [expandedYear, setExpandedYear] = useState<string | null>(null);
 
   const [downloading, setDownloading] = useState(false);
+  const [examApplicationsOpen, setExamApplicationsOpen] = useState(true);
+  const [examSettingLoading, setExamSettingLoading] = useState(true);
+  const [resultsPublished, setResultsPublished] = useState(false);
+  const [resultsSettingLoading, setResultsSettingLoading] = useState(true);
 
   // ✅ Now we capture the WHOLE sheet (including header)
   const sheetRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    const loadSetting = async () => {
+      setExamSettingLoading(true);
+      setResultsSettingLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('app_settings' as any)
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (error) throw error;
+        // Handle both old schema (without allow_results_view) and new schema
+        const settings = data as unknown as AppSettings | null;
+        setExamApplicationsOpen(settings?.allow_exam_applications ?? false);
+        setResultsPublished(settings?.allow_results_view ?? false);
+      } catch (error) {
+        console.error('Error loading exam application setting:', error);
+        toast.error(language === 'en' ? 'Unable to load exam application status' : 'தேர்வு விண்ணப்ப நிலையை ஏற்ற முடியவில்லை');
+        setExamApplicationsOpen(false);
+        setResultsPublished(false);
+      } finally {
+        setExamSettingLoading(false);
+        setResultsSettingLoading(false);
+      }
+    };
+
+    loadSetting();
+  }, [language]);
+
+  // Fetch past papers from database
+  const { data: pastPapers = [], isLoading: papersLoading } = useQuery({
+    queryKey: ['past-papers'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('past_papers')
+        .select('*')
+        .order('yrs', { ascending: false });
+
+      if (error) throw error;
+      return data as PastPaper[];
+    },
+  });
+
   const handleApplyReset = () => setApplyForm(initialApplyForm);
 
-  const handleApplySubmit = (e: React.FormEvent) => {
+  const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!applyForm.fullName || !applyForm.email || !applyForm.phone || !applyForm.nic || !applyForm.schoolName || !applyForm.exam) {
+    if (!applyForm.fullName || !applyForm.email || !applyForm.phone || !applyForm.nic || !applyForm.schoolName || !applyForm.exam || !applyForm.gender) {
       toast.error(language === 'en' ? 'Please fill all required fields' : 'தயவுசெய்து அனைத்து தேவையான புலங்களையும் நிரப்பவும்');
       return;
     }
@@ -123,9 +167,48 @@ const ExamPage: React.FC = () => {
       return;
     }
 
-    const refNumber = `AUSDAV-${Date.now().toString(36).toUpperCase()}`;
-    toast.success(`${language === 'en' ? 'Application submitted. Reference:' : 'விண்ணப்பம் சமர்ப்பிக்கப்பட்டது. குறிப்பு:'} ${refNumber}`);
-    handleApplyReset();
+    if (!examApplicationsOpen) {
+      toast.error(language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      // Generate a unique index number: AUSDAV-YEAR-RANDOM
+      const year = new Date().getFullYear();
+      const randomPart = Date.now().toString(36).toUpperCase();
+      const indexNo = `AUSDAV-${year}-${randomPart}`;
+
+      const { error } = await supabase
+        .from('applicants' as any)
+        .insert({
+          index_no: indexNo,
+          fullname: applyForm.fullName.trim(),
+          gender: applyForm.gender === 'male', // true for male, false for female
+          stream: applyForm.exam,
+          nic: applyForm.nic.trim(),
+          phone: applyForm.phone.trim(),
+          email: applyForm.email.trim().toLowerCase(),
+          school: applyForm.schoolName,
+          year: year,
+        });
+
+      if (error) throw error;
+
+      toast.success(
+        `${language === 'en' ? 'Application submitted successfully! Your reference number is:' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது! உங்கள் குறிப்பு எண்:'} ${indexNo}`
+      );
+      handleApplyReset();
+    } catch (error: any) {
+      console.error('Error submitting application:', error);
+      toast.error(
+        language === 'en'
+          ? 'Failed to submit application. Please try again.'
+          : 'விண்ணப்பத்தை சமர்ப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleResultsSubmit = (e: React.FormEvent) => {
@@ -152,20 +235,32 @@ const ExamPage: React.FC = () => {
   };
 
   const availableYears = useMemo(
-    () => Array.from(new Set(pastPapers.map((p) => String(p.year)))).sort((a, b) => Number(b) - Number(a)),
-    []
+    () => Array.from(new Set(pastPapers.map((p) => String(p.yrs)))).sort((a, b) => Number(b) - Number(a)),
+    [pastPapers]
   );
 
   const papersForYear = (year: string) =>
     pastPapers.filter((paper) => {
-      if (paper.year !== year) return false;
+      if (String(paper.yrs) !== year) return false;
       if (paperFilter.subject && !paper.subject.toLowerCase().includes(paperFilter.subject.toLowerCase())) return false;
       return true;
     });
 
-  const openDownload = (url: string) => {
-    if (!url || url === '#') return toast.error(language === 'en' ? 'Download link not available' : 'பதிவிறக்க இணைப்பு கிடைக்கவில்லை');
-    window.open(url, '_blank');
+  const openDownload = (paper: PastPaper, type: 'paper' | 'scheme') => {
+    const bucket = type === 'paper' ? paper.exam_paper_bucket : paper.scheme_bucket;
+    const path = type === 'paper' ? paper.exam_paper_path : paper.scheme_path;
+
+    if (!path) {
+      toast.error(language === 'en' ? `${type === 'paper' ? 'Paper' : 'Scheme'} not available` : `${type === 'paper' ? 'வினாத்தாள்' : 'திட்டம்'} கிடைக்கவில்லை`);
+      return;
+    }
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    if (data?.publicUrl) {
+      window.open(data.publicUrl, '_blank');
+    } else {
+      toast.error(language === 'en' ? 'Download link not available' : 'பதிவிறக்க இணைப்பு கிடைக்கவில்லை');
+    }
   };
 
   // Certificate display (from resultData)
@@ -264,70 +359,98 @@ const ExamPage: React.FC = () => {
                     </div>
 
                     <div className="p-5 md:p-6 bg-card">
-                      <form onSubmit={handleApplySubmit} className="space-y-5">
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Full Name' : 'முழு பெயர்'}</label>
-                          <Input value={applyForm.fullName} onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })} required />
-                        </div>
+                      {!examSettingLoading && !examApplicationsOpen ? (
+                        <Card className="border-destructive/30 bg-destructive/5">
+                          <CardContent className="p-6 space-y-2">
+                            <h3 className="text-xl font-semibold text-destructive">
+                              {language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது'}
+                            </h3>
+                            <p className="text-muted-foreground">
+                              {language === 'en'
+                                ? 'Exam applications are currently closed. Please check back later.'
+                                : 'தேர்வு விண்ணப்பங்கள் தற்போது மூடப்பட்டுள்ளது. தயவுசெய்து பின்னர் மீண்டும் பார்க்கவும்.'}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <form onSubmit={handleApplySubmit} className="space-y-5">
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Full Name' : 'முழு பெயர்'}</label>
+                            <Input value={applyForm.fullName} onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })} required />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
-                          <Input type="email" value={applyForm.email} onChange={(e) => setApplyForm({ ...applyForm, email: e.target.value })} required />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
+                            <Input type="email" value={applyForm.email} onChange={(e) => setApplyForm({ ...applyForm, email: e.target.value })} required />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}</label>
-                          <Input inputMode="numeric" value={applyForm.phone} onChange={(e) => setApplyForm({ ...applyForm, phone: onlyDigitsMax(e.target.value, 10) })} required />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}</label>
+                            <Input inputMode="numeric" value={applyForm.phone} onChange={(e) => setApplyForm({ ...applyForm, phone: onlyDigitsMax(e.target.value, 10) })} required />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</label>
-                          <Input value={applyForm.nic} onChange={(e) => setApplyForm({ ...applyForm, nic: e.target.value })} required />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</label>
+                            <Input value={applyForm.nic} onChange={(e) => setApplyForm({ ...applyForm, nic: e.target.value })} required />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Select Stream' : 'தேர்வைத் தேர்ந்தெடுக்கவும்'}</label>
-                          <Select value={applyForm.exam} onValueChange={(v) => setApplyForm({ ...applyForm, exam: v })}>
-                            <SelectTrigger>
-                              <SelectValue placeholder={language === 'en' ? '-- Select Your Stream --' : '-- தேர்வு --'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {applyExams
-                                .filter((x) => x !== '-- Select Your Stream --')
-                                .map((exam) => (
-                                  <SelectItem key={exam} value={exam}>
-                                    {exam}
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Select Stream' : 'தேர்வைத் தேர்ந்தெடுக்கவும்'}</label>
+                            <Select value={applyForm.exam} onValueChange={(v) => setApplyForm({ ...applyForm, exam: v })}>
+                              <SelectTrigger>
+                                <SelectValue placeholder={language === 'en' ? '-- Select Your Stream --' : '-- தேர்வு --'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {applyExams
+                                  .filter((x) => x !== '-- Select Your Stream --')
+                                  .map((exam) => (
+                                    <SelectItem key={exam} value={exam}>
+                                      {exam}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'School Name' : 'பள்ளி பெயர்'}</label>
+                            <Select value={applyForm.schoolName} onValueChange={(v) => setApplyForm({ ...applyForm, schoolName: v })}>
+                              <SelectTrigger>
+                                <SelectValue placeholder={language === 'en' ? 'Select school' : 'பள்ளியை தேர்வு செய்க'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {schoolOptions.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s}
                                   </SelectItem>
                                 ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'School Name' : 'பள்ளி பெயர்'}</label>
-                          <Select value={applyForm.schoolName} onValueChange={(v) => setApplyForm({ ...applyForm, schoolName: v })}>
-                            <SelectTrigger>
-                              <SelectValue placeholder={language === 'en' ? 'Select school' : 'பள்ளியை தேர்வு செய்க'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {schoolOptions.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Gender' : 'பாலினம்'}</label>
+                            <Select value={applyForm.gender} onValueChange={(v) => setApplyForm({ ...applyForm, gender: v as 'male' | 'female' })}>
+                              <SelectTrigger>
+                                <SelectValue placeholder={language === 'en' ? 'Select gender' : 'பாலினத்தைத் தேர்ந்தெடுக்கவும்'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="male">{language === 'en' ? 'Male' : 'ஆண்'}</SelectItem>
+                                <SelectItem value="female">{language === 'en' ? 'Female' : 'பெண்'}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                        <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset}>
-                            {language === 'en' ? 'Reset' : 'மீட்டமை'}
-                          </Button>
-                          <Button type="submit" variant="donate" className="w-full">
-                            {language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்'}
-                          </Button>
-                        </div>
-                      </form>
+                          <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset} disabled={examSettingLoading || submitting}>
+                              {language === 'en' ? 'Reset' : 'மீட்டமை'}
+                            </Button>
+                            <Button type="submit" variant="donate" className="w-full" disabled={!examApplicationsOpen || examSettingLoading || submitting}>
+                              {submitting ? (language === 'en' ? 'Submitting...' : 'சமர்ப்பிக்கிறது...') : (language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்')}
+                            </Button>
+                          </div>
+                        </form>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -343,23 +466,41 @@ const ExamPage: React.FC = () => {
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
                   <div className="flex items-center gap-2 flex-1">
                     <Search className="w-4 h-4 text-muted-foreground" />
-                    <Input placeholder={language === 'en' ? 'Search subject...' : 'பாடத்தைத் தேடு...'} value={paperFilter.subject} onChange={(e) => { setPaperFilter({ subject: e.target.value }); setExpandedYear(null); }} />
+                    <Input
+                      placeholder={language === 'en' ? 'Search subject...' : 'பாடத்தைத் தேடு...'}
+                      value={paperFilter.subject}
+                      onChange={(e) => {
+                        setPaperFilter({ subject: e.target.value });
+                        setExpandedYear(null);
+                      }}
+                    />
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  {availableYears.map((year) => {
+                  {papersLoading ? (
+                    <div className="text-center py-8">
+                      <div className="text-muted-foreground">{language === 'en' ? 'Loading past papers...' : 'கடந்த கால வினாத்தாள்களை ஏற்றுகிறது...'}</div>
+                    </div>
+                  ) : availableYears.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-muted-foreground">{language === 'en' ? 'No past papers available' : 'கடந்த கால வினாத்தாள்கள் கிடைக்கவில்லை'}</div>
+                    </div>
+                  ) : availableYears.map((year) => {
                     const yearPapers = papersForYear(year);
                     const isOpen = expandedYear === year;
 
                     return (
                       <div key={year} className="bg-muted rounded-lg p-4">
-                        <button type="button" onClick={() => setExpandedYear(isOpen ? null : year)} className="w-full flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedYear(isOpen ? null : year)}
+                          className="w-full flex items-center justify-between"
+                        >
                           <div className="text-left">
                             <p className="font-semibold text-foreground">{year}</p>
                             <p className="text-sm text-muted-foreground">
-                              {yearPapers.length}{' '}
-                              {yearPapers.length === 1 ? (language === 'en' ? 'paper' : 'வினாத்தாள்') : language === 'en' ? 'papers' : 'வினாத்தாள்கள்'}
+                              {yearPapers.length} {yearPapers.length === 1 ? (language === 'en' ? 'paper' : 'வினாத்தாள்') : language === 'en' ? 'papers' : 'வினாத்தாள்கள்'}
                             </p>
                           </div>
                           <span className="text-sm text-muted-foreground">{isOpen ? (language === 'en' ? 'Hide' : 'மூடு') : language === 'en' ? 'View' : 'காண'}</span>
@@ -367,27 +508,54 @@ const ExamPage: React.FC = () => {
 
                         <AnimatePresence initial={false}>
                           {isOpen && (
-                            <motion.div key={`panel-${year}`} variants={collapseVariants} initial="hidden" animate="visible" exit="exit" transition={{ duration: 0.25, ease: 'easeInOut' }} className="overflow-hidden">
+                            <motion.div
+                              key={`panel-${year}`}
+                              variants={collapseVariants}
+                              initial="hidden"
+                              animate="visible"
+                              exit="exit"
+                              transition={{ duration: 0.25, ease: 'easeInOut' }}
+                              className="overflow-hidden"
+                            >
                               <div className="mt-4 space-y-3">
                                 {yearPapers.length === 0 ? (
                                   <p className="text-center text-muted-foreground py-6">{t('common.noResults')}</p>
                                 ) : (
                                   yearPapers.map((paper) => (
-                                    <motion.div key={paper.id} variants={itemVariants} initial="hidden" animate="visible" transition={{ duration: 0.2 }} className="flex items-center justify-between p-4 bg-card rounded-lg hover:bg-card/80 transition-colors">
+                                    <motion.div
+                                      key={paper.pp_id}
+                                      variants={itemVariants}
+                                      initial="hidden"
+                                      animate="visible"
+                                      transition={{ duration: 0.2 }}
+                                      className="flex items-center justify-between p-4 bg-card rounded-lg hover:bg-card/80 transition-colors"
+                                    >
                                       <div className="flex items-center gap-3">
                                         <FileText className="w-5 h-5 text-secondary" />
                                         <div>
                                           <p className="font-medium text-foreground">{paper.subject}</p>
-                                          <p className="text-sm text-muted-foreground">{paper.year}</p>
+                                          <p className="text-sm text-muted-foreground">{paper.yrs}</p>
                                         </div>
                                       </div>
 
                                       <div className="flex w-full sm:w-auto gap-2 sm:justify-end">
-                                        <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => openDownload(paper.paperUrl)}>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="flex-1 sm:flex-none"
+                                          onClick={() => openDownload(paper, 'paper')}
+                                          disabled={!paper.exam_paper_path}
+                                        >
                                           <Download className="w-4 h-4 mr-1" />
                                           {language === 'en' ? 'Paper' : 'வினாத்தாள்'}
                                         </Button>
-                                        <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => openDownload(paper.schemeUrl)}>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="flex-1 sm:flex-none"
+                                          onClick={() => openDownload(paper, 'scheme')}
+                                          disabled={!paper.scheme_path}
+                                        >
                                           <Download className="w-4 h-4 mr-1" />
                                           {language === 'en' ? 'Scheme' : 'திட்டம்'}
                                         </Button>
@@ -411,6 +579,20 @@ const ExamPage: React.FC = () => {
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card rounded-xl p-6 md:p-8 shadow-lg">
                 <div className="min-h-[40vh] flex items-center justify-center">
                   <div className="w-full max-w-3xl">
+                    {!resultsSettingLoading && !resultsPublished ? (
+                      <Card className="border-destructive/30 bg-destructive/5">
+                        <CardContent className="p-6 space-y-2">
+                          <h3 className="text-xl font-semibold text-destructive">
+                            {language === 'en' ? 'Results not published yet' : 'முடிவுகள் இன்னும் வெளியிடப்படவில்லை'}
+                          </h3>
+                          <p className="text-muted-foreground">
+                            {language === 'en'
+                              ? 'Examination results are not yet available. Please check back later.'
+                              : 'தேர்வு முடிவுகள் இன்னும் கிடைக்கவில்லை. தயவுசெய்து பின்னர் மீண்டும் பார்க்கவும்.'}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
                     <AnimatePresence mode="wait">
                       {!showResultSheet ? (
                         <motion.div key="results-form" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.2 }}>
@@ -449,7 +631,11 @@ const ExamPage: React.FC = () => {
                                     ))}
                                   </SelectContent>
                                 </Select>
-                                <Input value={resultsForm.idValue} onChange={(e) => setResultsForm({ ...resultsForm, idValue: e.target.value })} placeholder={language === 'en' ? 'Enter value' : 'உள்ளிடவும்'} />
+                                <Input
+                                  value={resultsForm.idValue}
+                                  onChange={(e) => setResultsForm({ ...resultsForm, idValue: e.target.value })}
+                                  placeholder={language === 'en' ? 'Enter value' : 'உள்ளிடவும்'}
+                                />
                               </div>
                             </div>
 
@@ -492,7 +678,6 @@ const ExamPage: React.FC = () => {
                                 <div className="flex flex-col items-center text-center">
                                   <div className="h-16 w-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 flex items-center justify-center overflow-hidden">
                                     <img src={emblemImg} alt="Emblem" className="h-full w-full object-cover" onError={e => (e.currentTarget.style.display = 'none')} />
-
                                   </div>
 
                                   <div className="mt-4 flex items-center gap-3 w-full max-w-2xl">
@@ -566,6 +751,7 @@ const ExamPage: React.FC = () => {
                         </motion.div>
                       )}
                     </AnimatePresence>
+                    )}
                   </div>
                 </div>
               </motion.div>
