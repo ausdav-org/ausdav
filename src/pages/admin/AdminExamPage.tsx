@@ -42,18 +42,6 @@ const SUBJECTS = [
   'Biology',
   'Physics',
   'Chemistry',
-  'English',
-  'Sinhala',
-  'Tamil',
-  'History',
-  'Geography',
-  'Business Studies',
-  'Accounting',
-  'Economics',
-  'Information Technology',
-  'Agriculture',
-  'Engineering Technology',
-  'Bio Systems Technology',
 ];
 
 export default function AdminExamPage() {

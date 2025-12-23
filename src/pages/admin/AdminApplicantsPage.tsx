@@ -10,6 +10,8 @@ import {
   Trash2,
   Users,
   TrendingUp,
+  Info,
+  AlertTriangle,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { PermissionGate } from '@/components/admin/PermissionGate';
@@ -67,7 +69,7 @@ import {
   ChartTooltipContent,
   ChartConfig,
 } from '@/components/ui/chart';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Legend } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Legend } from 'recharts';
 
 type AppSettings = {
   allow_exam_applications: boolean;
@@ -129,7 +131,6 @@ export default function AdminApplicantsPage() {
   const loadExamSetting = async () => {
     setSettingsLoading(true);
     try {
-      // First try to get both columns
       const { data, error } = await supabase
         .from('app_settings' as any)
         .select('*')
@@ -137,8 +138,7 @@ export default function AdminApplicantsPage() {
         .maybeSingle();
 
       if (error) throw error;
-      
-      // Handle both old schema (without allow_results_view) and new schema
+
       const settings = data as unknown as AppSettings | null;
       setAllowExamApplications(settings?.allow_exam_applications ?? false);
       setAllowResultsView(settings?.allow_results_view ?? false);
@@ -226,8 +226,8 @@ export default function AdminApplicantsPage() {
         applicant.school.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesStream = filterStream === 'all' || applicant.stream === filterStream;
-      const matchesGender = filterGender === 'all' || 
-        (filterGender === 'male' && applicant.gender) || 
+      const matchesGender = filterGender === 'all' ||
+        (filterGender === 'male' && applicant.gender) ||
         (filterGender === 'female' && !applicant.gender);
       const matchesSchool = filterSchool === 'all' || applicant.school === filterSchool;
 
@@ -239,7 +239,7 @@ export default function AdminApplicantsPage() {
   const stats = useMemo(() => {
     const maleCount = filteredApplicants.filter(a => a.gender).length;
     const femaleCount = filteredApplicants.filter(a => !a.gender).length;
-    
+
     // School distribution
     const schoolCounts: { [key: string]: number } = {};
     filteredApplicants.forEach(a => {
@@ -266,6 +266,19 @@ export default function AdminApplicantsPage() {
   const uniqueStreams = useMemo(() => [...new Set(yearApplicants.map(a => a.stream))], [yearApplicants]);
   const uniqueSchools = useMemo(() => [...new Set(yearApplicants.map(a => a.school))], [yearApplicants]);
 
+  // --- Index format helpers ---
+  const streamLetter = (value: string) => (value?.trim()?.[0] ? value.trim()[0].toUpperCase() : 'S');
+  const currentStreamLetter = filterStream !== 'all' ? streamLetter(filterStream) : 'S';
+
+  const exampleYear = selectedYear ?? new Date().getFullYear();
+  const exampleYearTwoDigits = String(exampleYear).slice(-2);
+  const indexExample = `${exampleYearTwoDigits}0000${currentStreamLetter}`;
+
+  // ✅ UPDATED CSV UPLOAD:
+  // - index_no in CSV must be EMPTY
+  // - system generates YY + (last 4 digits + 1, padded) + StreamLetter
+  // - 4 digits are COMMON for the entire year (not per stream)
+  // - increment follows CSV row order
   const handleCsvUpload = async () => {
     if (!csvFile) {
       toast.error('Please select a CSV file');
@@ -278,7 +291,6 @@ export default function AdminApplicantsPage() {
       const lines = text.split('\n').filter(line => line.trim());
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
 
-      // Expected headers: index_no,fullname,gender,stream,nic,phone,email,school,results
       const expectedHeaders = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results'];
       const headerMap: { [key: string]: number } = {};
 
@@ -290,28 +302,104 @@ export default function AdminApplicantsPage() {
         headerMap[expected] = index;
       });
 
-      const records = [];
+      const importYear = selectedYear ?? new Date().getFullYear();
+      const yy = String(importYear).slice(-2);
+
+      // Parse CSV rows in file order and enforce index_no empty
+      const parsedRows: Array<{
+        order: number; // preserve CSV order
+        fullname: string;
+        gender: boolean;
+        stream: string;
+        nic: string;
+        phone: string | null;
+        email: string | null;
+        school: string;
+        results: string | null;
+        year: number;
+      }> = [];
+
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',').map(v => v.trim());
-        if (values.length !== headers.length) continue; // Skip malformed lines
+        if (values.length !== headers.length) continue;
 
-        const record = {
-          index_no: values[headerMap.index_no],
+        const csvIndexNo = values[headerMap.index_no];
+        if (csvIndexNo && csvIndexNo.length > 0) {
+          throw new Error(`Row ${i + 1}: index_no must be empty (system will generate it)`);
+        }
+
+        parsedRows.push({
+          order: i,
           fullname: values[headerMap.fullname],
-          gender: values[headerMap.gender].toLowerCase() === 'male' || values[headerMap.gender] === '1' || values[headerMap.gender].toLowerCase() === 'true',
+          gender:
+            values[headerMap.gender].toLowerCase() === 'male' ||
+            values[headerMap.gender] === '1' ||
+            values[headerMap.gender].toLowerCase() === 'true',
           stream: values[headerMap.stream],
           nic: values[headerMap.nic],
           phone: values[headerMap.phone] || null,
           email: values[headerMap.email] || null,
           school: values[headerMap.school],
           results: values[headerMap.results] || null,
-        };
-
-        records.push(record);
+          year: importYear,
+        });
       }
 
-      if (records.length === 0) {
+      if (parsedRows.length === 0) {
         throw new Error('No valid records found in CSV');
+      }
+
+      // Ensure global CSV order
+      parsedRows.sort((a, b) => a.order - b.order);
+
+      // ✅ Find last used sequence for the YEAR (common sequence across all streams)
+      const { data: latestRow, error: latestErr } = await supabase
+        .from('applicants' as any)
+        .select('index_no')
+        .eq('year', importYear)
+        .order('index_no', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestErr) throw latestErr;
+
+      let seq = -1; // first generated => 0000
+      const latestIndexNo = (latestRow as any)?.index_no as string | undefined;
+
+      if (latestIndexNo && latestIndexNo.length >= 6) {
+        const digitsPart = latestIndexNo.substring(2, 6); // positions 3-6
+        const parsed = Number(digitsPart);
+        if (!Number.isNaN(parsed)) seq = parsed;
+      }
+
+      // ✅ Build final records in CSV order with COMMON sequence
+      const records: any[] = [];
+
+      for (const row of parsedRows) {
+        seq += 1;
+
+        if (seq > 9999) {
+          throw new Error(
+            `Index range exceeded for year "${importYear}". Allowed digits are 0000 to 9999.`
+          );
+        }
+
+        const fourDigits = String(seq).padStart(4, '0');
+        const sLetter = streamLetter(row.stream);
+        const index_no = `${yy}${fourDigits}${sLetter}`;
+
+        records.push({
+          index_no,
+          fullname: row.fullname,
+          gender: row.gender,
+          stream: row.stream,
+          nic: row.nic,
+          phone: row.phone,
+          email: row.email,
+          school: row.school,
+          results: row.results,
+          year: row.year,
+        });
       }
 
       const { error } = await supabase
@@ -400,11 +488,10 @@ export default function AdminApplicantsPage() {
       if (error) throw error;
 
       toast.success(`Successfully deleted ${applicantsToDelete.length} applicants from ${selectedYear}`);
-      
-      // Update local state and select next available year
+
       const remainingApplicants = applicants.filter(a => a.year !== selectedYear);
       setApplicants(remainingApplicants);
-      
+
       const remainingYears = [...new Set(remainingApplicants.map(a => a.year))].sort((a, b) => b - a);
       setSelectedYear(remainingYears.length > 0 ? remainingYears[0] : null);
     } catch (error) {
@@ -417,28 +504,29 @@ export default function AdminApplicantsPage() {
   const schoolChartConfig: ChartConfig = {
     count: {
       label: "Students",
-      color: "hsl(var(--chart-1))",
+      color: "#60A5FA",
     },
   };
 
   const resultsChartConfig: ChartConfig = {
     count: {
       label: "Count",
-      color: "hsl(var(--chart-2))",
+      color: "#60A5FA",
     },
   };
 
+  // ✅ Visible colors for dark/light mode
   const COLORS = [
-    'hsl(var(--chart-1))',
-    'hsl(var(--chart-2))',
-    'hsl(var(--chart-3))',
-    'hsl(var(--chart-4))',
-    'hsl(var(--chart-5))',
-    '#8884d8',
-    '#82ca9d',
-    '#ffc658',
-    '#ff7300',
-    '#00C49F',
+    '#60A5FA',
+    '#34D399',
+    '#FBBF24',
+    '#F87171',
+    '#A78BFA',
+    '#FB7185',
+    '#22D3EE',
+    '#F97316',
+    '#84CC16',
+    '#E879F9',
   ];
 
   if (loading) {
@@ -519,6 +607,40 @@ export default function AdminApplicantsPage() {
 
         {selectedYear !== null && (
           <>
+            {/* ✅ Index No Instructions Card (UPDATED) */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5" />
+                  Index Number Instructions
+                </CardTitle>
+                <CardDescription className="flex items-start gap-2">
+                  <Info className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <span>
+                    Do <strong>NOT</strong> create index numbers manually.
+                    For CSV imports, keep <span className="font-mono">index_no</span> column empty.
+                    The system will generate and save them automatically in order.
+                  </span>
+                </CardDescription>
+              </CardHeader>
+
+              <CardContent className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="font-mono">
+                    Format: YY + 4 digits + Stream Letter
+                  </Badge>
+                  <Badge variant="secondary" className="font-mono">
+                    Example: {indexExample}
+                  </Badge>
+                </div>
+
+                <div className="text-sm text-muted-foreground">
+                  Digits are auto-generated in sequence from <span className="font-mono">0000</span> to{' '}
+                  <span className="font-mono">9999</span>. If the limit is reached, the upload will be blocked.
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Filters Section */}
             <Card>
               <CardHeader className="pb-3">
@@ -540,6 +662,7 @@ export default function AdminApplicantsPage() {
                       />
                     </div>
                   </div>
+
                   <Select value={filterStream} onValueChange={setFilterStream}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="Stream" />
@@ -553,6 +676,7 @@ export default function AdminApplicantsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+
                   <Select value={filterGender} onValueChange={setFilterGender}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="Gender" />
@@ -563,6 +687,7 @@ export default function AdminApplicantsPage() {
                       <SelectItem value="female">Female</SelectItem>
                     </SelectContent>
                   </Select>
+
                   <Select value={filterSchool} onValueChange={setFilterSchool}>
                     <SelectTrigger className="w-48">
                       <SelectValue placeholder="School" />
@@ -576,12 +701,9 @@ export default function AdminApplicantsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={downloadCsvTemplate}
-                    >
+                    <Button variant="outline" size="sm" onClick={downloadCsvTemplate}>
                       <Download className="h-4 w-4 mr-1" />
                       Template
                     </Button>
@@ -594,10 +716,7 @@ export default function AdminApplicantsPage() {
                       <Download className="h-4 w-4 mr-1" />
                       Export CSV
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => setUploadOpen(true)}
-                    >
+                    <Button size="sm" onClick={() => setUploadOpen(true)}>
                       <Upload className="h-4 w-4 mr-1" />
                       Import
                     </Button>
@@ -608,7 +727,6 @@ export default function AdminApplicantsPage() {
 
             {/* Statistics Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Total Count */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Total Applicants</CardDescription>
@@ -619,7 +737,6 @@ export default function AdminApplicantsPage() {
                 </CardHeader>
               </Card>
 
-              {/* Male Count */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Male</CardDescription>
@@ -635,7 +752,6 @@ export default function AdminApplicantsPage() {
                 </CardHeader>
               </Card>
 
-              {/* Female Count */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Female</CardDescription>
@@ -651,7 +767,6 @@ export default function AdminApplicantsPage() {
                 </CardHeader>
               </Card>
 
-              {/* Schools Count */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Schools Represented</CardDescription>
@@ -683,14 +798,41 @@ export default function AdminApplicantsPage() {
                           cx="50%"
                           cy="50%"
                           outerRadius={100}
-                          label={({ name, percent }) => `${name.substring(0, 15)}${name.length > 15 ? '...' : ''} (${(percent * 100).toFixed(0)}%)`}
                           labelLine={false}
+                          label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
+                            const RADIAN = Math.PI / 180;
+                            const radius = innerRadius + (outerRadius - innerRadius) * 1.2;
+                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+                            const shortName = `${name.substring(0, 15)}${name.length > 15 ? '...' : ''}`;
+                            const txt = `${shortName} (${(percent * 100).toFixed(0)}%)`;
+
+                            return (
+                              <text
+                                x={x}
+                                y={y}
+                                fill="hsl(var(--foreground))"
+                                textAnchor={x > cx ? 'start' : 'end'}
+                                dominantBaseline="central"
+                                fontSize={12}
+                              >
+                                {txt}
+                              </text>
+                            );
+                          }}
                         >
                           {stats.schoolData.map((_, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Legend />
+
+                        <Legend
+                          wrapperStyle={{ color: 'hsl(var(--foreground))' }}
+                          formatter={(value) => (
+                            <span style={{ color: 'hsl(var(--foreground))' }}>{value}</span>
+                          )}
+                        />
                       </PieChart>
                     </ChartContainer>
                   ) : (
@@ -711,15 +853,15 @@ export default function AdminApplicantsPage() {
                   {stats.resultsData.length > 0 ? (
                     <ChartContainer config={resultsChartConfig} className="h-[300px]">
                       <BarChart data={stats.resultsData} layout="vertical">
-                        <XAxis type="number" />
-                        <YAxis 
-                          type="category" 
-                          dataKey="name" 
+                        <XAxis type="number" tick={{ fill: 'hsl(var(--foreground))' }} />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
                           width={100}
-                          tick={{ fontSize: 12 }}
+                          tick={{ fontSize: 12, fill: 'hsl(var(--foreground))' }}
                         />
                         <ChartTooltip content={<ChartTooltipContent />} />
-                        <Bar dataKey="count" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
+                        <Bar dataKey="count" fill="#60A5FA" radius={[0, 4, 4, 0]} />
                       </BarChart>
                     </ChartContainer>
                   ) : (
@@ -763,7 +905,10 @@ export default function AdminApplicantsPage() {
                           <TableCell className="font-medium">{applicant.index_no}</TableCell>
                           <TableCell>{applicant.fullname}</TableCell>
                           <TableCell>
-                            <Badge variant={applicant.gender ? 'default' : 'secondary'} className={applicant.gender ? 'bg-blue-500/20 text-blue-600' : 'bg-pink-500/20 text-pink-600'}>
+                            <Badge
+                              variant={applicant.gender ? 'default' : 'secondary'}
+                              className={applicant.gender ? 'bg-blue-500/20 text-blue-600' : 'bg-pink-500/20 text-pink-600'}
+                            >
                               {applicant.gender ? 'Male' : 'Female'}
                             </Badge>
                           </TableCell>
@@ -815,7 +960,7 @@ export default function AdminApplicantsPage() {
               </CardContent>
             </Card>
 
-            {/* Delete Year Data Button */}
+            {/* Danger Zone */}
             <Card className="border-destructive/50">
               <CardHeader>
                 <CardTitle className="text-lg text-destructive flex items-center gap-2">
@@ -838,7 +983,7 @@ export default function AdminApplicantsPage() {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will permanently delete all <strong>{yearApplicants.length}</strong> applicants from year <strong>{selectedYear}</strong>. 
+                        This will permanently delete all <strong>{yearApplicants.length}</strong> applicants from year <strong>{selectedYear}</strong>.
                         This action cannot be undone and the data cannot be recovered.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
@@ -865,8 +1010,8 @@ export default function AdminApplicantsPage() {
               <DialogTitle>Upload Applicants CSV</DialogTitle>
               <DialogDescription>
                 Upload a CSV file with applicant data. The file should have the following columns:
-                index_no, fullname, gender, stream, nic, phone, email, school, results
-                (year will be automatically set based on creation date)
+                index_no (must be empty — auto-generated), fullname, gender, stream, nic, phone, email, school, results.
+                Index numbers are generated automatically in order using digits 0000–9999.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
