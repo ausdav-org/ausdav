@@ -8,6 +8,8 @@ import {
   X,
   Loader2,
   Mail,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { PermissionGate } from '@/components/admin/PermissionGate';
@@ -49,6 +51,8 @@ import {
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeFunction } from '@/integrations/supabase/functions';
+import Papa from 'papaparse';
 import { cn } from '@/lib/utils';
 
 interface Member {
@@ -85,6 +89,12 @@ export default function AdminMembersPage() {
   const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<string>('member');
   const [inviting, setInviting] = useState(false);
+  // CSV import
+  const [importOpen, setImportOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [previewRows, setPreviewRows] = useState<any[]>([]);
+  const [previewErrorsCount, setPreviewErrorsCount] = useState(0);
 
   useEffect(() => {
     fetchMembers();
@@ -173,6 +183,195 @@ export default function AdminMembersPage() {
     }
   };
 
+  const downloadCsvTemplate = () => {
+    const headers = [
+      'fullname',
+      'username',
+      'nic',
+      'gender',
+      'role',
+      'batch',
+      'university',
+      'school',
+      'phone',
+      'designation',
+      'uni_degree',
+      'profile_bucket',
+      'profile_path',
+    ];
+    const sample = [
+      'Anitha Kumar',
+      'anitha.k',
+      '912345678V',
+      'female',
+      'member',
+      '2019',
+      'University of Colombo',
+      'Science',
+      '0771234567',
+      'lecturer',
+      'BSc',
+      'member-profiles',
+      'profiles/anitha.jpg',
+    ];
+
+    const csvContent = headers.join(',') + '\n' + sample.map((v) => `"${v}"`).join(',') + '\n';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `members_template.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  function parseFileToPreview(file: File) {
+    Papa.parse(file, {
+      skipEmptyLines: true,
+      complete: (result) => {
+        const rows = result.data as string[][];
+        if (!rows || rows.length < 2) return;
+        const headers = rows[0].map((h) => String(h).trim().toLowerCase());
+        const expected = ['fullname','username','nic','gender','role','batch','university','school','phone','designation','uni_degree','profile_bucket','profile_path'];
+        const headerMap: Record<string, number> = {};
+        expected.forEach((col) => {
+          const idx = headers.indexOf(col);
+          if (idx !== -1) headerMap[col] = idx;
+        });
+
+        const preview: any[] = [];
+        let errorsCount = 0;
+        for (let i = 1; i < rows.length; i++) {
+          const values = rows[i].map((v) => String(v).trim().replace(/^"|"$/g, ''));
+          const get = (k: string) => (headerMap[k] !== undefined ? values[headerMap[k]] : '');
+          const data = {
+            fullname: get('fullname'),
+            username: get('username'),
+            nic: get('nic'),
+            gender: get('gender'),
+            role: get('role') || 'member',
+            batch: get('batch'),
+            university: get('university'),
+            school: get('school'),
+            phone: get('phone') || '',
+            designation: get('designation') || 'none',
+            uni_degree: get('uni_degree') || '',
+            profile_bucket: get('profile_bucket') || '',
+            profile_path: get('profile_path') || '',
+          };
+
+          const rowErrors: string[] = [];
+          if (!data.fullname) rowErrors.push('fullname missing');
+          if (!data.username) rowErrors.push('username missing');
+          if (!data.nic) rowErrors.push('nic missing');
+          if (!data.gender) rowErrors.push('gender missing');
+          if (!data.batch || Number.isNaN(Number(data.batch))) rowErrors.push('batch invalid');
+          if (!data.university) rowErrors.push('university missing');
+          if (!data.school) rowErrors.push('school missing');
+
+          const action = members.find((m) => m.username === data.username) ? 'update' : 'insert';
+
+          if (rowErrors.length) errorsCount += 1;
+          preview.push({ data, errors: rowErrors, action });
+        }
+
+        setPreviewRows(preview);
+        setPreviewErrorsCount(errorsCount);
+      },
+      error: (err) => {
+        console.error('CSV parse error', err);
+        toast.error('Failed to parse CSV');
+      },
+    });
+  }
+
+  const handleMembersCsvImport = async () => {
+    if (!csvFile) {
+      toast.error('Please select a CSV file');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      // If user used preview, use that parsed rows; else parse now using PapaParse
+      let parsed: any[] = [];
+      if (previewRows && previewRows.length > 0) {
+        parsed = previewRows.filter((r) => (r.errors || []).length === 0).map((r) => r.data);
+        if (parsed.length === 0) throw new Error('No valid rows to import from preview');
+      } else {
+        const text = await csvFile.text();
+        const res = Papa.parse<string[]>(text, { skipEmptyLines: true });
+        if (res.errors && res.errors.length) throw new Error(res.errors[0].message || 'CSV parse error');
+        const rows = res.data as string[][];
+        if (rows.length < 2) throw new Error('CSV contains no data rows');
+        const headers = rows[0].map((h) => h.trim().toLowerCase());
+        const expected = ['fullname','username','nic','gender','role','batch','university','school','phone','designation','uni_degree','profile_bucket','profile_path'];
+        const headerMap: Record<string, number> = {};
+        expected.forEach((col) => {
+          const idx = headers.indexOf(col);
+          if (idx === -1) {
+            if (!['uni_degree','profile_bucket','profile_path'].includes(col)) {
+              throw new Error(`Missing required column: ${col}`);
+            }
+          } else {
+            headerMap[col] = idx;
+          }
+        });
+
+        for (let i = 1; i < rows.length; i++) {
+          const values = rows[i].map((v) => String(v).trim().replace(/^"|"$/g, ''));
+          const get = (k: string) => (headerMap[k] !== undefined ? values[headerMap[k]] : '');
+          const fullname = get('fullname');
+          const username = get('username');
+          const nic = get('nic');
+          const genderRaw = get('gender');
+          const role = get('role') || 'member';
+          const batchRaw = get('batch');
+          const university = get('university');
+          const school = get('school');
+          const phone = get('phone') || '';
+          const designation = get('designation') || 'none';
+          if (!fullname || !username || !nic || !genderRaw || !batchRaw || !university || !school) {
+            continue;
+          }
+          const gender = ['male','m','1','true'].includes(genderRaw.toLowerCase());
+          const batch = parseInt(batchRaw, 10);
+          if (Number.isNaN(batch)) continue;
+          const row: any = { fullname, username, nic, gender, role, batch, university, school, phone, designation };
+          const uni_degree = get('uni_degree'); if (uni_degree) row.uni_degree = uni_degree;
+          const profile_bucket = get('profile_bucket'); if (profile_bucket) row.profile_bucket = profile_bucket;
+          const profile_path = get('profile_path'); if (profile_path) row.profile_path = profile_path;
+          parsed.push(row);
+        }
+      }
+
+      if (parsed.length === 0) throw new Error('No valid rows parsed from CSV');
+
+      // Send to server-side function to enforce super-admin check and perform service-role upsert
+      // Remove any mem_id/auth_user_id keys just in case
+      const cleaned = parsed.map((r) => {
+        const c = { ...r } as Record<string, any>;
+        delete c.mem_id;
+        delete c.auth_user_id;
+        return c;
+      });
+
+      const { data, error } = await invokeFunction('import-members', { members: cleaned });
+      if (error) throw error;
+
+      const inserted = data?.inserted ?? data ?? [];
+      toast.success(`Imported ${Array.isArray(inserted) ? inserted.length : parsed.length} members successfully`);
+      setImportOpen(false);
+      setCsvFile(null);
+      fetchMembers();
+    } catch (err: any) {
+      console.error('CSV import error', err);
+      toast.error(err?.message || 'Failed to import CSV');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const filteredMembers = members.filter((member) => {
     const matchesSearch =
       member.fullname.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -248,10 +447,20 @@ export default function AdminMembersPage() {
           </div>
 
           {isSuperAdmin && (
-            <Button onClick={() => setInviteOpen(true)}>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Invite Member
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={downloadCsvTemplate} variant="outline">
+                <Download className="mr-2 h-4 w-4" />
+                Download Template
+              </Button>
+              <Button onClick={() => setImportOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Import CSV
+              </Button>
+              <Button onClick={() => setInviteOpen(true)}>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Invite Member
+              </Button>
+            </div>
           )}
         </div>
 
@@ -280,17 +489,18 @@ export default function AdminMembersPage() {
                       <TableCell>
                         <div>
                           <p className="font-medium">{member.fullname}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {member.username}
-                          </p>
+                          <p className="text-sm text-muted-foreground">{member.username}</p>
                         </div>
                       </TableCell>
+
                       <TableCell>{member.batch ?? '-'}</TableCell>
+
                       <TableCell>
                         <Badge className={cn('capitalize', getRoleBadgeColor(member.role || ''))}>
                           {member.role?.replace('_', ' ') || 'Unknown'}
                         </Badge>
                       </TableCell>
+
                       <TableCell>
                         <Badge
                           className={cn(
@@ -302,6 +512,7 @@ export default function AdminMembersPage() {
                           {member.is_active ? 'Active' : 'Inactive'}
                         </Badge>
                       </TableCell>
+
                       <TableCell>
                         <Badge
                           className={cn(
@@ -313,6 +524,7 @@ export default function AdminMembersPage() {
                           {member.can_submit_finance ? 'Enabled' : 'Disabled'}
                         </Badge>
                       </TableCell>
+
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -321,9 +533,7 @@ export default function AdminMembersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => toggleActive()}
-                            >
+                            <DropdownMenuItem onClick={() => toggleActive()}>
                               {member.is_active ? (
                                 <>
                                   <X className="mr-2 h-4 w-4" />
@@ -336,31 +546,19 @@ export default function AdminMembersPage() {
                                 </>
                               )}
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => toggleFinancePermission()}
-                            >
+                            <DropdownMenuItem onClick={() => toggleFinancePermission()}>
                               Toggle Finance Permission
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {isSuperAdmin && (
                               <>
-                                <DropdownMenuItem
-                                  onClick={() => changeRole(member, 'member')}
-                                  disabled={member.role === 'member'}
-                                >
+                                <DropdownMenuItem onClick={() => changeRole(member, 'member')} disabled={member.role === 'member'}>
                                   Set as Member
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => changeRole(member, 'admin')}
-                                  disabled={member.role === 'admin'}
-                                >
+                                <DropdownMenuItem onClick={() => changeRole(member, 'admin')} disabled={member.role === 'admin'}>
                                   Set as Admin
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => changeRole(member, 'super_admin')}
-                                  disabled={member.role === 'super_admin'}
-                                  className="text-red-400"
-                                >
+                                <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')} disabled={member.role === 'super_admin'} className="text-red-400">
                                   Set as Super Admin
                                 </DropdownMenuItem>
                               </>
@@ -383,75 +581,187 @@ export default function AdminMembersPage() {
             )}
           </CardContent>
         </Card>
-      </div>
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Required columns: fullname, username, nic, gender, role, batch, university, school, phone, designation. Optional: uni_degree, profile_bucket, profile_path.
+              </p>
+            </div>
 
-      {/* Invite Dialog */}
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Invite New Member</DialogTitle>
-            <DialogDescription>
-              Send an invitation email to add a new member to the platform.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="invite-name">Full Name</Label>
-              <Input
-                id="invite-name"
-                value={inviteName}
-                onChange={(e) => setInviteName(e.target.value)}
-                placeholder="John Doe"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-email">Email Address</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="john@example.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-role">Role</Label>
-              <Select value={inviteRole} onValueChange={setInviteRole}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="member">Member</SelectItem>
-                  <SelectItem value="honourable">Honourable</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  {isSuperAdmin && (
-                    <SelectItem value="super_admin">Super Admin</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleInvite} disabled={inviting}>
-              {inviting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                <>
-                  <Mail className="mr-2 h-4 w-4" />
-                  Send Invite
-                </>
+            {previewRows.length > 0 && (
+              <div className="mt-4 max-h-64 overflow-auto">
+                <div className="mb-2 text-sm">Preview: {previewRows.length} rows — {previewErrorsCount} errors</div>
+                <table className="w-full text-sm border">
+                  <thead>
+                    <tr className="bg-muted/10">
+                      <th className="p-2 text-left">#</th>
+                      <th className="p-2 text-left">Username</th>
+                      <th className="p-2 text-left">Full name</th>
+                      <th className="p-2 text-left">Action</th>
+                      <th className="p-2 text-left">Errors</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((r, idx) => (
+                      <tr key={idx} className={r.errors && r.errors.length ? 'bg-red-50' : ''}>
+                        <td className="p-2 align-top">{idx + 1}</td>
+                        <td className="p-2 align-top">{r.data.username}</td>
+                        <td className="p-2 align-top">{r.data.fullname}</td>
+                        <td className="p-2 align-top">{r.action}</td>
+                        <td className="p-2 align-top text-xs text-red-600">{(r.errors || []).join('; ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+        {/* Import Dialog (uses previewRows) */}
+        <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Import Members from CSV</DialogTitle>
+              <DialogDescription>Upload a CSV matching the members schema. Use the template for column order.</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>CSV File</Label>
+                <input
+                  type="file"
+                  accept="text/csv"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    setCsvFile(f);
+                    if (f) parseFileToPreview(f);
+                  }}
+                  className="mt-2"
+                />
+              </div>
+
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Required columns: fullname, username, nic, gender, role, batch, university, school, phone, designation. Optional: uni_degree, profile_bucket, profile_path.
+                </p>
+              </div>
+
+              {previewRows.length > 0 && (
+                <div className="mt-4 max-h-64 overflow-auto">
+                  <div className="mb-2 text-sm">Preview: {previewRows.length} rows — {previewErrorsCount} errors</div>
+                  <table className="w-full text-sm border">
+                    <thead>
+                      <tr className="bg-muted/10">
+                        <th className="p-2 text-left">#</th>
+                        <th className="p-2 text-left">Username</th>
+                        <th className="p-2 text-left">Full name</th>
+                        <th className="p-2 text-left">Action</th>
+                        <th className="p-2 text-left">Errors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((r, idx) => (
+                        <tr key={idx} className={r.errors && r.errors.length ? 'bg-red-50' : ''}>
+                          <td className="p-2 align-top">{idx + 1}</td>
+                          <td className="p-2 align-top">{r.data.username}</td>
+                          <td className="p-2 align-top">{r.data.fullname}</td>
+                          <td className="p-2 align-top">{r.action}</td>
+                          <td className="p-2 align-top text-xs text-red-600">{(r.errors || []).join('; ')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setImportOpen(false); setCsvFile(null); setPreviewRows([]); }}>
+                Cancel
+              </Button>
+              <Button onClick={handleMembersCsvImport} disabled={importing}>
+                {importing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import CSV
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Invite Dialog */}
+        <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Invite New Member</DialogTitle>
+              <DialogDescription>
+                Send an invitation email to add a new member to the platform.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="invite-name">Full Name</Label>
+                <Input
+                  id="invite-name"
+                  value={inviteName}
+                  onChange={(e) => setInviteName(e.target.value)}
+                  placeholder="John Doe"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-email">Email Address</Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="john@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-role">Role</Label>
+                <Select value={inviteRole} onValueChange={setInviteRole}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">Member</SelectItem>
+                    <SelectItem value="honourable">Honourable</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    {isSuperAdmin && (
+                      <SelectItem value="super_admin">Super Admin</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setInviteOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleInvite} disabled={inviting}>
+                {inviting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Send Invite
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
+    </div>
     </PermissionGate>
   );
 }
