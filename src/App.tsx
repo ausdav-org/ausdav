@@ -43,6 +43,9 @@ import AdminSeminarPage from "@/pages/admin/AdminSeminarPage";
 import AdminApplicantsPage from "@/pages/admin/AdminApplicantsPage";
 import ClaimPermissionPage from "@/pages/admin/ClaimPermissionPage";
 
+// ✅ ADD THIS IMPORT (create this file or update the path to your actual results page)
+import AdminResultsPage from "@/pages/admin/AdminResultsPage";
+
 const queryClient = new QueryClient();
 
 const App = () => {
@@ -112,6 +115,10 @@ const App = () => {
                     <Route path="profile" element={<AdminProfilePage />} />
                     <Route path="members" element={<AdminMembersPage />} />
                     <Route path="applicants" element={<AdminApplicantsPage />} />
+
+                    {/* ✅ ADDED: Results page route */}
+                    <Route path="results" element={<AdminResultsPage />} />
+
                     <Route path="events" element={<AdminEventsPage />} />
                     <Route path="exam" element={<AdminExamPage />} />
                     <Route path="seminar" element={<AdminSeminarPage />} />

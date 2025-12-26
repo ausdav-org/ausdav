@@ -10,6 +10,8 @@ import {
   Trash2,
   Users,
   TrendingUp,
+  Info,
+  AlertTriangle,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { PermissionGate } from '@/components/admin/PermissionGate';
@@ -67,7 +69,7 @@ import {
   ChartTooltipContent,
   ChartConfig,
 } from '@/components/ui/chart';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Legend } from 'recharts';
+import { PieChart, Pie, Cell, Legend } from 'recharts';
 
 type AppSettings = {
   allow_exam_applications: boolean;
@@ -91,6 +93,7 @@ interface Applicant {
 
 export default function AdminApplicantsPage() {
   const { isSuperAdmin, isAdmin } = useAdminAuth();
+
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,11 +101,11 @@ export default function AdminApplicantsPage() {
   const [filterGender, setFilterGender] = useState<string>('all');
   const [filterSchool, setFilterSchool] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
+
+  // Exam applications setting (kept)
   const [allowExamApplications, setAllowExamApplications] = useState<boolean | null>(null);
-  const [allowResultsView, setAllowResultsView] = useState<boolean | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [resultsSaving, setResultsSaving] = useState(false);
 
   // CSV Upload dialog
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -129,7 +132,6 @@ export default function AdminApplicantsPage() {
   const loadExamSetting = async () => {
     setSettingsLoading(true);
     try {
-      // First try to get both columns
       const { data, error } = await supabase
         .from('app_settings' as any)
         .select('*')
@@ -137,11 +139,9 @@ export default function AdminApplicantsPage() {
         .maybeSingle();
 
       if (error) throw error;
-      
-      // Handle both old schema (without allow_results_view) and new schema
+
       const settings = data as unknown as AppSettings | null;
       setAllowExamApplications(settings?.allow_exam_applications ?? false);
-      setAllowResultsView(settings?.allow_results_view ?? false);
     } catch (error) {
       console.error('Error loading exam setting:', error);
       toast.error('Failed to load exam application setting');
@@ -169,28 +169,6 @@ export default function AdminApplicantsPage() {
       toast.error('Failed to update exam application setting');
     } finally {
       setSettingsSaving(false);
-    }
-  };
-
-  const toggleResultsSetting = async () => {
-    if (allowResultsView === null || resultsSaving) return;
-    setResultsSaving(true);
-    try {
-      const { data, error } = await supabase
-        .from('app_settings' as any)
-        .update({ allow_results_view: !allowResultsView })
-        .eq('id', 1)
-        .select('allow_results_view')
-        .maybeSingle<AppSettings>();
-
-      if (error) throw error;
-      setAllowResultsView(data?.allow_results_view ?? false);
-      toast.success(data?.allow_results_view ? 'Results published' : 'Results unpublished');
-    } catch (error) {
-      console.error('Error updating results setting:', error);
-      toast.error('Failed to update results setting');
-    } finally {
-      setResultsSaving(false);
     }
   };
 
@@ -226,8 +204,9 @@ export default function AdminApplicantsPage() {
         applicant.school.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesStream = filterStream === 'all' || applicant.stream === filterStream;
-      const matchesGender = filterGender === 'all' || 
-        (filterGender === 'male' && applicant.gender) || 
+      const matchesGender =
+        filterGender === 'all' ||
+        (filterGender === 'male' && applicant.gender) ||
         (filterGender === 'female' && !applicant.gender);
       const matchesSchool = filterSchool === 'all' || applicant.school === filterSchool;
 
@@ -239,33 +218,46 @@ export default function AdminApplicantsPage() {
   const stats = useMemo(() => {
     const maleCount = filteredApplicants.filter(a => a.gender).length;
     const femaleCount = filteredApplicants.filter(a => !a.gender).length;
-    
-    // School distribution
-    const schoolCounts: { [key: string]: number } = {};
+
+    // School distribution (Top 10)
+    const schoolCounts: Record<string, number> = {};
     filteredApplicants.forEach(a => {
       schoolCounts[a.school] = (schoolCounts[a.school] || 0) + 1;
     });
     const schoolData = Object.entries(schoolCounts)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 10); // Top 10 schools
+      .slice(0, 10);
 
-    // Results distribution
-    const resultsCounts: { [key: string]: number } = {};
+    // ✅ Stream distribution (Pie)
+    const streamCounts: Record<string, number> = {};
     filteredApplicants.forEach(a => {
-      const result = a.results || 'Not Available';
-      resultsCounts[result] = (resultsCounts[result] || 0) + 1;
+      const s = a.stream || 'Not Available';
+      streamCounts[s] = (streamCounts[s] || 0) + 1;
     });
-    const resultsData = Object.entries(resultsCounts)
+    const streamData = Object.entries(streamCounts)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
 
-    return { maleCount, femaleCount, schoolData, resultsData };
+    return { maleCount, femaleCount, schoolData, streamData };
   }, [filteredApplicants]);
 
   const uniqueStreams = useMemo(() => [...new Set(yearApplicants.map(a => a.stream))], [yearApplicants]);
   const uniqueSchools = useMemo(() => [...new Set(yearApplicants.map(a => a.school))], [yearApplicants]);
 
+  // --- Index format helpers ---
+  const streamLetter = (value: string) => (value?.trim()?.[0] ? value.trim()[0].toUpperCase() : 'S');
+  const currentStreamLetter = filterStream !== 'all' ? streamLetter(filterStream) : 'S';
+
+  const exampleYear = selectedYear ?? new Date().getFullYear();
+  const exampleYearTwoDigits = String(exampleYear).slice(-2);
+  const indexExample = `${exampleYearTwoDigits}0000${currentStreamLetter}`;
+
+  // ✅ UPDATED CSV UPLOAD:
+  // - index_no in CSV must be EMPTY
+  // - system generates YY + (last 4 digits + 1, padded) + StreamLetter
+  // - 4 digits are COMMON for the entire year (not per stream)
+  // - increment follows CSV row order
   const handleCsvUpload = async () => {
     if (!csvFile) {
       toast.error('Please select a CSV file');
@@ -278,7 +270,6 @@ export default function AdminApplicantsPage() {
       const lines = text.split('\n').filter(line => line.trim());
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
 
-      // Expected headers: index_no,fullname,gender,stream,nic,phone,email,school,results
       const expectedHeaders = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results'];
       const headerMap: { [key: string]: number } = {};
 
@@ -290,28 +281,101 @@ export default function AdminApplicantsPage() {
         headerMap[expected] = index;
       });
 
-      const records = [];
+      const importYear = selectedYear ?? new Date().getFullYear();
+      const yy = String(importYear).slice(-2);
+
+      const parsedRows: Array<{
+        order: number;
+        fullname: string;
+        gender: boolean;
+        stream: string;
+        nic: string;
+        phone: string | null;
+        email: string | null;
+        school: string;
+        results: string | null;
+        year: number;
+      }> = [];
+
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',').map(v => v.trim());
-        if (values.length !== headers.length) continue; // Skip malformed lines
+        if (values.length !== headers.length) continue;
 
-        const record = {
-          index_no: values[headerMap.index_no],
+        const csvIndexNo = values[headerMap.index_no];
+        if (csvIndexNo && csvIndexNo.length > 0) {
+          throw new Error(`Row ${i + 1}: index_no must be empty (system will generate it)`);
+        }
+
+        parsedRows.push({
+          order: i,
           fullname: values[headerMap.fullname],
-          gender: values[headerMap.gender].toLowerCase() === 'male' || values[headerMap.gender] === '1' || values[headerMap.gender].toLowerCase() === 'true',
+          gender:
+            values[headerMap.gender].toLowerCase() === 'male' ||
+            values[headerMap.gender] === '1' ||
+            values[headerMap.gender].toLowerCase() === 'true',
           stream: values[headerMap.stream],
           nic: values[headerMap.nic],
           phone: values[headerMap.phone] || null,
           email: values[headerMap.email] || null,
           school: values[headerMap.school],
           results: values[headerMap.results] || null,
-        };
-
-        records.push(record);
+          year: importYear,
+        });
       }
 
-      if (records.length === 0) {
+      if (parsedRows.length === 0) {
         throw new Error('No valid records found in CSV');
+      }
+
+      parsedRows.sort((a, b) => a.order - b.order);
+
+      // ✅ Find last used sequence for the YEAR
+      const { data: latestRow, error: latestErr } = await supabase
+        .from('applicants' as any)
+        .select('index_no')
+        .eq('year', importYear)
+        .order('index_no', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestErr) throw latestErr;
+
+      let seq = -1; // first generated => 0000
+      const latestIndexNo = (latestRow as any)?.index_no as string | undefined;
+
+      if (latestIndexNo && latestIndexNo.length >= 6) {
+        const digitsPart = latestIndexNo.substring(2, 6);
+        const parsed = Number(digitsPart);
+        if (!Number.isNaN(parsed)) seq = parsed;
+      }
+
+      const records: any[] = [];
+
+      for (const row of parsedRows) {
+        seq += 1;
+
+        if (seq > 9999) {
+          throw new Error(
+            `Index range exceeded for year "${importYear}". Allowed digits are 0000 to 9999.`
+          );
+        }
+
+        const fourDigits = String(seq).padStart(4, '0');
+        const sLetter = streamLetter(row.stream);
+        const index_no = `${yy}${fourDigits}${sLetter}`;
+
+        records.push({
+          index_no,
+          fullname: row.fullname,
+          gender: row.gender,
+          stream: row.stream,
+          nic: row.nic,
+          phone: row.phone,
+          email: row.email,
+          school: row.school,
+          results: row.results,
+          year: row.year,
+        });
       }
 
       const { error } = await supabase
@@ -400,11 +464,10 @@ export default function AdminApplicantsPage() {
       if (error) throw error;
 
       toast.success(`Successfully deleted ${applicantsToDelete.length} applicants from ${selectedYear}`);
-      
-      // Update local state and select next available year
+
       const remainingApplicants = applicants.filter(a => a.year !== selectedYear);
       setApplicants(remainingApplicants);
-      
+
       const remainingYears = [...new Set(remainingApplicants.map(a => a.year))].sort((a, b) => b - a);
       setSelectedYear(remainingYears.length > 0 ? remainingYears[0] : null);
     } catch (error) {
@@ -415,30 +478,25 @@ export default function AdminApplicantsPage() {
 
   // Chart configurations
   const schoolChartConfig: ChartConfig = {
-    count: {
-      label: "Students",
-      color: "hsl(var(--chart-1))",
-    },
+    count: { label: "Students", color: "#60A5FA" },
   };
 
-  const resultsChartConfig: ChartConfig = {
-    count: {
-      label: "Count",
-      color: "hsl(var(--chart-2))",
-    },
+  const streamChartConfig: ChartConfig = {
+    count: { label: "Students", color: "#60A5FA" },
   };
 
+  // ✅ Visible colors for dark/light mode
   const COLORS = [
-    'hsl(var(--chart-1))',
-    'hsl(var(--chart-2))',
-    'hsl(var(--chart-3))',
-    'hsl(var(--chart-4))',
-    'hsl(var(--chart-5))',
-    '#8884d8',
-    '#82ca9d',
-    '#ffc658',
-    '#ff7300',
-    '#00C49F',
+    '#60A5FA',
+    '#34D399',
+    '#FBBF24',
+    '#F87171',
+    '#A78BFA',
+    '#FB7185',
+    '#22D3EE',
+    '#F97316',
+    '#84CC16',
+    '#E879F9',
   ];
 
   if (loading) {
@@ -463,21 +521,10 @@ export default function AdminApplicantsPage() {
                 <Badge className={allowExamApplications ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}>
                   {settingsLoading ? 'Loading...' : allowExamApplications ? 'Applications Open' : 'Applications Closed'}
                 </Badge>
-                <Badge className={allowResultsView ? 'bg-blue-500/20 text-blue-500' : 'bg-muted text-muted-foreground'}>
-                  {settingsLoading ? 'Loading...' : allowResultsView ? 'Results Published' : 'Results Not Published'}
-                </Badge>
               </div>
+
+              {/* ✅ Removed Publish/Unpublish Results button */}
               <div className="flex gap-2">
-                <Button
-                  variant={allowResultsView ? 'destructive' : 'default'}
-                  size="sm"
-                  onClick={toggleResultsSetting}
-                  disabled={!isAdmin || settingsLoading || resultsSaving || allowResultsView === null}
-                  title={isAdmin ? undefined : 'Only admins can change this setting'}
-                >
-                  {resultsSaving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-                  {allowResultsView ? 'Unpublish Results' : 'Publish Results'}
-                </Button>
                 <Button
                   variant={allowExamApplications ? 'destructive' : 'default'}
                   size="sm"
@@ -491,6 +538,7 @@ export default function AdminApplicantsPage() {
               </div>
             </div>
           </CardHeader>
+
           <CardContent>
             {uniqueYears.length === 0 ? (
               <p className="text-muted-foreground text-center py-4">No applicants found</p>
@@ -519,6 +567,40 @@ export default function AdminApplicantsPage() {
 
         {selectedYear !== null && (
           <>
+            {/* ✅ Index No Instructions Card (UPDATED) */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5" />
+                  Index Number Instructions
+                </CardTitle>
+                <CardDescription className="flex items-start gap-2">
+                  <Info className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <span>
+                    Do <strong>NOT</strong> create index numbers manually.
+                    For CSV imports, keep <span className="font-mono">index_no</span> column empty.
+                    The system will generate and save them automatically in order.
+                  </span>
+                </CardDescription>
+              </CardHeader>
+
+              <CardContent className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="font-mono">
+                    Format: YY + 4 digits + Stream Letter
+                  </Badge>
+                  <Badge variant="secondary" className="font-mono">
+                    Example: {indexExample}
+                  </Badge>
+                </div>
+
+                <div className="text-sm text-muted-foreground">
+                  Digits are auto-generated in sequence from <span className="font-mono">0000</span> to{' '}
+                  <span className="font-mono">9999</span>. If the limit is reached, the upload will be blocked.
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Filters Section */}
             <Card>
               <CardHeader className="pb-3">
@@ -540,6 +622,7 @@ export default function AdminApplicantsPage() {
                       />
                     </div>
                   </div>
+
                   <Select value={filterStream} onValueChange={setFilterStream}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="Stream" />
@@ -553,6 +636,7 @@ export default function AdminApplicantsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+
                   <Select value={filterGender} onValueChange={setFilterGender}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="Gender" />
@@ -563,6 +647,7 @@ export default function AdminApplicantsPage() {
                       <SelectItem value="female">Female</SelectItem>
                     </SelectContent>
                   </Select>
+
                   <Select value={filterSchool} onValueChange={setFilterSchool}>
                     <SelectTrigger className="w-48">
                       <SelectValue placeholder="School" />
@@ -576,12 +661,9 @@ export default function AdminApplicantsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={downloadCsvTemplate}
-                    >
+                    <Button variant="outline" size="sm" onClick={downloadCsvTemplate}>
                       <Download className="h-4 w-4 mr-1" />
                       Template
                     </Button>
@@ -594,10 +676,7 @@ export default function AdminApplicantsPage() {
                       <Download className="h-4 w-4 mr-1" />
                       Export CSV
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => setUploadOpen(true)}
-                    >
+                    <Button size="sm" onClick={() => setUploadOpen(true)}>
                       <Upload className="h-4 w-4 mr-1" />
                       Import
                     </Button>
@@ -608,7 +687,6 @@ export default function AdminApplicantsPage() {
 
             {/* Statistics Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Total Count */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Total Applicants</CardDescription>
@@ -619,7 +697,6 @@ export default function AdminApplicantsPage() {
                 </CardHeader>
               </Card>
 
-              {/* Male Count */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Male</CardDescription>
@@ -635,7 +712,6 @@ export default function AdminApplicantsPage() {
                 </CardHeader>
               </Card>
 
-              {/* Female Count */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Female</CardDescription>
@@ -651,7 +727,6 @@ export default function AdminApplicantsPage() {
                 </CardHeader>
               </Card>
 
-              {/* Schools Count */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Schools Represented</CardDescription>
@@ -683,14 +758,41 @@ export default function AdminApplicantsPage() {
                           cx="50%"
                           cy="50%"
                           outerRadius={100}
-                          label={({ name, percent }) => `${name.substring(0, 15)}${name.length > 15 ? '...' : ''} (${(percent * 100).toFixed(0)}%)`}
                           labelLine={false}
+                          label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
+                            const RADIAN = Math.PI / 180;
+                            const radius = innerRadius + (outerRadius - innerRadius) * 1.2;
+                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+                            const shortName = `${name.substring(0, 15)}${name.length > 15 ? '...' : ''}`;
+                            const txt = `${shortName} (${(percent * 100).toFixed(0)}%)`;
+
+                            return (
+                              <text
+                                x={x}
+                                y={y}
+                                fill="hsl(var(--foreground))"
+                                textAnchor={x > cx ? 'start' : 'end'}
+                                dominantBaseline="central"
+                                fontSize={12}
+                              >
+                                {txt}
+                              </text>
+                            );
+                          }}
                         >
                           {stats.schoolData.map((_, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Legend />
+
+                        <Legend
+                          wrapperStyle={{ color: 'hsl(var(--foreground))' }}
+                          formatter={(value) => (
+                            <span style={{ color: 'hsl(var(--foreground))' }}>{value}</span>
+                          )}
+                        />
                       </PieChart>
                     </ChartContainer>
                   ) : (
@@ -701,26 +803,60 @@ export default function AdminApplicantsPage() {
                 </CardContent>
               </Card>
 
-              {/* Results Distribution Bar Chart */}
+              {/* ✅ Stream Distribution Pie Chart (replaces Results Distribution) */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Results Distribution</CardTitle>
-                  <CardDescription>Distribution of applicants by results</CardDescription>
+                  <CardTitle className="text-lg">Stream Distribution</CardTitle>
+                  <CardDescription>Distribution of applicants by stream</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {stats.resultsData.length > 0 ? (
-                    <ChartContainer config={resultsChartConfig} className="h-[300px]">
-                      <BarChart data={stats.resultsData} layout="vertical">
-                        <XAxis type="number" />
-                        <YAxis 
-                          type="category" 
-                          dataKey="name" 
-                          width={100}
-                          tick={{ fontSize: 12 }}
-                        />
+                  {stats.streamData.length > 0 ? (
+                    <ChartContainer config={streamChartConfig} className="h-[300px]">
+                      <PieChart>
                         <ChartTooltip content={<ChartTooltipContent />} />
-                        <Bar dataKey="count" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
-                      </BarChart>
+                        <Pie
+                          data={stats.streamData}
+                          dataKey="count"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={100}
+                          labelLine={false}
+                          label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
+                            const RADIAN = Math.PI / 180;
+                            const radius = innerRadius + (outerRadius - innerRadius) * 1.2;
+                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+                            const shortName = `${name.substring(0, 15)}${name.length > 15 ? '...' : ''}`;
+                            const txt = `${shortName} (${(percent * 100).toFixed(0)}%)`;
+
+                            return (
+                              <text
+                                x={x}
+                                y={y}
+                                fill="hsl(var(--foreground))"
+                                textAnchor={x > cx ? 'start' : 'end'}
+                                dominantBaseline="central"
+                                fontSize={12}
+                              >
+                                {txt}
+                              </text>
+                            );
+                          }}
+                        >
+                          {stats.streamData.map((_, index) => (
+                            <Cell key={`stream-cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+
+                        <Legend
+                          wrapperStyle={{ color: 'hsl(var(--foreground))' }}
+                          formatter={(value) => (
+                            <span style={{ color: 'hsl(var(--foreground))' }}>{value}</span>
+                          )}
+                        />
+                      </PieChart>
                     </ChartContainer>
                   ) : (
                     <div className="h-[300px] flex items-center justify-center text-muted-foreground">
@@ -763,7 +899,10 @@ export default function AdminApplicantsPage() {
                           <TableCell className="font-medium">{applicant.index_no}</TableCell>
                           <TableCell>{applicant.fullname}</TableCell>
                           <TableCell>
-                            <Badge variant={applicant.gender ? 'default' : 'secondary'} className={applicant.gender ? 'bg-blue-500/20 text-blue-600' : 'bg-pink-500/20 text-pink-600'}>
+                            <Badge
+                              variant={applicant.gender ? 'default' : 'secondary'}
+                              className={applicant.gender ? 'bg-blue-500/20 text-blue-600' : 'bg-pink-500/20 text-pink-600'}
+                            >
                               {applicant.gender ? 'Male' : 'Female'}
                             </Badge>
                           </TableCell>
@@ -815,46 +954,48 @@ export default function AdminApplicantsPage() {
               </CardContent>
             </Card>
 
-            {/* Delete Year Data Button */}
-            <Card className="border-destructive/50">
-              <CardHeader>
-                <CardTitle className="text-lg text-destructive flex items-center gap-2">
-                  <Trash2 className="h-5 w-5" />
-                  Danger Zone
-                </CardTitle>
-                <CardDescription>
-                  Permanently delete all applicants for {selectedYear}. This action cannot be undone.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="w-full sm:w-auto">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete All {selectedYear} Applicants ({yearApplicants.length})
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete all <strong>{yearApplicants.length}</strong> applicants from year <strong>{selectedYear}</strong>. 
-                        This action cannot be undone and the data cannot be recovered.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleBulkDeleteByYear}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        Delete All
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </CardContent>
-            </Card>
+            {/* ✅ Danger Zone: Super Admin only */}
+            {isSuperAdmin && (
+              <Card className="border-destructive/50">
+                <CardHeader>
+                  <CardTitle className="text-lg text-destructive flex items-center gap-2">
+                    <Trash2 className="h-5 w-5" />
+                    Danger Zone
+                  </CardTitle>
+                  <CardDescription>
+                    Permanently delete all applicants for {selectedYear}. This action cannot be undone.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" className="w-full sm:w-auto">
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete All {selectedYear} Applicants ({yearApplicants.length})
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete all <strong>{yearApplicants.length}</strong> applicants from year{' '}
+                          <strong>{selectedYear}</strong>. This action cannot be undone and the data cannot be recovered.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleBulkDeleteByYear}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Delete All
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </CardContent>
+              </Card>
+            )}
           </>
         )}
 
@@ -865,8 +1006,8 @@ export default function AdminApplicantsPage() {
               <DialogTitle>Upload Applicants CSV</DialogTitle>
               <DialogDescription>
                 Upload a CSV file with applicant data. The file should have the following columns:
-                index_no, fullname, gender, stream, nic, phone, email, school, results
-                (year will be automatically set based on creation date)
+                index_no (must be empty — auto-generated), fullname, gender, stream, nic, phone, email, school, results.
+                Index numbers are generated automatically in order using digits 0000–9999.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
