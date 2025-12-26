@@ -103,24 +103,52 @@ interface Applicant {
   index_no: string;
   fullname: string;
   stream: string;
-  maths_or_bio: string | number | null;
-  physics: string | number | null;
-  chemistry: string | number | null;
-  zscore: string | number | null;
-  rank: string | number | null;
-
-  maths_or_bio_result?: string | null;
-  physics_result?: string | null;
-  chemistry_result?: string | null;
-
   gender: boolean;
   nic: string;
   phone: string | null;
   email: string | null;
   school: string;
-
   created_at: string;
   year: number;
+}
+
+interface Result {
+  result_id: number;
+  index_no: string;
+  stream: string;
+  physics_marks: number | null;
+  chemistry_marks: number | null;
+  maths_marks: number | null;
+  bio_marks: number | null;
+  phy_a_min: number;
+  phy_b_min: number;
+  phy_c_min: number;
+  phy_s_min: number;
+  che_a_min: number;
+  che_b_min: number;
+  che_c_min: number;
+  che_s_min: number;
+  bio_a_min: number;
+  bio_b_min: number;
+  bio_c_min: number;
+  bio_s_min: number;
+  maths_a_min: number;
+  maths_b_min: number;
+  maths_c_min: number;
+  maths_s_min: number;
+  physics_grade: string | null;
+  chemistry_grade: string | null;
+  maths_grade: string | null;
+  bio_grade: string | null;
+  zscore: number | null;
+  rank: number | null;
+  year: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ApplicantWithResult extends Applicant {
+  result?: Result | null;
 }
 
 type GradeRanges = {
@@ -225,11 +253,12 @@ function makeBellCurveBuckets(values: number[]) {
   return order.map((name) => ({ name, count: buckets[name] || 0 }));
 }
 
-export default function AdminApplicantsPage() {
+export default function AdminResultsPage() {
   const { isAdmin, isSuperAdmin } = useAdminAuth();
-  const canManageSettings = isAdmin || isSuperAdmin; // ✅ publish/grade ranges same behavior for admin + super admin
+  const canManageSettings = isAdmin || isSuperAdmin;
 
   const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -265,7 +294,7 @@ export default function AdminApplicantsPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
+  const [selectedApplicant, setSelectedApplicant] = useState<ApplicantWithResult | null>(null);
 
   const uniqueYears = useMemo(() => {
     return [...new Set(applicants.map((a) => a.year))].sort((a, b) => b - a);
@@ -377,44 +406,88 @@ export default function AdminApplicantsPage() {
 
   const fetchApplicants = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch applicants
+      const { data: applicantsData, error: applicantsError } = await supabase
         .from('applicants' as any)
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setApplicants((data as unknown as Applicant[]) || []);
+      if (applicantsError) throw applicantsError;
+      setApplicants((applicantsData as unknown as Applicant[]) || []);
+
+      // Fetch results
+      const { data: resultsData, error: resultsError } = await supabase
+        .from('results' as any)
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (resultsError) throw resultsError;
+      setResults((resultsData as unknown as Result[]) || []);
     } catch (error) {
-      console.error('Error fetching applicants:', error);
-      toast.error('Failed to fetch applicants');
+      console.error('Error fetching data:', error);
+      toast.error('Failed to fetch data');
     } finally {
       setLoading(false);
     }
   };
 
+  // Create a map of results by index_no for quick lookup
+  const resultsMap = useMemo(() => {
+    const map = new Map<string, Result>();
+    for (const r of results) {
+      map.set(r.index_no, r);
+    }
+    return map;
+  }, [results]);
+
+  // Combine applicants with their results
+  const applicantsWithResults = useMemo(() => {
+    return applicants.map(a => ({
+      ...a,
+      result: resultsMap.get(a.index_no) || null,
+    })) as ApplicantWithResult[];
+  }, [applicants, resultsMap]);
+
   const yearApplicants = useMemo(() => {
     if (selectedYear === null) return [];
-    return applicants.filter((a) => a.year === selectedYear);
-  }, [applicants, selectedYear]);
+    return applicantsWithResults.filter((a) => a.year === selectedYear);
+  }, [applicantsWithResults, selectedYear]);
 
   const zScoreMap = useMemo(() => {
-    const totals: Array<{ id: number; total: number }> = [];
+    const totals: Array<{ id: number; total: number; stream: string }> = [];
     for (const a of yearApplicants) {
-      const m = toNumberOrNull(a.maths_or_bio);
-      const p = toNumberOrNull(a.physics);
-      const c = toNumberOrNull(a.chemistry);
+      const result = a.result;
+      if (!result) continue;
+      
+      const p = toNumberOrNull(result.physics_marks);
+      const c = toNumberOrNull(result.chemistry_marks);
+      const m = a.stream === 'Maths' ? toNumberOrNull(result.maths_marks) : toNumberOrNull(result.bio_marks);
+      
       if (m === null || p === null || c === null) continue;
-      totals.push({ id: a.applicant_id, total: m + p + c });
+      totals.push({ id: a.applicant_id, total: m + p + c, stream: a.stream });
     }
     if (totals.length === 0) return new Map<number, string>();
 
-    const mean = totals.reduce((s, t) => s + t.total, 0) / totals.length;
-    const variance = totals.reduce((s, t) => s + Math.pow(t.total - mean, 2), 0) / totals.length;
-    const std = Math.sqrt(variance);
+    // Calculate z-score per stream
+    const streamTotals = new Map<string, number[]>();
+    for (const t of totals) {
+      if (!streamTotals.has(t.stream)) streamTotals.set(t.stream, []);
+      streamTotals.get(t.stream)!.push(t.total);
+    }
+
+    const streamStats = new Map<string, { mean: number; std: number }>();
+    for (const [stream, vals] of streamTotals) {
+      const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+      const variance = vals.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / vals.length;
+      const std = Math.sqrt(variance) || 1;
+      streamStats.set(stream, { mean, std });
+    }
 
     const map = new Map<number, string>();
     for (const t of totals) {
-      const z = std === 0 ? 0 : (t.total - mean) / std;
+      const stats = streamStats.get(t.stream);
+      if (!stats) continue;
+      const z = (t.total - stats.mean) / stats.std;
       map.set(t.id, Number.isFinite(z) ? z.toFixed(4) : '-');
     }
     return map;
@@ -444,9 +517,9 @@ export default function AdminApplicantsPage() {
 
     const sorted = [...base];
     if (sortMode === 'rank_asc') {
-      sorted.sort((a, b) => (toNumberOrNull(a.rank) ?? Infinity) - (toNumberOrNull(b.rank) ?? Infinity));
+      sorted.sort((a, b) => (a.result?.rank ?? Infinity) - (b.result?.rank ?? Infinity));
     } else if (sortMode === 'rank_desc') {
-      sorted.sort((a, b) => (toNumberOrNull(b.rank) ?? -Infinity) - (toNumberOrNull(a.rank) ?? -Infinity));
+      sorted.sort((a, b) => (b.result?.rank ?? -Infinity) - (a.result?.rank ?? -Infinity));
     }
     return sorted;
   }, [yearApplicants, searchQuery, filterStream, filterGender, filterSchool, sortMode]);
@@ -472,7 +545,7 @@ export default function AdminApplicantsPage() {
 
     filteredApplicants.forEach((a) => {
       const zString = zScoreMap.get(a.applicant_id);
-      const z = zString ? Number(zString) : toNumberOrNull(a.zscore);
+      const z = zString ? Number(zString) : (a.result?.zscore ?? null);
 
       if (z === null || Number.isNaN(z)) {
         zBucketCounts['Not Available'] += 1;
@@ -499,7 +572,7 @@ export default function AdminApplicantsPage() {
     return { maleCount, femaleCount, zScoreData };
   }, [filteredApplicants, zScoreMap]);
 
-  // ✅ Bell curve data: Bio and Maths SEPARATE series
+  // Bell curve data: Bio and Maths SEPARATE series
   const bellCurveData = useMemo(() => {
     const mathsValues: number[] = [];
     const bioValues: number[] = [];
@@ -507,12 +580,15 @@ export default function AdminApplicantsPage() {
     const chemistryValues: number[] = [];
 
     for (const a of filteredApplicants) {
-      const m = toNumberOrNull(a.maths_or_bio);
-      const p = toNumberOrNull(a.physics);
-      const c = toNumberOrNull(a.chemistry);
+      const result = a.result;
+      if (!result) continue;
 
-      const isMathStream = String(a.stream || '').toLowerCase().includes('math');
-      const isBioStream = String(a.stream || '').toLowerCase().includes('bio');
+      const isMathStream = a.stream === 'Maths';
+      const isBioStream = a.stream === 'Biology';
+
+      const m = isMathStream ? toNumberOrNull(result.maths_marks) : toNumberOrNull(result.bio_marks);
+      const p = toNumberOrNull(result.physics_marks);
+      const c = toNumberOrNull(result.chemistry_marks);
 
       if (m !== null) {
         if (isMathStream) mathsValues.push(m);
@@ -564,7 +640,7 @@ export default function AdminApplicantsPage() {
   };
 
   const downloadCsvTemplate = () => {
-    const headers = ['index_no', 'maths_or_bio', 'physics', 'chemistry'];
+    const headers = ['index_no', 'stream', 'physics_marks', 'chemistry_marks', 'maths_marks', 'bio_marks'];
     const csvContent = headers.join(',') + '\n';
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -585,12 +661,14 @@ export default function AdminApplicantsPage() {
       'index_no',
       'fullname',
       'stream',
-      'maths_or_bio',
-      'maths_or_bio_result',
-      'physics',
-      'physics_result',
-      'chemistry',
-      'chemistry_result',
+      'physics_marks',
+      'physics_grade',
+      'chemistry_marks',
+      'chemistry_grade',
+      'maths_marks',
+      'maths_grade',
+      'bio_marks',
+      'bio_grade',
       'zscore',
       'rank',
       'gender',
@@ -605,39 +683,23 @@ export default function AdminApplicantsPage() {
     const csvRows = [
       headers.join(','),
       ...filteredApplicants.map((a) => {
-        const z = zScoreMap.get(a.applicant_id) ?? fmt(a.zscore);
+        const result = a.result;
+        const z = zScoreMap.get(a.applicant_id) ?? (result?.zscore?.toFixed(4) ?? '-');
 
-        const phyRange = gradeRangesAppliedBySubject.physics;
-        const cheRange = gradeRangesAppliedBySubject.chemistry;
-        const mathsRange = gradeRangesAppliedBySubject.maths;
-        const bioRange = gradeRangesAppliedBySubject.bio;
-
-        const isMathStream = String(a.stream || '').toLowerCase().includes('math');
-        const isBioStream = String(a.stream || '').toLowerCase().includes('bio');
-
-        const bioMathRes =
-          a.maths_or_bio_result ??
-          (isMathStream
-            ? gradeFromMark(a.maths_or_bio, mathsRange)
-            : isBioStream
-              ? gradeFromMark(a.maths_or_bio, bioRange)
-              : gradeFromMark(a.maths_or_bio, bioRange));
-
-        const phyRes = a.physics_result ?? gradeFromMark(a.physics, phyRange);
-        const cheRes = a.chemistry_result ?? gradeFromMark(a.chemistry, cheRange);
-
-        return ([
+        return [
           `"${a.index_no}"`,
           `"${a.fullname}"`,
           `"${a.stream}"`,
-          `"${fmt(a.maths_or_bio)}"`,
-          `"${bioMathRes}"`,
-          `"${fmt(a.physics)}"`,
-          `"${phyRes}"`,
-          `"${fmt(a.chemistry)}"`,
-          `"${cheRes}"`,
+          `"${result?.physics_marks ?? ''}"`,
+          `"${result?.physics_grade ?? '-'}"`,
+          `"${result?.chemistry_marks ?? ''}"`,
+          `"${result?.chemistry_grade ?? '-'}"`,
+          `"${result?.maths_marks ?? ''}"`,
+          `"${result?.maths_grade ?? '-'}"`,
+          `"${result?.bio_marks ?? ''}"`,
+          `"${result?.bio_grade ?? '-'}"`,
           `"${z}"`,
-          `"${fmt(a.rank)}"`,
+          `"${result?.rank ?? '-'}"`,
           a.gender ? 'male' : 'female',
           `"${a.nic}"`,
           `"${a.phone || ''}"`,
@@ -645,7 +707,7 @@ export default function AdminApplicantsPage() {
           `"${a.school}"`,
           a.year,
           `"${a.created_at}"`,
-        ].join(','));
+        ].join(',');
       }),
     ];
 
@@ -654,101 +716,69 @@ export default function AdminApplicantsPage() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `applicants_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `results_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    toast.success(`Downloaded ${filteredApplicants.length} applicants`);
+    toast.success(`Downloaded ${filteredApplicants.length} results`);
   };
 
   const recalcZScoreAndRankForYear = async (year: number) => {
-    const rows = applicants.filter((a) => a.year === year);
-
-    const totals: Array<{ applicant_id: number; total: number }> = [];
-    for (const a of rows) {
-      const m = toNumberOrNull(a.maths_or_bio);
-      const p = toNumberOrNull(a.physics);
-      const c = toNumberOrNull(a.chemistry);
-      if (m === null || p === null || c === null) continue;
-      totals.push({ applicant_id: a.applicant_id, total: m + p + c });
-    }
-
-    if (totals.length === 0) return;
-
-    const mean = totals.reduce((s, t) => s + t.total, 0) / totals.length;
-    const variance = totals.reduce((s, t) => s + Math.pow(t.total - mean, 2), 0) / totals.length;
-    const std = Math.sqrt(variance);
-
-    const zRows = totals.map((t) => {
-      const z = std === 0 ? 0 : (t.total - mean) / std;
-      return { applicant_id: t.applicant_id, zscore: Number.isFinite(z) ? Number(z.toFixed(4)) : null };
-    });
-
-    const ranked = [...zRows]
-      .filter((r) => r.zscore !== null)
-      .sort((a, b) => (b.zscore ?? -Infinity) - (a.zscore ?? -Infinity))
-      .map((r, idx) => ({ ...r, rank: idx + 1 }));
-
-    const chunkSize = 120;
-    for (let i = 0; i < zRows.length; i += chunkSize) {
-      const chunk = zRows.slice(i, i + chunkSize);
-      await Promise.all(
-        chunk.map((r) =>
-          supabase
-            .from('applicants' as any)
-            .update({ zscore: r.zscore })
-            .eq('applicant_id', r.applicant_id)
-        )
-      );
-    }
-
-    for (let i = 0; i < ranked.length; i += chunkSize) {
-      const chunk = ranked.slice(i, i + chunkSize);
-      await Promise.all(
-        chunk.map((r) =>
-          supabase
-            .from('applicants' as any)
-            .update({ rank: r.rank })
-            .eq('applicant_id', r.applicant_id)
-        )
-      );
+    // Call the database function to compute z-scores and ranks
+    try {
+      // Compute for Maths stream
+      await supabase.rpc('compute_results_rankings' as any, { p_year: year, p_stream: 'Maths' });
+      // Compute for Biology stream
+      await supabase.rpc('compute_results_rankings' as any, { p_year: year, p_stream: 'Biology' });
+      
+      toast.success('Z-scores and ranks recalculated');
+      await fetchApplicants();
+    } catch (error) {
+      console.error('Error recalculating:', error);
+      toast.error('Failed to recalculate z-scores and ranks');
     }
   };
 
   const regradeForYearBySubject = async (subject: SubjectKey, ranges: GradeRanges) => {
     if (selectedYear === null) return;
-    const rows = applicants.filter((a) => a.year === selectedYear);
-
+    
+    // Get results for this year
+    const yearResults = results.filter(r => r.year === selectedYear);
+    
     const chunkSize = 120;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
+    for (let i = 0; i < yearResults.length; i += chunkSize) {
+      const chunk = yearResults.slice(i, i + chunkSize);
 
       await Promise.all(
-        chunk.map((a) => {
+        chunk.map((r) => {
+          const updates: any = {};
+          
           if (subject === 'physics') {
-            const physics_result = gradeFromMark(a.physics, ranges);
-            return supabase.from('applicants' as any).update({ physics_result }).eq('applicant_id', a.applicant_id);
+            updates.physics_grade = gradeFromMark(r.physics_marks, ranges);
+            updates.phy_a_min = ranges.A_min;
+            updates.phy_b_min = ranges.B_min;
+            updates.phy_c_min = ranges.C_min;
+            updates.phy_s_min = ranges.S_min;
+          } else if (subject === 'chemistry') {
+            updates.chemistry_grade = gradeFromMark(r.chemistry_marks, ranges);
+            updates.che_a_min = ranges.A_min;
+            updates.che_b_min = ranges.B_min;
+            updates.che_c_min = ranges.C_min;
+            updates.che_s_min = ranges.S_min;
+          } else if (subject === 'maths') {
+            updates.maths_grade = gradeFromMark(r.maths_marks, ranges);
+            updates.maths_a_min = ranges.A_min;
+            updates.maths_b_min = ranges.B_min;
+            updates.maths_c_min = ranges.C_min;
+            updates.maths_s_min = ranges.S_min;
+          } else if (subject === 'bio') {
+            updates.bio_grade = gradeFromMark(r.bio_marks, ranges);
+            updates.bio_a_min = ranges.A_min;
+            updates.bio_b_min = ranges.B_min;
+            updates.bio_c_min = ranges.C_min;
+            updates.bio_s_min = ranges.S_min;
           }
-
-          if (subject === 'chemistry') {
-            const chemistry_result = gradeFromMark(a.chemistry, ranges);
-            return supabase.from('applicants' as any).update({ chemistry_result }).eq('applicant_id', a.applicant_id);
-          }
-
-          if (subject === 'maths') {
-            const isMathStream = String(a.stream || '').toLowerCase().includes('math');
-            if (!isMathStream) return Promise.resolve(null);
-            const maths_or_bio_result = gradeFromMark(a.maths_or_bio, ranges);
-            return supabase.from('applicants' as any).update({ maths_or_bio_result }).eq('applicant_id', a.applicant_id);
-          }
-
-          if (subject === 'bio') {
-            const isBioStream = String(a.stream || '').toLowerCase().includes('bio');
-            if (!isBioStream) return Promise.resolve(null);
-            const maths_or_bio_result = gradeFromMark(a.maths_or_bio, ranges);
-            return supabase.from('applicants' as any).update({ maths_or_bio_result }).eq('applicant_id', a.applicant_id);
-          }
-
-          return Promise.resolve(null);
+          
+          return supabase.from('results' as any).update(updates).eq('result_id', r.result_id);
         })
       );
     }
@@ -867,7 +897,7 @@ export default function AdminApplicantsPage() {
       const lines = text.split(/\r?\n/).filter((line) => line.trim());
       const headers = parseCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
 
-      const expectedHeaders = ['index_no', 'maths_or_bio', 'physics', 'chemistry'];
+      const expectedHeaders = ['index_no', 'stream', 'physics_marks', 'chemistry_marks', 'maths_marks', 'bio_marks'];
       const headerMap: Record<string, number> = {};
       expectedHeaders.forEach((expected) => {
         const idx = headers.indexOf(expected);
@@ -875,11 +905,13 @@ export default function AdminApplicantsPage() {
         headerMap[expected] = idx;
       });
 
-      const updates: Array<{
+      const records: Array<{
         index_no: string;
-        maths_or_bio: string | number | null;
-        physics: string | number | null;
-        chemistry: string | number | null;
+        stream: string;
+        physics_marks: number | null;
+        chemistry_marks: number | null;
+        maths_marks: number | null;
+        bio_marks: number | null;
       }> = [];
 
       for (let i = 1; i < lines.length; i++) {
@@ -889,51 +921,78 @@ export default function AdminApplicantsPage() {
         const index_no = (values[headerMap.index_no] ?? '').trim();
         if (!index_no) throw new Error(`Row ${i + 1}: index_no is required`);
 
-        updates.push({
+        const stream = (values[headerMap.stream] ?? '').trim();
+        if (!stream || (stream !== 'Maths' && stream !== 'Biology')) {
+          throw new Error(`Row ${i + 1}: stream must be 'Maths' or 'Biology'`);
+        }
+
+        const phyVal = (values[headerMap.physics_marks] ?? '').trim();
+        const cheVal = (values[headerMap.chemistry_marks] ?? '').trim();
+        const mathsVal = (values[headerMap.maths_marks] ?? '').trim();
+        const bioVal = (values[headerMap.bio_marks] ?? '').trim();
+
+        records.push({
           index_no,
-          maths_or_bio: (values[headerMap.maths_or_bio] ?? '').trim() || null,
-          physics: (values[headerMap.physics] ?? '').trim() || null,
-          chemistry: (values[headerMap.chemistry] ?? '').trim() || null,
+          stream,
+          physics_marks: phyVal ? Number(phyVal) : null,
+          chemistry_marks: cheVal ? Number(cheVal) : null,
+          maths_marks: mathsVal ? Number(mathsVal) : null,
+          bio_marks: bioVal ? Number(bioVal) : null,
         });
       }
 
-      if (updates.length === 0) throw new Error('No valid records found in CSV');
+      if (records.length === 0) throw new Error('No valid records found in CSV');
+
+      // Get grade ranges
+      const phyRanges = gradeRangesAppliedBySubject.physics;
+      const cheRanges = gradeRangesAppliedBySubject.chemistry;
+      const mathsRanges = gradeRangesAppliedBySubject.maths;
+      const bioRanges = gradeRangesAppliedBySubject.bio;
 
       const chunkSize = 120;
-      for (let i = 0; i < updates.length; i += chunkSize) {
-        const chunk = updates.slice(i, i + chunkSize);
+      for (let i = 0; i < records.length; i += chunkSize) {
+        const chunk = records.slice(i, i + chunkSize);
 
         await Promise.all(
-          chunk.map(async (u) => {
-            const found = applicants.find((a) => a.year === selectedYear && a.index_no === u.index_no);
-            const isMathStream = String(found?.stream || '').toLowerCase().includes('math');
-            const isBioStream = String(found?.stream || '').toLowerCase().includes('bio');
+          chunk.map(async (r) => {
+            // Compute grades
+            const physics_grade = gradeFromMark(r.physics_marks, phyRanges);
+            const chemistry_grade = gradeFromMark(r.chemistry_marks, cheRanges);
+            const maths_grade = r.stream === 'Maths' ? gradeFromMark(r.maths_marks, mathsRanges) : null;
+            const bio_grade = r.stream === 'Biology' ? gradeFromMark(r.bio_marks, bioRanges) : null;
 
-            const phyRanges = gradeRangesAppliedBySubject.physics;
-            const cheRanges = gradeRangesAppliedBySubject.chemistry;
-            const mathsRanges = gradeRangesAppliedBySubject.maths;
-            const bioRanges = gradeRangesAppliedBySubject.bio;
-
-            const maths_or_bio_result =
-              isMathStream ? gradeFromMark(u.maths_or_bio, mathsRanges)
-              : isBioStream ? gradeFromMark(u.maths_or_bio, bioRanges)
-              : gradeFromMark(u.maths_or_bio, bioRanges);
-
-            const physics_result = gradeFromMark(u.physics, phyRanges);
-            const chemistry_result = gradeFromMark(u.chemistry, cheRanges);
-
+            // Upsert into results table
             return supabase
-              .from('applicants' as any)
-              .update({
-                maths_or_bio: u.maths_or_bio,
-                physics: u.physics,
-                chemistry: u.chemistry,
-                maths_or_bio_result,
-                physics_result,
-                chemistry_result,
-              })
-              .eq('index_no', u.index_no)
-              .eq('year', selectedYear);
+              .from('results' as any)
+              .upsert({
+                index_no: r.index_no,
+                stream: r.stream,
+                year: selectedYear,
+                physics_marks: r.physics_marks,
+                chemistry_marks: r.chemistry_marks,
+                maths_marks: r.maths_marks,
+                bio_marks: r.bio_marks,
+                physics_grade,
+                chemistry_grade,
+                maths_grade,
+                bio_grade,
+                phy_a_min: phyRanges.A_min,
+                phy_b_min: phyRanges.B_min,
+                phy_c_min: phyRanges.C_min,
+                phy_s_min: phyRanges.S_min,
+                che_a_min: cheRanges.A_min,
+                che_b_min: cheRanges.B_min,
+                che_c_min: cheRanges.C_min,
+                che_s_min: cheRanges.S_min,
+                maths_a_min: mathsRanges.A_min,
+                maths_b_min: mathsRanges.B_min,
+                maths_c_min: mathsRanges.C_min,
+                maths_s_min: mathsRanges.S_min,
+                bio_a_min: bioRanges.A_min,
+                bio_b_min: bioRanges.B_min,
+                bio_c_min: bioRanges.C_min,
+                bio_s_min: bioRanges.S_min,
+              }, { onConflict: 'index_no' });
           })
         );
       }
@@ -941,7 +1000,7 @@ export default function AdminApplicantsPage() {
       await fetchApplicants();
       await recalcZScoreAndRankForYear(selectedYear);
 
-      toast.success(`Successfully uploaded ${updates.length} marks rows`);
+      toast.success(`Successfully uploaded ${records.length} results`);
       setUploadOpen(false);
       setCsvFile(null);
 
@@ -960,30 +1019,25 @@ export default function AdminApplicantsPage() {
       return;
     }
 
-    const applicantsToDelete = applicants.filter((a) => a.year === selectedYear);
-    if (applicantsToDelete.length === 0) {
-      toast.error('No applicants to delete for this year');
+    const resultsToDelete = results.filter((r) => r.year === selectedYear);
+    if (resultsToDelete.length === 0) {
+      toast.error('No results to delete for this year');
       return;
     }
 
     try {
-      const { error } = await supabase.from('applicants' as any).delete().eq('year', selectedYear);
+      const { error } = await supabase.from('results' as any).delete().eq('year', selectedYear);
       if (error) throw error;
 
-      toast.success(`Successfully deleted ${applicantsToDelete.length} applicants from ${selectedYear}`);
-
-      const remaining = applicants.filter((a) => a.year !== selectedYear);
-      setApplicants(remaining);
-
-      const remainingYears = [...new Set(remaining.map((a) => a.year))].sort((a, b) => b - a);
-      setSelectedYear(remainingYears.length > 0 ? remainingYears[0] : null);
+      toast.success(`Successfully deleted ${resultsToDelete.length} results from ${selectedYear}`);
+      await fetchApplicants();
     } catch (error) {
-      console.error('Error deleting applicants:', error);
-      toast.error('Failed to delete applicants');
+      console.error('Error deleting results:', error);
+      toast.error('Failed to delete results');
     }
   };
 
-  const openDetails = (applicant: Applicant) => {
+  const openDetails = (applicant: ApplicantWithResult) => {
     setSelectedApplicant(applicant);
     setDetailsOpen(true);
   };
@@ -1416,21 +1470,12 @@ export default function AdminApplicantsPage() {
 
                   <TableBody>
                     {filteredApplicants.map((a) => {
-                      const z = zScoreMap.get(a.applicant_id) ?? fmt(a.zscore);
+                      const result = a.result;
+                      const z = zScoreMap.get(a.applicant_id) ?? (result?.zscore?.toFixed(4) ?? '-');
 
-                      const isMathStream = String(a.stream || '').toLowerCase().includes('math');
-                      const isBioStream = String(a.stream || '').toLowerCase().includes('bio');
-
-                      const bioMathRes =
-                        a.maths_or_bio_result ??
-                        (isMathStream
-                          ? gradeFromMark(a.maths_or_bio, gradeRangesAppliedBySubject.maths)
-                          : isBioStream
-                            ? gradeFromMark(a.maths_or_bio, gradeRangesAppliedBySubject.bio)
-                            : gradeFromMark(a.maths_or_bio, gradeRangesAppliedBySubject.bio));
-
-                      const phyRes = a.physics_result ?? gradeFromMark(a.physics, gradeRangesAppliedBySubject.physics);
-                      const cheRes = a.chemistry_result ?? gradeFromMark(a.chemistry, gradeRangesAppliedBySubject.chemistry);
+                      const isMathStream = a.stream === 'Maths';
+                      const mathsOrBioMarks = isMathStream ? result?.maths_marks : result?.bio_marks;
+                      const mathsOrBioGrade = isMathStream ? result?.maths_grade : result?.bio_grade;
 
                       return (
                         <TableRow key={a.applicant_id}>
@@ -1439,23 +1484,23 @@ export default function AdminApplicantsPage() {
                             <Badge variant="outline">{a.stream}</Badge>
                           </TableCell>
 
-                          <TableCell className="font-mono text-sm">{fmt(a.maths_or_bio)}</TableCell>
+                          <TableCell className="font-mono text-sm">{fmt(mathsOrBioMarks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{bioMathRes}</Badge>
+                            <Badge variant="secondary">{mathsOrBioGrade ?? '-'}</Badge>
                           </TableCell>
 
-                          <TableCell className="font-mono text-sm">{fmt(a.physics)}</TableCell>
+                          <TableCell className="font-mono text-sm">{fmt(result?.physics_marks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{phyRes}</Badge>
+                            <Badge variant="secondary">{result?.physics_grade ?? '-'}</Badge>
                           </TableCell>
 
-                          <TableCell className="font-mono text-sm">{fmt(a.chemistry)}</TableCell>
+                          <TableCell className="font-mono text-sm">{fmt(result?.chemistry_marks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{cheRes}</Badge>
+                            <Badge variant="secondary">{result?.chemistry_grade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{z}</TableCell>
-                          <TableCell className="font-mono text-sm">{fmt(a.rank)}</TableCell>
+                          <TableCell className="font-mono text-sm">{result?.rank ?? '-'}</TableCell>
 
                           <TableCell>
                             <DropdownMenu>
@@ -1631,24 +1676,34 @@ export default function AdminApplicantsPage() {
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                   <div className="p-3 rounded-lg border">
-                    <div className="text-muted-foreground">Maths / Bio</div>
-                    <div className="font-mono">{fmt(selectedApplicant.maths_or_bio)}</div>
+                    <div className="text-muted-foreground">{selectedApplicant.stream === 'Maths' ? 'Maths' : 'Biology'}</div>
+                    <div className="font-mono">
+                      {fmt(selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_marks : selectedApplicant.result?.bio_marks)}
+                      {' '}
+                      <Badge variant="secondary">
+                        {selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_grade : selectedApplicant.result?.bio_grade}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Physics</div>
-                    <div className="font-mono">{fmt(selectedApplicant.physics)}</div>
+                    <div className="font-mono">
+                      {fmt(selectedApplicant.result?.physics_marks)} <Badge variant="secondary">{selectedApplicant.result?.physics_grade ?? '-'}</Badge>
+                    </div>
                   </div>
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Chemistry</div>
-                    <div className="font-mono">{fmt(selectedApplicant.chemistry)}</div>
+                    <div className="font-mono">
+                      {fmt(selectedApplicant.result?.chemistry_marks)} <Badge variant="secondary">{selectedApplicant.result?.chemistry_grade ?? '-'}</Badge>
+                    </div>
                   </div>
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Z-Score</div>
-                    <div className="font-mono">{fmt(selectedApplicant.zscore)}</div>
+                    <div className="font-mono">{selectedApplicant.result?.zscore?.toFixed(4) ?? '-'}</div>
                   </div>
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Rank</div>
-                    <div className="font-mono">{fmt(selectedApplicant.rank)}</div>
+                    <div className="font-mono">{selectedApplicant.result?.rank ?? '-'}</div>
                   </div>
                 </CardContent>
               </Card>

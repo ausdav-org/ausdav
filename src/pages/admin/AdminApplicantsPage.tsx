@@ -86,7 +86,6 @@ interface Applicant {
   phone: string | null;
   email: string | null;
   school: string;
-  results: string | null;
   created_at: string;
   year: number;
 }
@@ -270,7 +269,7 @@ export default function AdminApplicantsPage() {
       const lines = text.split('\n').filter(line => line.trim());
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
 
-      const expectedHeaders = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results'];
+      const expectedHeaders = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school'];
       const headerMap: { [key: string]: number } = {};
 
       expectedHeaders.forEach(expected => {
@@ -282,7 +281,6 @@ export default function AdminApplicantsPage() {
       });
 
       const importYear = selectedYear ?? new Date().getFullYear();
-      const yy = String(importYear).slice(-2);
 
       const parsedRows: Array<{
         order: number;
@@ -293,7 +291,6 @@ export default function AdminApplicantsPage() {
         phone: string | null;
         email: string | null;
         school: string;
-        results: string | null;
         year: number;
       }> = [];
 
@@ -318,7 +315,6 @@ export default function AdminApplicantsPage() {
           phone: values[headerMap.phone] || null,
           email: values[headerMap.email] || null,
           school: values[headerMap.school],
-          results: values[headerMap.results] || null,
           year: importYear,
         });
       }
@@ -329,62 +325,28 @@ export default function AdminApplicantsPage() {
 
       parsedRows.sort((a, b) => a.order - b.order);
 
-      // ✅ Find last used sequence for the YEAR
-      const { data: latestRow, error: latestErr } = await supabase
-        .from('applicants' as any)
-        .select('index_no')
-        .eq('year', importYear)
-        .order('index_no', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // Prepare applicants array for bulk insert
+      const applicantsArray = parsedRows.map(row => ({
+        fullname: row.fullname,
+        gender: row.gender,
+        stream: row.stream,
+        nic: row.nic,
+        phone: row.phone,
+        email: row.email,
+        school: row.school,
+      }));
 
-      if (latestErr) throw latestErr;
-
-      let seq = -1; // first generated => 0000
-      const latestIndexNo = (latestRow as any)?.index_no as string | undefined;
-
-      if (latestIndexNo && latestIndexNo.length >= 6) {
-        const digitsPart = latestIndexNo.substring(2, 6);
-        const parsed = Number(digitsPart);
-        if (!Number.isNaN(parsed)) seq = parsed;
-      }
-
-      const records: any[] = [];
-
-      for (const row of parsedRows) {
-        seq += 1;
-
-        if (seq > 9999) {
-          throw new Error(
-            `Index range exceeded for year "${importYear}". Allowed digits are 0000 to 9999.`
-          );
-        }
-
-        const fourDigits = String(seq).padStart(4, '0');
-        const sLetter = streamLetter(row.stream);
-        const index_no = `${yy}${fourDigits}${sLetter}`;
-
-        records.push({
-          index_no,
-          fullname: row.fullname,
-          gender: row.gender,
-          stream: row.stream,
-          nic: row.nic,
-          phone: row.phone,
-          email: row.email,
-          school: row.school,
-          results: row.results,
-          year: row.year,
-        });
-      }
-
-      const { error } = await supabase
-        .from('applicants' as any)
-        .insert(records);
+      // Call bulk insert function
+      const { data: generatedIndices, error } = await supabase.rpc('bulk_insert_applicants', {
+        p_applicants: applicantsArray,
+        p_year: importYear,
+      });
 
       if (error) throw error;
 
-      toast.success(`Successfully uploaded ${records.length} applicants`);
+      // Show success with generated index numbers
+      const indicesList = Array.isArray(generatedIndices) ? generatedIndices.join(', ') : 'N/A';
+      toast.success(`Successfully uploaded ${applicantsArray.length} applicants. Generated index numbers: ${indicesList}`);
       setUploadOpen(false);
       setCsvFile(null);
       fetchApplicants();
@@ -397,7 +359,7 @@ export default function AdminApplicantsPage() {
   };
 
   const downloadCsvTemplate = () => {
-    const headers = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results'];
+    const headers = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school'];
     const csvContent = headers.join(',') + '\n';
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -414,7 +376,7 @@ export default function AdminApplicantsPage() {
       return;
     }
 
-    const headers = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'results', 'year', 'created_at'];
+    const headers = ['index_no', 'fullname', 'gender', 'stream', 'nic', 'phone', 'email', 'school', 'year', 'created_at'];
     const csvRows = [
       headers.join(','),
       ...filteredApplicants.map(applicant => [
@@ -426,7 +388,6 @@ export default function AdminApplicantsPage() {
         `"${applicant.phone || ''}"`,
         `"${applicant.email || ''}"`,
         `"${applicant.school}"`,
-        `"${applicant.results || ''}"`,
         applicant.year,
         `"${applicant.created_at}"`
       ].join(','))
@@ -888,7 +849,6 @@ export default function AdminApplicantsPage() {
                         <TableHead>Phone</TableHead>
                         <TableHead>Email</TableHead>
                         <TableHead>School</TableHead>
-                        <TableHead>Results</TableHead>
                         <TableHead>Created</TableHead>
                         <TableHead className="w-10"></TableHead>
                       </TableRow>
@@ -916,11 +876,6 @@ export default function AdminApplicantsPage() {
                           </TableCell>
                           <TableCell className="max-w-[150px] truncate" title={applicant.school}>
                             {applicant.school}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="bg-muted">
-                              {applicant.results || '-'}
-                            </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
                             {new Date(applicant.created_at).toLocaleDateString()}
