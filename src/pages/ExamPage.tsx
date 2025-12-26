@@ -144,6 +144,7 @@ const ExamPage: React.FC = () => {
   });
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [generatedIndexNo, setGeneratedIndexNo] = useState<string>('');
+  const [registeredFullName, setRegisteredFullName] = useState<string>('');
 
   const defaultResultsForm = { stream: '', idType: 'Index No', idValue: '', year: '' };
   const [resultsForm, setResultsForm] = useState(defaultResultsForm);
@@ -221,8 +222,6 @@ const ExamPage: React.FC = () => {
       exam: false,
       gender: false,
     });
-    setSuccessDialogOpen(false);
-    setGeneratedIndexNo('');
   };
 
   // Cleanup on unmount
@@ -234,6 +233,14 @@ const ExamPage: React.FC = () => {
       }
     };
   }, []);
+
+  // Clear dialog-related temporary data when dialog is closed
+  useEffect(() => {
+    if (!successDialogOpen) {
+      setGeneratedIndexNo('');
+      setRegisteredFullName('');
+    }
+  }, [successDialogOpen]);
 
   // Email validation function
   const validateEmail = (email: string) => {
@@ -386,8 +393,9 @@ const ExamPage: React.FC = () => {
 
       if (error) throw error;
 
-      // Show success dialog with index number
-      setGeneratedIndexNo(indexNo);
+      // Show success dialog with index number and greeting
+      setRegisteredFullName(applyForm.fullName.trim());
+      setGeneratedIndexNo(indexNo as string);
       setSuccessDialogOpen(true);
       toast.success(language === 'en' ? 'Application submitted successfully!' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது!');
       handleApplyReset();
@@ -1109,9 +1117,17 @@ const ExamPage: React.FC = () => {
               {language === 'en' ? 'Application Submitted Successfully!' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது!'}
             </DialogTitle>
             <DialogDescription>
-              {language === 'en' 
-                ? 'Congratulations! Your exam application has been submitted successfully. Please save your reference number for future reference.'
-                : 'வாழ்த்துக்கள்! உங்கள் தேர்வு விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது. எதிர்கால குறிப்புக்கு உங்கள் குறிப்பு எண்ணை சேமிக்கவும்.'}
+              {language === 'en' ? (
+                <>
+                  <div className="text-lg font-medium mb-2">{registeredFullName ? `Hello ${registeredFullName}!` : 'Hello!'}</div>
+                  <div>Congratulations! Your exam application has been submitted successfully. Please save your reference number for future reference.</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-lg font-medium mb-2">{registeredFullName ? `வணக்கம் ${registeredFullName}!` : 'வணக்கம்!'}</div>
+                  <div>வாழ்த்துக்கள்! உங்கள் தேர்வு விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது. எதிர்கால குறிப்புக்கு உங்கள் குறிப்பு எண்ணை சேமிக்கவும்.</div>
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           
