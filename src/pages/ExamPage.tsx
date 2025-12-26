@@ -463,6 +463,7 @@ const ExamPage: React.FC = () => {
         .from('results' as any)
         .select('*')
         .eq('index_no', applicant.index_no)
+        .eq('year', parseInt(resultsForm.year))
         .maybeSingle();
 
       if (resultError) throw resultError;
