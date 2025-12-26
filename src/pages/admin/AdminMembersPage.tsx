@@ -139,26 +139,50 @@ export default function AdminMembersPage() {
   };
 
   const changeRole = async (member: Member, newRole: string) => {
-    if (!isSuperAdmin && newRole === 'super_admin') {
-      toast.error('Only super admins can assign super admin role');
+    // Only super admins can promote to admin or super_admin
+    if ((newRole === 'admin' || newRole === 'super_admin') && !isSuperAdmin) {
+      toast.error('Only super admins can promote members to admin or super admin');
       return;
+    }
+
+    // Admins are allowed to set 'honourable' or revert to 'member'
+    if (!isAdmin && !isSuperAdmin) {
+      toast.error('Insufficient permissions to change roles');
+      return;
+    }
+
+    // If caller is an admin (but not super_admin), they must not be able
+    // to change roles of existing admins or super_admins (downgrades).
+    const callerIsAdminOnly = isAdmin && !isSuperAdmin;
+    if (callerIsAdminOnly) {
+      const targetIds = selectedIds && selectedIds.length > 0 ? selectedIds : [member.mem_id];
+      const targetsExisting = members.filter((m) => targetIds.includes(m.mem_id));
+      const protectedTarget = targetsExisting.find((t) => t.role === 'admin' || t.role === 'super_admin');
+      if (protectedTarget) {
+        toast.error('Only super admins can change roles of admins');
+        return;
+      }
     }
 
     try {
       const targetIds = selectedIds && selectedIds.length > 0 ? selectedIds : [member.mem_id];
-      const { error } = await supabase
-        .from('members' as any)
-        .update({ role: newRole as any })
-        .in('mem_id', targetIds);
 
+      const { data, error } = await invokeFunction('update-member-role', {
+        mem_ids: targetIds,
+        new_role: newRole,
+      });
       if (error) throw error;
-
-      setMembers((prev) =>
-        prev.map((m) => (targetIds.includes(m.mem_id) ? { ...m, role: newRole } : m))
-      );
+      const updated = data?.updated ?? [];
+      if (!updated || (Array.isArray(updated) && updated.length === 0)) {
+        toast.error('No rows updated — check your permissions or server logs');
+        return;
+      }
+      const updatedIds = (updated as any[]).map((u) => u.mem_id);
+      setMembers((prev) => prev.map((m) => (updatedIds.includes(m.mem_id) ? { ...m, role: newRole } : m)));
       setSelectedIds([]);
       toast.success('Role updated successfully');
     } catch (error: any) {
+      console.error('Change role failed', error);
       toast.error(error.message || 'Failed to update role');
     }
   };
@@ -572,11 +596,28 @@ export default function AdminMembersPage() {
                           <DropdownMenuContent align="end">
                             {/* Deactivate and Toggle Finance actions removed */}
                             <DropdownMenuSeparator />
-                            {isSuperAdmin && (
+                            {isAdmin && (
                               <>
-                                <DropdownMenuItem onClick={() => changeRole(member, 'member')} disabled={member.role === 'member'}>
+                                <DropdownMenuItem
+                                  onClick={() => changeRole(member, 'honourable')}
+                                  disabled={
+                                    member.role === 'honourable' || (isAdmin && !isSuperAdmin && (member.role === 'admin' || member.role === 'super_admin'))
+                                  }
+                                >
+                                  Set as Honourable
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => changeRole(member, 'member')}
+                                  disabled={
+                                    member.role === 'member' || (isAdmin && !isSuperAdmin && (member.role === 'admin' || member.role === 'super_admin'))
+                                  }
+                                >
                                   Set as Member
                                 </DropdownMenuItem>
+                              </>
+                            )}
+                            {isSuperAdmin && (
+                              <>
                                 <DropdownMenuItem onClick={() => changeRole(member, 'admin')} disabled={member.role === 'admin'}>
                                   Set as Admin
                                 </DropdownMenuItem>

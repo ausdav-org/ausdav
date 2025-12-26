@@ -29,7 +29,7 @@ serve(async (req: Request) => {
     });
   }
 
-  let payload: { mem_ids?: number[] };
+  let payload: { mem_ids?: number[]; new_role?: string };
   try {
     payload = await req.json();
   } catch (_err) {
@@ -37,8 +37,9 @@ serve(async (req: Request) => {
   }
 
   const memIds = payload?.mem_ids;
-  if (!Array.isArray(memIds) || memIds.length === 0) {
-    return new Response(JSON.stringify({ error: 'Missing mem_ids array' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  const newRole = payload?.new_role;
+  if (!Array.isArray(memIds) || memIds.length === 0 || !newRole) {
+    return new Response(JSON.stringify({ error: 'Missing mem_ids array or new_role' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -69,7 +70,12 @@ serve(async (req: Request) => {
 
     const callerRole = memberRow.role;
 
-    // If caller is admin (not super_admin), ensure targets are only role='member'
+    // Prevent non-super_admins from promoting to admin/super_admin
+    if ((newRole === 'admin' || newRole === 'super_admin') && callerRole !== 'super_admin') {
+      return new Response(JSON.stringify({ error: 'Only super admins can promote to admin or super_admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // If caller is admin (not super_admin), ensure targets are not admins/super_admins (no downgrades)
     if (callerRole !== 'super_admin') {
       if (callerRole !== 'admin') {
         return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -80,19 +86,23 @@ serve(async (req: Request) => {
         .select('mem_id,role')
         .in('mem_id', memIds as number[]);
       if (tErr) throw tErr;
-      const invalid = (targets || []).find((t: any) => t.role !== 'member');
-      if (invalid) {
-        return new Response(JSON.stringify({ error: 'Admins may only delete members with role=member' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const protectedTarget = (targets || []).find((t: any) => t.role === 'admin' || t.role === 'super_admin');
+      if (protectedTarget) {
+        return new Response(JSON.stringify({ error: 'Admins may not change roles of admin/super_admin users' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     }
 
-    // Perform deletion using service role
-    const { data: deleted, error: delErr } = await adminClient.from('members').delete().in('mem_id', memIds).select('mem_id');
-    if (delErr) throw delErr;
+    // Perform update using a security-definer RPC which sets a session flag
+    // that the trigger respects. This avoids the trigger raising 'forbidden'.
+    const { data: updated, error: updErr } = await adminClient.rpc('set_member_roles', {
+      p_ids: memIds,
+      p_role: newRole,
+    }) as any;
+    if (updErr) throw updErr;
 
-    return new Response(JSON.stringify({ deleted: deleted ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ updated: updated ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
-    console.error('Delete-members failed', e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Delete failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    console.error('Update-member-role failed', e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Update failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
