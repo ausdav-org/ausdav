@@ -43,6 +43,7 @@ export default function ProfileSetupPage() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [batchDisabled, setBatchDisabled] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -53,6 +54,23 @@ export default function ProfileSetupPage() {
       navigate('/admin/profile');
     }
   }, [user, profile, navigate]);
+
+  useEffect(() => {
+    // load configured signup batch from app settings and lock batch if present
+    const loadBatchSetting = async () => {
+      try {
+        const { data } = await supabase.from('app_settings').select('batch').eq('id', 1).maybeSingle();
+        if (data && data.batch) {
+          setForm((f) => ({ ...f, batch: String(data.batch) }));
+          setBatchDisabled(true);
+        }
+      } catch (err) {
+        // ignore - non-critical
+      }
+    };
+
+    loadBatchSetting();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -236,8 +254,12 @@ export default function ProfileSetupPage() {
                     onChange={(e) => setForm({ ...form, batch: e.target.value })}
                     placeholder="2024"
                     required
+                    disabled={batchDisabled}
                     className="bg-background/50"
                   />
+                  {batchDisabled && (
+                    <p className="text-xs text-muted-foreground mt-1">Batch set by administrator and cannot be edited.</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Phone</Label>

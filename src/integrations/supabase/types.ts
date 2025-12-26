@@ -17,6 +17,7 @@ export type Database = {
       app_settings: {
         Row: {
           allow_signup: boolean
+          batch: number | null
           allow_exam_applications: boolean
           allow_results_view: boolean
           allow_finance_submissions: boolean
@@ -26,6 +27,7 @@ export type Database = {
         }
         Insert: {
           allow_signup?: boolean
+          batch?: number | null
           allow_exam_applications?: boolean
           allow_results_view?: boolean
           allow_finance_submissions?: boolean
@@ -35,6 +37,7 @@ export type Database = {
         }
         Update: {
           allow_signup?: boolean
+          batch?: number | null
           allow_exam_applications?: boolean
           allow_results_view?: boolean
           allow_finance_submissions?: boolean
