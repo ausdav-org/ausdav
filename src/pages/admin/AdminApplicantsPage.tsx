@@ -447,7 +447,25 @@ export default function AdminApplicantsPage() {
       setApplicants(remainingApplicants);
 
       const remainingYears = [...new Set(remainingApplicants.map(a => a.year))].sort((a, b) => b - a);
-      setSelectedYear(remainingYears.length > 0 ? remainingYears[0] : new Date().getFullYear());
+      setSelectedYear(remainingYears.length > 0 ? remainingYears[0] : null);
+
+      // Also remove index counter for this year so index generation resets
+      try {
+        const { error: idxErr } = await supabase
+          .from('index_counters' as any)
+          .delete()
+          .eq('year', selectedYear);
+
+        if (idxErr) {
+          console.error('Error deleting index_counters for year:', selectedYear, idxErr);
+          toast.error('Applicants deleted but failed to clear index counter for the year');
+        } else {
+          toast.success('Cleared index counter for the deleted year');
+        }
+      } catch (err) {
+        console.error('Error deleting index_counters:', err);
+        toast.error('Applicants deleted but failed to clear index counter for the year');
+      }
     } catch (error) {
       console.error('Error deleting applicants:', error);
       toast.error('Failed to delete applicants');

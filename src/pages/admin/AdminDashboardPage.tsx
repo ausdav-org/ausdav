@@ -10,11 +10,17 @@ import {
   Calendar,
   FileText,
   Megaphone,
+  Settings,
+  ShieldCheck,
+  Key,
 } from 'lucide-react';
+import { useAdminGrantedPermissions } from '@/hooks/useAdminGrantedPermissions';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
+// Use a loose-typed client for queries against tables not present in generated types
+const db = supabase as any;
 import { useNavigate } from 'react-router-dom';
 
 interface DashboardStats {
@@ -71,9 +77,10 @@ export default function AdminDashboardPage() {
         }));
       }
 
-      // Fetch pending submissions count from `finance` (approved=false)
-      const { count: pendingCount } = await supabase
-        .from('finance' as any)
+
+      // Fetch pending submissions count
+      const { count: pendingCount } = await db
+        .from('finance_submissions')
         .select('*', { count: 'exact', head: true })
         .eq('approved', false);
 
@@ -146,12 +153,24 @@ export default function AdminDashboardPage() {
     },
   ];
 
-  const quickActions = [
-    { title: 'Create Announcement', icon: Megaphone, href: '/admin/announcements' },
-    { title: 'Add Event', icon: Calendar, href: '/admin/events' },
-    { title: 'Upload Past Paper', icon: FileText, href: '/admin/exams' },
-    { title: 'Verify Submissions', icon: Receipt, href: '/admin/finance/verify' },
+  const { hasPermission, loading: permissionsLoading } = useAdminGrantedPermissions();
+
+  const actions = [
+    { title: 'Create Announcement', icon: Megaphone, href: '/admin/announcements', permission: 'announcement' },
+    { title: 'Add Event', icon: Calendar, href: '/admin/events', permission: 'events' },
+    { title: 'Upload Past Paper', icon: FileText, href: '/admin/exams', permission: 'exam' },
+    { title: 'Verify Submissions', icon: Receipt, href: '/admin/finance/verify', permission: 'finance' },
+
+    // Privileged / management actions
+    { title: 'Manage Members', icon: Users, href: '/admin/members', permission: 'member' },
+    { title: 'Manage Permissions', icon: Key, href: '/admin/permissions', permission: 'permissions' },
+    { title: 'Audit Log', icon: ShieldCheck, href: '/admin/audit', permission: 'audit' },
+    { title: 'Settings', icon: Settings, href: '/admin/settings', permission: 'settings' },
   ];
+
+  // While permissions are loading, show the existing actions (fallback). Once loaded,
+  // only show actions for which the admin has the required permission.
+  const visibleActions = permissionsLoading ? actions : actions.filter((a) => hasPermission(a.permission));
 
   return (
     <div className="min-h-screen">
@@ -223,7 +242,7 @@ export default function AdminDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {quickActions.map((action) => (
+                {visibleActions.map((action) => (
                   <Button
                     key={action.title}
                     variant="outline"

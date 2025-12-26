@@ -14,6 +14,7 @@ interface MemberProfile {
   role: AppRole;
   batch: number;
   university: string;
+  uni_degree?: string | null;
   school: string;
   phone: string;
   designation: string;
