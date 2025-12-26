@@ -71,11 +71,11 @@ export default function AdminDashboardPage() {
         }));
       }
 
-      // Fetch pending submissions count
+      // Fetch pending submissions count from `finance` (approved=false)
       const { count: pendingCount } = await supabase
-        .from('finance_submissions')
+        .from('finance' as any)
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending');
+        .eq('approved', false);
 
       // Fetch monthly finance stats
       const startOfMonth = new Date();
@@ -83,25 +83,27 @@ export default function AdminDashboardPage() {
       startOfMonth.setHours(0, 0, 0, 0);
 
       const { data: transactions } = await supabase
-        .from('finance_transactions')
-        .select('txn_type, amount')
+        .from('finance' as any)
+        .select('exp_type, amount, txn_date')
         .gte('txn_date', startOfMonth.toISOString().split('T')[0]);
 
-      if (transactions) {
-        const monthlyIncome = transactions
-          .filter((t) => t.txn_type === 'income')
-          .reduce((sum, t) => sum + Number(t.amount), 0);
-        const monthlyExpense = transactions
-          .filter((t) => t.txn_type === 'expense')
-          .reduce((sum, t) => sum + Number(t.amount), 0);
+      // Normalize returned transactions to an array and guard types
+      const txs = Array.isArray(transactions) ? (transactions as any[]) : [];
 
-        setStats((prev) => ({
-          ...prev,
-          monthlyIncome,
-          monthlyExpense,
-          pendingSubmissions: pendingCount || 0,
-        }));
-      }
+      const monthlyIncome = txs
+        .filter((t) => t?.exp_type === 'income')
+        .reduce((sum, t) => sum + Number(t?.amount ?? 0), 0);
+
+      const monthlyExpense = txs
+        .filter((t) => t?.exp_type === 'expense')
+        .reduce((sum, t) => sum + Number(t?.amount ?? 0), 0);
+
+      setStats((prev) => ({
+        ...prev,
+        monthlyIncome,
+        monthlyExpense,
+        pendingSubmissions: pendingCount || 0,
+      }));
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
     } finally {
