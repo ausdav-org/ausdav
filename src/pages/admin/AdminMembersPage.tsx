@@ -147,29 +147,10 @@ export default function AdminMembersPage() {
   };
 
   const changeRole = async (member: Member, newRole: string) => {
-    // Only super admins can promote to admin or super_admin
-    if ((newRole === 'admin' || newRole === 'super_admin') && !isSuperAdmin) {
-      toast.error('Only super admins can promote members to admin or super admin');
+    // Only super admins may change roles
+    if (!isSuperAdmin) {
+      toast.error('Only super admins can change roles');
       return;
-    }
-
-    // Admins are allowed to set 'honourable' or revert to 'member'
-    if (!isAdmin && !isSuperAdmin) {
-      toast.error('Insufficient permissions to change roles');
-      return;
-    }
-
-    // If caller is an admin (but not super_admin), they must not be able
-    // to change roles of existing admins or super_admins (downgrades).
-    const callerIsAdminOnly = isAdmin && !isSuperAdmin;
-    if (callerIsAdminOnly) {
-      const targetIds = selectedIds && selectedIds.length > 0 ? selectedIds : [member.mem_id];
-      const targetsExisting = members.filter((m) => targetIds.includes(m.mem_id));
-      const protectedTarget = targetsExisting.find((t) => t.role === 'admin' || t.role === 'super_admin');
-      if (protectedTarget) {
-        toast.error('Only super admins can change roles of admins');
-        return;
-      }
     }
 
     try {
@@ -533,7 +514,7 @@ export default function AdminMembersPage() {
             </div>
           )}
           {/* Bulk actions when rows selected */}
-          {selectedIds.length > 0 && (isAdmin || isSuperAdmin) && (
+          {selectedIds.length > 0 && isSuperAdmin && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">{selectedIds.length} selected</span>
               <DropdownMenu>
@@ -550,7 +531,17 @@ export default function AdminMembersPage() {
                     </>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-red-600" onClick={async () => { await deleteMember({} as Member); }}>Remove selected</DropdownMenuItem>
+                  {(() => {
+                    const callerIsAdminOnly = isAdmin && !isSuperAdmin;
+                    const selectedTargets = members.filter((m) => selectedIds.includes(m.mem_id));
+                    const hasNonMember = selectedTargets.find((t) => t.role !== 'member');
+                    if (callerIsAdminOnly && hasNonMember) {
+                      return null;
+                    }
+                    return (
+                      <DropdownMenuItem className="text-red-600" onClick={async () => { await deleteMember({} as Member); }}>Remove selected</DropdownMenuItem>
+                    );
+                  })()}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -623,34 +614,32 @@ export default function AdminMembersPage() {
                       {/* Status and Finance columns removed per admin UI requirements */}
 
                       <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {/* Role change options (conditional) */}
-                            {(isAdmin || isSuperAdmin) && (
-                              <>
-                                <DropdownMenuItem onClick={() => changeRole(member, 'member')}>Set as Member</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => changeRole(member, 'honourable')}>Set as Honourable</DropdownMenuItem>
-                                {isSuperAdmin && (
-                                  <>
-                                    <DropdownMenuItem onClick={() => changeRole(member, 'admin')}>Set as Admin</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')}>Set as Super Admin</DropdownMenuItem>
-                                  </>
-                                )}
-                                <DropdownMenuSeparator />
-                              </>
-                            )}
-                            {(isAdmin || isSuperAdmin) && (
-                              <DropdownMenuItem onClick={() => deleteMember(member)} className="text-red-600">
-                                Remove
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {(isSuperAdmin || (isAdmin && member.role === 'member')) ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {isSuperAdmin && (
+                                <>
+                                  <DropdownMenuItem onClick={() => changeRole(member, 'member')}>Set as Member</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => changeRole(member, 'honourable')}>Set as Honourable</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => changeRole(member, 'admin')}>Set as Admin</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')}>Set as Super Admin</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              )}
+                              {isSuperAdmin || (isAdmin && member.role === 'member') ? (
+                                <DropdownMenuItem onClick={() => deleteMember(member)} className="text-red-600">
+                                  Remove
+                                </DropdownMenuItem>
+                              ) : null}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : null}
                       </TableCell>
                     </TableRow>
                   ))}
