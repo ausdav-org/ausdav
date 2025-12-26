@@ -76,7 +76,7 @@ type RawMember = Pick<
 >;
 
 export default function AdminMembersPage() {
-  const { isSuperAdmin } = useAdminAuth();
+  const { isSuperAdmin, isAdmin } = useAdminAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -165,14 +165,28 @@ export default function AdminMembersPage() {
 
   const deleteMember = async (member: Member) => {
     const targetIds = selectedIds && selectedIds.length > 0 ? selectedIds : [member.mem_id];
-    const ok = window.confirm(
-      `Delete ${targetIds.length} member(s)? This cannot be undone.`
-    );
+    // Check permissions: admins may only delete members (role === 'member')
+    const targets = members.filter((m) => targetIds.includes(m.mem_id));
+    if (!isSuperAdmin) {
+      const invalid = targets.find((t) => t.role !== 'member');
+      if (invalid) {
+        toast.error('Insufficient permissions: admins can only remove members');
+        return;
+      }
+    }
+
+    const ok = window.confirm(`Delete ${targetIds.length} member(s)? This cannot be undone.`);
     if (!ok) return;
     try {
-      const { error } = await supabase.from('members' as any).delete().in('mem_id', targetIds);
+      const { data, error } = await invokeFunction('delete-members', { mem_ids: targetIds });
       if (error) throw error;
-      setMembers((prev) => prev.filter((m) => !targetIds.includes(m.mem_id)));
+      const deleted = data?.deleted ?? [];
+      if (!deleted || (Array.isArray(deleted) && deleted.length === 0)) {
+        toast.error('No rows deleted — check your permissions or server logs');
+        return;
+      }
+      const deletedIds = (deleted as any[]).map((d) => d.mem_id);
+      setMembers((prev) => prev.filter((m) => !deletedIds.includes(m.mem_id)));
       setSelectedIds([]);
       toast.success('Member(s) removed');
     } catch (err: any) {
@@ -569,6 +583,10 @@ export default function AdminMembersPage() {
                                 <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')} disabled={member.role === 'super_admin'} className="text-red-400">
                                   Set as Super Admin
                                 </DropdownMenuItem>
+                              </>
+                            )}
+                            {isAdmin && (
+                              <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => deleteMember(member)} className="text-red-600">
                                   Remove
