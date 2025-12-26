@@ -22,7 +22,9 @@ declare
   next_seq integer;
   stream_letter char(1);
   yy text;
-  index_no text;
+  generated_index_no text;
+  attempt_count integer := 0;
+  max_attempts integer := 1000; -- Prevent infinite loops
 begin
   -- Get stream letter (first character, uppercase)
   stream_letter := upper(substring(p_stream from 1 for 1));
@@ -30,24 +32,44 @@ begin
   -- Get last 2 digits of year
   yy := substring(p_year::text from 3 for 2);
 
-  -- Atomically get next sequence number for the year
-  insert into index_counters (year, last_sequence)
-  values (p_year, 1)
-  on conflict (year)
-  do update set last_sequence = index_counters.last_sequence + 1
-  returning last_sequence into next_seq;
+  -- Get initial sequence number
+  select coalesce(max(last_sequence), 0) into next_seq
+  from index_counters
+  where year = p_year;
 
-  -- Format index number: YY + 4-digit sequence + stream letter
-  index_no := yy || lpad(next_seq::text, 4, '0') || stream_letter;
+  -- Keep trying until we find an available index_no
+  loop
+    next_seq := next_seq + 1;
+    attempt_count := attempt_count + 1;
+
+    -- Prevent infinite loops
+    if attempt_count > max_attempts then
+      raise exception 'Unable to generate unique index number after % attempts', max_attempts;
+    end if;
+
+    -- Format index number: YY + 4-digit sequence + stream letter
+    generated_index_no := yy || lpad(next_seq::text, 4, '0') || stream_letter;
+
+    -- Check if this index_no already exists
+    if not exists (select 1 from applicants where index_no = generated_index_no) then
+      -- Index number is available, update counter and exit loop
+      insert into index_counters (year, last_sequence)
+      values (p_year, next_seq)
+      on conflict (year)
+      do update set last_sequence = greatest(index_counters.last_sequence, next_seq);
+
+      exit;
+    end if;
+  end loop;
 
   -- Insert the applicant record
   insert into applicants (
     index_no, fullname, gender, stream, nic, phone, email, school, year
   ) values (
-    index_no, p_fullname, p_gender, p_stream, p_nic, p_phone, p_email, p_school, p_year
+    generated_index_no, p_fullname, p_gender, p_stream, p_nic, p_phone, p_email, p_school, p_year
   );
 
-  return index_no;
+  return generated_index_no;
 end;
 $$;
 
@@ -62,7 +84,7 @@ as $$
 declare
   applicant_record jsonb;
   generated_indices jsonb := '[]'::jsonb;
-  index_no text;
+  generated_index_no text;
   next_seq integer;
   yy text;
   stream_letter char(1);
@@ -87,13 +109,13 @@ begin
     stream_letter := upper(substring(applicant_record->>'stream' from 1 for 1));
 
     -- Format index number
-    index_no := yy || lpad(next_seq::text, 4, '0') || stream_letter;
+    generated_index_no := yy || lpad(next_seq::text, 4, '0') || stream_letter;
 
     -- Insert the applicant record
     insert into applicants (
       index_no, fullname, gender, stream, nic, phone, email, school, year
     ) values (
-      index_no,
+      generated_index_no,
       applicant_record->>'fullname',
       (applicant_record->>'gender')::boolean,
       applicant_record->>'stream',
@@ -105,7 +127,7 @@ begin
     );
 
     -- Add to result array
-    generated_indices := generated_indices || jsonb_build_array(index_no);
+    generated_indices := generated_indices || jsonb_build_array(generated_index_no);
   end loop;
 
   -- Update the counter with the final sequence
