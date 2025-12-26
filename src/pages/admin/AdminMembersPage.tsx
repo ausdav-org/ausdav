@@ -187,6 +187,11 @@ export default function AdminMembersPage() {
     }
   };
 
+  const changeRoleBulk = async (newRole: string) => {
+    // changeRole reads `selectedIds` when present, so a dummy member param is fine
+    await changeRole({} as Member, newRole);
+  };
+
   const deleteMember = async (member: Member) => {
     const targetIds = selectedIds && selectedIds.length > 0 ? selectedIds : [member.mem_id];
     // Check permissions: admins may only delete members (role === 'member')
@@ -519,6 +524,29 @@ export default function AdminMembersPage() {
               </Button>
             </div>
           )}
+          {/* Bulk actions when rows selected */}
+          {selectedIds.length > 0 && (isAdmin || isSuperAdmin) && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">{selectedIds.length} selected</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">Change Role</Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => changeRoleBulk('member')}>Set as Member</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => changeRoleBulk('honourable')}>Set as Honourable</DropdownMenuItem>
+                  {isSuperAdmin && (
+                    <>
+                      <DropdownMenuItem onClick={() => changeRoleBulk('admin')}>Set as Admin</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => changeRoleBulk('super_admin')}>Set as Super Admin</DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-red-600" onClick={async () => { await deleteMember({} as Member); }}>Remove selected</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
         </div>
 
         {/* Members Table */}
@@ -594,7 +622,20 @@ export default function AdminMembersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {/* Only show the Remove action in the row menu — no role-change options */}
+                            {/* Role change options (conditional) */}
+                            {(isAdmin || isSuperAdmin) && (
+                              <>
+                                <DropdownMenuItem onClick={() => changeRole(member, 'member')}>Set as Member</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => changeRole(member, 'honourable')}>Set as Honourable</DropdownMenuItem>
+                                {isSuperAdmin && (
+                                  <>
+                                    <DropdownMenuItem onClick={() => changeRole(member, 'admin')}>Set as Admin</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')}>Set as Super Admin</DropdownMenuItem>
+                                  </>
+                                )}
+                                <DropdownMenuSeparator />
+                              </>
+                            )}
                             {(isAdmin || isSuperAdmin) && (
                               <DropdownMenuItem onClick={() => deleteMember(member)} className="text-red-600">
                                 Remove
