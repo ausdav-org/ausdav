@@ -969,10 +969,14 @@ export default function AdminResultsPage() {
       const bioRanges = gradeRangesAppliedBySubject.bio;
 
       const chunkSize = 120;
+      let successCount = 0;
+      let errorCount = 0;
+      const errorMessages: string[] = [];
+
       for (let i = 0; i < records.length; i += chunkSize) {
         const chunk = records.slice(i, i + chunkSize);
 
-        await Promise.all(
+        const results = await Promise.all(
           chunk.map(async (r) => {
             // Compute grades
             const physics_grade = gradeFromMark(r.physics_marks, phyRanges);
@@ -981,7 +985,7 @@ export default function AdminResultsPage() {
             const bio_grade = r.stream === 'Biology' ? gradeFromMark(r.bio_marks, bioRanges) : null;
 
             // Upsert into results table
-            return supabase
+            const { error } = await supabase
               .from('results' as any)
               .upsert({
                 index_no: r.index_no,
@@ -1012,14 +1016,42 @@ export default function AdminResultsPage() {
                 bio_c_min: bioRanges.C_min,
                 bio_s_min: bioRanges.S_min,
               }, { onConflict: 'index_no' });
+
+            if (error) {
+              console.error(`Error upserting ${r.index_no}:`, error);
+              return { success: false, index_no: r.index_no, error: error.message };
+            }
+            return { success: true, index_no: r.index_no };
           })
         );
+
+        for (const result of results) {
+          if (result.success) {
+            successCount++;
+          } else {
+            errorCount++;
+            if (errorMessages.length < 5) {
+              errorMessages.push(`${result.index_no}: ${result.error}`);
+            }
+          }
+        }
       }
 
       await fetchApplicants();
-      await recalcZScoreAndRankForYear(selectedYear);
+      if (successCount > 0 && selectedYear) {
+        await recalcZScoreAndRankForYear(selectedYear);
+      }
 
-      toast.success(`Successfully uploaded ${records.length} results`);
+      if (errorCount > 0) {
+        const errorSummary = errorMessages.join('\n');
+        toast.error(`Failed to upload ${errorCount} records. First errors:\n${errorSummary}`);
+        if (successCount > 0) {
+          toast.success(`Successfully uploaded ${successCount} results`);
+        }
+      } else {
+        toast.success(`Successfully uploaded ${successCount} results`);
+      }
+      
       setUploadOpen(false);
       setCsvFile(null);
 
