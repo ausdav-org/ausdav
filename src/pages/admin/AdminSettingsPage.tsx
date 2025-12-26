@@ -7,10 +7,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 
 export default function AdminSettingsPage() {
   const { isSuperAdmin, user } = useAdminAuth();
-  const [settings, setSettings] = useState<{ allow_signup: boolean; updated_at: string | null; updated_by: string | null } | null>(null);
+  const [settings, setSettings] = useState<{ allow_signup: boolean; updated_at: string | null; updated_by: string | null; batch?: string | null } | null>(null);
+  const [batchInput, setBatchInput] = useState<string>('');
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -22,7 +25,7 @@ export default function AdminSettingsPage() {
       setSettingsError(null);
       const { data, error } = await supabase
         .from('app_settings')
-        .select('allow_signup, updated_at, updated_by')
+        .select('allow_signup, updated_at, updated_by, batch')
         .eq('id', 1)
         .maybeSingle();
 
@@ -30,6 +33,7 @@ export default function AdminSettingsPage() {
         setSettingsError('Unable to load signup setting.');
       } else if (data) {
         setSettings(data);
+        setBatchInput(data.batch ?? '');
       }
 
       setSettingsLoading(false);
@@ -49,15 +53,42 @@ export default function AdminSettingsPage() {
       .update({
         allow_signup: !settings.allow_signup,
         updated_by: user?.id ?? null,
+        // preserve batch unless changed via the batch editor
+        batch: settings.batch ?? null,
       })
       .eq('id', 1)
-      .select('allow_signup, updated_at, updated_by')
+      .select('allow_signup, updated_at, updated_by, batch')
       .maybeSingle();
 
     if (error) {
       setSettingsError(error.message);
     } else if (data) {
       setSettings(data);
+    }
+
+    setSaving(false);
+  };
+
+  const saveBatch = async () => {
+    if (!settings || saving) return;
+    setSaving(true);
+    setSettingsError(null);
+
+    const { data, error } = await supabase
+      .from('app_settings')
+      .update({
+        batch: batchInput || null,
+        updated_by: user?.id ?? null,
+      })
+      .eq('id', 1)
+      .select('allow_signup, updated_at, updated_by, batch')
+      .maybeSingle();
+
+    if (error) {
+      setSettingsError(error.message);
+    } else if (data) {
+      setSettings(data);
+      setBatchInput(data.batch ?? '');
     }
 
     setSaving(false);
@@ -175,6 +206,24 @@ export default function AdminSettingsPage() {
                       </span>
                     ) : settings?.allow_signup ? 'Disable Sign Ups' : 'Enable Sign Ups'}
                   </Button>
+                </div>
+              </div>
+              <div className="mt-4 border-t border-border pt-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                  <div className="md:col-span-2">
+                    <Label>Signup Batch (optional)</Label>
+                    <Input
+                      value={batchInput}
+                      onChange={(e) => setBatchInput(e.target.value)}
+                      placeholder="e.g. 2025"
+                      className="bg-background/50"
+                    />
+                  </div>
+                  <div className="flex items-center">
+                    <Button onClick={saveBatch} disabled={settingsLoading || saving || !settings}>
+                      {saving ? 'Saving...' : 'Save Batch'}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>

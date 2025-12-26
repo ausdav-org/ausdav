@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeFunction } from '@/integrations/supabase/functions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -146,14 +147,10 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('controlled-signup', {
-        body: { email, password },
-      });
+      const { data, error: fnError } = await invokeFunction('controlled-signup', { email, password });
 
       if (fnError) throw fnError;
-      if (!data?.userId) {
-        throw new Error('Failed to create account');
-      }
+      if (!data?.userId) throw new Error('Failed to create account');
 
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,

@@ -20,6 +20,7 @@ interface FormState {
   gender: 'male' | 'female';
   batch: string;
   university: string;
+  uni_degree: string;
   school: string;
   phone: string;
 }
@@ -31,6 +32,7 @@ const initialForm: FormState = {
   gender: 'male',
   batch: '',
   university: '',
+  uni_degree: '',
   school: '',
   phone: '',
 };
@@ -43,6 +45,7 @@ export default function ProfileSetupPage() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [batchDisabled, setBatchDisabled] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -53,6 +56,23 @@ export default function ProfileSetupPage() {
       navigate('/admin/profile');
     }
   }, [user, profile, navigate]);
+
+  useEffect(() => {
+    // load configured signup batch from app settings and lock batch if present
+    const loadBatchSetting = async () => {
+      try {
+        const { data } = await supabase.from('app_settings').select('batch').eq('id', 1).maybeSingle();
+        if (data && data.batch) {
+          setForm((f) => ({ ...f, batch: String(data.batch) }));
+          setBatchDisabled(true);
+        }
+      } catch (err) {
+        // ignore - non-critical
+      }
+    };
+
+    loadBatchSetting();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,27 +106,43 @@ export default function ProfileSetupPage() {
         uploadedPath = path;
       }
 
-      const { error: upsertError } = await supabase
-        // Cast table name while generated types are outdated.
+      // Attempt upsert including uni_degree; if DB lacks the column, retry without it
+      const payload: any = {
+        fullname: form.fullname,
+        username: form.username,
+        nic: form.nic,
+        gender: form.gender === 'male',
+        role: 'member',
+        batch: batchNum,
+        university: form.university,
+        uni_degree: form.uni_degree || null,
+        school: form.school,
+        phone: form.phone,
+        designation: 'none',
+        auth_user_id: user.id,
+        profile_bucket: 'member-profiles',
+        profile_path: uploadedPath,
+      };
+
+      let { error: upsertError } = await supabase
         .from('members' as any)
-        .upsert({
-          fullname: form.fullname,
-          username: form.username,
-          nic: form.nic,
-          gender: form.gender === 'male',
-          role: 'member',
-          batch: batchNum,
-          university: form.university,
-          school: form.school,
-          phone: form.phone,
-          designation: 'none',
-          auth_user_id: user.id,
-          profile_bucket: 'member-profiles',
-          profile_path: uploadedPath,
-        } as any)
+        .upsert(payload as any)
         .eq('auth_user_id', user.id);
 
-      if (upsertError) throw upsertError;
+      if (upsertError) {
+        const msg = String(upsertError.message || upsertError);
+        if (/uni_degree/i.test(msg)) {
+          // retry without uni_degree
+          delete payload.uni_degree;
+          const { error: retryError } = await supabase
+            .from('members' as any)
+            .upsert(payload as any)
+            .eq('auth_user_id', user.id);
+          if (retryError) throw retryError;
+        } else {
+          throw upsertError;
+        }
+      }
 
       await refreshProfile();
       navigate('/admin/profile');
@@ -236,15 +272,19 @@ export default function ProfileSetupPage() {
                     onChange={(e) => setForm({ ...form, batch: e.target.value })}
                     placeholder="2024"
                     required
+                    disabled={batchDisabled}
                     className="bg-background/50"
                   />
+                  {batchDisabled && (
+                    <p className="text-xs text-muted-foreground mt-1">Batch set by administrator and cannot be edited.</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Phone</Label>
                   <Input
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    placeholder="+94 XX XXX XXXX"
+                    placeholder="0xxxxxxxxx"
                     required
                     className="bg-background/50"
                   />
@@ -262,6 +302,18 @@ export default function ProfileSetupPage() {
                     className="bg-background/50"
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>Degree / Course</Label>
+                  <Input
+                    value={form.uni_degree}
+                    onChange={(e) => setForm({ ...form, uni_degree: e.target.value })}
+                    placeholder="e.g. BSc Computer Science"
+                    className="bg-background/50"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>School</Label>
                   <Input

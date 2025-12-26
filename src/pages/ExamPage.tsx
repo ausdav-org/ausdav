@@ -144,6 +144,12 @@ const ExamPage: React.FC = () => {
   });
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [generatedIndexNo, setGeneratedIndexNo] = useState<string>('');
+  const [registeredFullName, setRegisteredFullName] = useState<string>('');
+  // Registration check states
+  const [regCheckIndex, setRegCheckIndex] = useState<string>('');
+  const [regCheckIdType, setRegCheckIdType] = useState<string>('NIC No');
+  const [regCheckResult, setRegCheckResult] = useState<{ found: boolean; applicant?: ApplicantRecord } | null>(null);
+  const [regChecking, setRegChecking] = useState<boolean>(false);
 
   const defaultResultsForm = { stream: '', idType: 'Index No', idValue: '', year: '' };
   const [resultsForm, setResultsForm] = useState(defaultResultsForm);
@@ -221,8 +227,6 @@ const ExamPage: React.FC = () => {
       exam: false,
       gender: false,
     });
-    setSuccessDialogOpen(false);
-    setGeneratedIndexNo('');
   };
 
   // Cleanup on unmount
@@ -234,6 +238,14 @@ const ExamPage: React.FC = () => {
       }
     };
   }, []);
+
+  // Clear dialog-related temporary data when dialog is closed
+  useEffect(() => {
+    if (!successDialogOpen) {
+      setGeneratedIndexNo('');
+      setRegisteredFullName('');
+    }
+  }, [successDialogOpen]);
 
   // Email validation function
   const validateEmail = (email: string) => {
@@ -386,8 +398,9 @@ const ExamPage: React.FC = () => {
 
       if (error) throw error;
 
-      // Show success dialog with index number
-      setGeneratedIndexNo(indexNo);
+      // Show success dialog with index number and greeting
+      setRegisteredFullName(applyForm.fullName.trim());
+      setGeneratedIndexNo(indexNo as string);
       setSuccessDialogOpen(true);
       toast.success(language === 'en' ? 'Application submitted successfully!' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது!');
       handleApplyReset();
@@ -493,6 +506,50 @@ const ExamPage: React.FC = () => {
     setShowResultSheet(false);
   };
 
+  // Check whether an index number is registered
+  const handleCheckIndex = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    let idx = regCheckIndex.trim();
+    if (!idx) {
+      if (regCheckIdType === 'Index No') {
+        toast.error(language === 'en' ? 'Please enter an index number' : 'ஒரு குறிப்பு எண்ணை உள்ளிடவும்');
+      } else {
+        toast.error(language === 'en' ? 'Please enter an NIC' : 'NIC ஒன்றை உள்ளிடவும்');
+      }
+      return;
+    }
+
+    // Normalize NIC input: allow only digits
+    if (regCheckIdType === 'NIC No') {
+      idx = idx.replace(/\D/g, '');
+    }
+
+    try {
+      setRegChecking(true);
+      setRegCheckResult(null);
+
+      // Query by chosen identifier
+      const query = supabase.from('applicants' as any).select('*');
+      const res = regCheckIdType === 'Index No'
+        ? await query.eq('index_no', idx).maybeSingle()
+        : await query.eq('nic', idx).maybeSingle();
+
+      if (res.error) throw res.error;
+
+      if (!res.data) {
+        setRegCheckResult({ found: false });
+      } else {
+        setRegCheckResult({ found: true, applicant: res.data as unknown as ApplicantRecord });
+      }
+    } catch (err) {
+      console.error('Error checking index:', err);
+      toast.error(language === 'en' ? 'Failed to check registration' : 'பதிவை சரிபார்க்க முடியவில்லை');
+      setRegCheckResult(null);
+    } finally {
+      setRegChecking(false);
+    }
+  };
+
   const availableYears = useMemo(
     () => Array.from(new Set(pastPapers.map((p) => String(p.yrs)))).sort((a, b) => Number(b) - Number(a)),
     [pastPapers]
@@ -591,6 +648,60 @@ const ExamPage: React.FC = () => {
 
       <section className="py-16 md:py-24 bg-background">
         <div className="container mx-auto px-4">
+
+          {/* Registration check card */}
+          <div className="max-w-2xl mx-auto mb-6">
+            <Card>
+              <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-3">
+                <div className="w-full sm:w-40">
+                  <Select value={regCheckIdType} onValueChange={(v) => setRegCheckIdType(v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Index No">{language === 'en' ? 'Index No' : 'குறிப்பு எண்'}</SelectItem>
+                      <SelectItem value="NIC No">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Input
+                  value={regCheckIndex}
+                  onChange={(e) => setRegCheckIndex(e.target.value)}
+                  placeholder={regCheckIdType === 'Index No' ? (language === 'en' ? 'Enter Index Number (e.g. 250001M)' : 'குறிப்பு எண் உள்ளிடவும் (எ.கா. 250001M)') : (language === 'en' ? 'Enter NIC (12 digits)' : 'NIC உள்ளிடவும் (12 இலக்கங்கள்)')}
+                  className="flex-1"
+                />
+
+                <div className="flex gap-2">
+                  <Button onClick={(e) => handleCheckIndex(e)} disabled={regChecking} className="whitespace-nowrap">
+                    {regChecking ? (language === 'en' ? 'Checking...' : 'சரிபாரித்தல்...') : (language === 'en' ? 'Check Registration' : 'பதிவைச் சரிபார்')}
+                  </Button>
+                  <Button variant="ghost" onClick={() => { setRegCheckIndex(''); setRegCheckResult(null); }}>
+                    {language === 'en' ? 'Clear' : 'அழி'}
+                  </Button>
+                </div>
+              </CardContent>
+
+              {regCheckResult && (
+                <CardContent className="border-t">
+                  {regCheckResult.found ? (
+                    <div>
+                      <div className="text-sm text-muted-foreground">{language === 'en' ? 'Registered' : 'பதிவுசெய்யப்பட்டுள்ளது'}</div>
+                      <div className="font-semibold mt-1">{regCheckResult.applicant?.fullname}</div>
+                      <div className="text-xs text-muted-foreground">{regCheckResult.applicant?.index_no} • {regCheckResult.applicant?.school} • {regCheckResult.applicant?.nic}</div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-destructive">
+                      {regCheckIdType === 'Index No'
+                        ? (language === 'en' ? 'No registration found for that index number.' : 'அந்த குறிப்பு எண்ணிற்கு பதிவு கிடைக்கவில்லை.')
+                        : (language === 'en' ? 'No registration found for that NIC.' : 'அந்த NICக்கான பதிவு கிடைக்கவில்லை.')}
+                    </div>
+                  )}
+                </CardContent>
+              )}
+            </Card>
+          </div>
+
           <Tabs value={activeTab} onValueChange={setActiveTab} className="max-w-4xl mx-auto">
             <TabsList className="grid w-full grid-cols-3 mb-8">
               <TabsTrigger value="apply" className="flex items-center gap-2">
@@ -1109,9 +1220,17 @@ const ExamPage: React.FC = () => {
               {language === 'en' ? 'Application Submitted Successfully!' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது!'}
             </DialogTitle>
             <DialogDescription>
-              {language === 'en' 
-                ? 'Congratulations! Your exam application has been submitted successfully. Please save your reference number for future reference.'
-                : 'வாழ்த்துக்கள்! உங்கள் தேர்வு விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது. எதிர்கால குறிப்புக்கு உங்கள் குறிப்பு எண்ணை சேமிக்கவும்.'}
+              {language === 'en' ? (
+                <>
+                  <div className="text-lg font-medium mb-2">{registeredFullName ? `Hello ${registeredFullName}!` : 'Hello!'}</div>
+                  <div>Congratulations! Your exam application has been submitted successfully. Please save your reference number for future reference.</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-lg font-medium mb-2">{registeredFullName ? `வணக்கம் ${registeredFullName}!` : 'வணக்கம்!'}</div>
+                  <div>வாழ்த்துக்கள்! உங்கள் தேர்வு விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது. எதிர்கால குறிப்புக்கு உங்கள் குறிப்பு எண்ணை சேமிக்கவும்.</div>
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           
