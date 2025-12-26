@@ -26,6 +26,7 @@ export default function AdminProfilePage() {
     gender: profile?.gender ? 'male' : 'female',
     batch: profile?.batch?.toString() || '',
     university: profile?.university || '',
+    uni_degree: profile?.uni_degree || '',
     school: profile?.school || '',
     phone: profile?.phone || '',
   });
@@ -54,21 +55,36 @@ export default function AdminProfilePage() {
 
     setLoading(true);
     try {
-      const { error } = await supabase
+      const payload: any = {
+        fullname: formData.fullname,
+        username: formData.username,
+        nic: formData.nic,
+        gender: formData.gender === 'male',
+        batch: Number(formData.batch),
+        university: formData.university,
+        uni_degree: formData.uni_degree || null,
+        school: formData.school,
+        phone: formData.phone,
+      };
+
+      let { error } = await supabase
         .from('members' as any)
-        .update({
-          fullname: formData.fullname,
-          username: formData.username,
-          nic: formData.nic,
-          gender: formData.gender === 'male',
-          batch: Number(formData.batch),
-          university: formData.university,
-          school: formData.school,
-          phone: formData.phone,
-        } as any)
+        .update(payload as any)
         .eq('mem_id', profile.mem_id);
 
-      if (error) throw error;
+      if (error) {
+        const msg = String(error.message || error);
+        if (/uni_degree/i.test(msg)) {
+          delete payload.uni_degree;
+          const { error: retryError } = await supabase
+            .from('members' as any)
+            .update(payload as any)
+            .eq('mem_id', profile.mem_id);
+          if (retryError) throw retryError;
+        } else {
+          throw error;
+        }
+      }
 
       await refreshProfile();
       toast.success('Profile updated successfully');
@@ -277,6 +293,19 @@ export default function AdminProfilePage() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="uni_degree">Degree / Course</Label>
+                  <Input
+                    id="uni_degree"
+                    value={formData.uni_degree}
+                    onChange={(e) =>
+                      setFormData({ ...formData, uni_degree: e.target.value })
+                    }
+                    placeholder="e.g. BSc Computer Science"
+                    className="bg-background/50"
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="school">School</Label>
                   <Input
                     id="school"
@@ -297,7 +326,7 @@ export default function AdminProfilePage() {
                     onChange={(e) =>
                       setFormData({ ...formData, phone: e.target.value })
                     }
-                    placeholder="+94 XX XXX XXXX"
+                    placeholder="0xxxxxxxxx"
                     className="bg-background/50"
                   />
                 </div>
