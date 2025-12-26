@@ -20,6 +20,7 @@ interface FormState {
   gender: 'male' | 'female';
   batch: string;
   university: string;
+  uni_degree: string;
   school: string;
   phone: string;
 }
@@ -31,6 +32,7 @@ const initialForm: FormState = {
   gender: 'male',
   batch: '',
   university: '',
+  uni_degree: '',
   school: '',
   phone: '',
 };
@@ -104,27 +106,43 @@ export default function ProfileSetupPage() {
         uploadedPath = path;
       }
 
-      const { error: upsertError } = await supabase
-        // Cast table name while generated types are outdated.
+      // Attempt upsert including uni_degree; if DB lacks the column, retry without it
+      const payload: any = {
+        fullname: form.fullname,
+        username: form.username,
+        nic: form.nic,
+        gender: form.gender === 'male',
+        role: 'member',
+        batch: batchNum,
+        university: form.university,
+        uni_degree: form.uni_degree || null,
+        school: form.school,
+        phone: form.phone,
+        designation: 'none',
+        auth_user_id: user.id,
+        profile_bucket: 'member-profiles',
+        profile_path: uploadedPath,
+      };
+
+      let { error: upsertError } = await supabase
         .from('members' as any)
-        .upsert({
-          fullname: form.fullname,
-          username: form.username,
-          nic: form.nic,
-          gender: form.gender === 'male',
-          role: 'member',
-          batch: batchNum,
-          university: form.university,
-          school: form.school,
-          phone: form.phone,
-          designation: 'none',
-          auth_user_id: user.id,
-          profile_bucket: 'member-profiles',
-          profile_path: uploadedPath,
-        } as any)
+        .upsert(payload as any)
         .eq('auth_user_id', user.id);
 
-      if (upsertError) throw upsertError;
+      if (upsertError) {
+        const msg = String(upsertError.message || upsertError);
+        if (/uni_degree/i.test(msg)) {
+          // retry without uni_degree
+          delete payload.uni_degree;
+          const { error: retryError } = await supabase
+            .from('members' as any)
+            .upsert(payload as any)
+            .eq('auth_user_id', user.id);
+          if (retryError) throw retryError;
+        } else {
+          throw upsertError;
+        }
+      }
 
       await refreshProfile();
       navigate('/admin/profile');
@@ -266,7 +284,7 @@ export default function ProfileSetupPage() {
                   <Input
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    placeholder="+94 XX XXX XXXX"
+                    placeholder="0xxxxxxxxx"
                     required
                     className="bg-background/50"
                   />
@@ -284,6 +302,18 @@ export default function ProfileSetupPage() {
                     className="bg-background/50"
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>Degree / Course</Label>
+                  <Input
+                    value={form.uni_degree}
+                    onChange={(e) => setForm({ ...form, uni_degree: e.target.value })}
+                    placeholder="e.g. BSc Computer Science"
+                    className="bg-background/50"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>School</Label>
                   <Input

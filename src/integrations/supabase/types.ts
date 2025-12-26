@@ -344,6 +344,7 @@ export type Database = {
           profile_path: string | null
           role: Database["public"]["Enums"]["app_role"]
           school: string
+          uni_degree: string | null
           university: string
           updated_at: string
           username: string
@@ -362,6 +363,7 @@ export type Database = {
           profile_path?: string | null
           role: Database["public"]["Enums"]["app_role"]
           school: string
+          uni_degree?: string | null
           university: string
           updated_at?: string
           username: string
@@ -380,6 +382,7 @@ export type Database = {
           profile_path?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           school?: string
+          uni_degree?: string | null
           university?: string
           updated_at?: string
           username?: string
