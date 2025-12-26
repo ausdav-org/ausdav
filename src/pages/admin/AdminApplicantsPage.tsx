@@ -63,6 +63,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { createClient } from '@supabase/supabase-js';
 import {
   ChartContainer,
   ChartTooltip,
@@ -70,6 +71,17 @@ import {
   ChartConfig,
 } from '@/components/ui/chart';
 import { PieChart, Pie, Cell, Legend } from 'recharts';
+
+/**
+ * ✅ SECOND DATABASE CLIENT
+ * Set these env vars in your project:
+ * - VITE_SUPABASE_URL_2
+ * - VITE_SUPABASE_ANON_KEY_2
+ */
+const supabase2 = createClient(
+  import.meta.env.VITE_SUPABASE_URL_2 as string,
+  import.meta.env.VITE_SUPABASE_ANON_KEY_2 as string
+);
 
 type AppSettings = {
   allow_exam_applications: boolean;
@@ -116,10 +128,14 @@ export default function AdminApplicantsPage() {
     return [...new Set(applicants.map(a => a.year))].sort((a, b) => b - a);
   }, [applicants]);
 
-  // Auto-select the latest year when data is loaded
+  // ✅ UPDATED: Auto-select a year even when DB is empty
   useEffect(() => {
-    if (uniqueYears.length > 0 && selectedYear === null) {
-      setSelectedYear(uniqueYears[0]);
+    if (selectedYear === null) {
+      if (uniqueYears.length > 0) {
+        setSelectedYear(uniqueYears[0]);
+      } else {
+        setSelectedYear(new Date().getFullYear());
+      }
     }
   }, [uniqueYears, selectedYear]);
 
@@ -228,7 +244,7 @@ export default function AdminApplicantsPage() {
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
-    // ✅ Stream distribution (Pie)
+    // Stream distribution (Pie)
     const streamCounts: Record<string, number> = {};
     filteredApplicants.forEach(a => {
       const s = a.stream || 'Not Available';
@@ -252,11 +268,6 @@ export default function AdminApplicantsPage() {
   const exampleYearTwoDigits = String(exampleYear).slice(-2);
   const indexExample = `${exampleYearTwoDigits}0000${currentStreamLetter}`;
 
-  // ✅ UPDATED CSV UPLOAD:
-  // - index_no in CSV must be EMPTY
-  // - system generates YY + (last 4 digits + 1, padded) + StreamLetter
-  // - 4 digits are COMMON for the entire year (not per stream)
-  // - increment follows CSV row order
   const handleCsvUpload = async () => {
     if (!csvFile) {
       toast.error('Please select a CSV file');
@@ -325,7 +336,6 @@ export default function AdminApplicantsPage() {
 
       parsedRows.sort((a, b) => a.order - b.order);
 
-      // Prepare applicants array for bulk insert
       const applicantsArray = parsedRows.map(row => ({
         fullname: row.fullname,
         gender: row.gender,
@@ -336,7 +346,6 @@ export default function AdminApplicantsPage() {
         school: row.school,
       }));
 
-      // Call bulk insert function
       const { data: generatedIndices, error } = await supabase.rpc('bulk_insert_applicants', {
         p_applicants: applicantsArray,
         p_year: importYear,
@@ -344,7 +353,6 @@ export default function AdminApplicantsPage() {
 
       if (error) throw error;
 
-      // Show success with generated index numbers
       const indicesList = Array.isArray(generatedIndices) ? generatedIndices.join(', ') : 'N/A';
       toast.success(`Successfully uploaded ${applicantsArray.length} applicants. Generated index numbers: ${indicesList}`);
       setUploadOpen(false);
@@ -417,27 +425,35 @@ export default function AdminApplicantsPage() {
     }
 
     try {
-      const { error } = await supabase
+      // ✅ Delete from FIRST database
+      const { error: errorDb1 } = await supabase
         .from('applicants' as any)
         .delete()
         .eq('year', selectedYear);
 
-      if (error) throw error;
+      if (errorDb1) throw errorDb1;
 
-      toast.success(`Successfully deleted ${applicantsToDelete.length} applicants from ${selectedYear}`);
+      // ✅ Delete from SECOND database (same table name)
+      const { error: errorDb2 } = await supabase2
+        .from('applicants' as any)
+        .delete()
+        .eq('year', selectedYear);
+
+      if (errorDb2) throw errorDb2;
+
+      toast.success(`Successfully deleted ${applicantsToDelete.length} applicants from ${selectedYear} (both databases)`);
 
       const remainingApplicants = applicants.filter(a => a.year !== selectedYear);
       setApplicants(remainingApplicants);
 
       const remainingYears = [...new Set(remainingApplicants.map(a => a.year))].sort((a, b) => b - a);
-      setSelectedYear(remainingYears.length > 0 ? remainingYears[0] : null);
+      setSelectedYear(remainingYears.length > 0 ? remainingYears[0] : new Date().getFullYear());
     } catch (error) {
       console.error('Error deleting applicants:', error);
       toast.error('Failed to delete applicants');
     }
   };
 
-  // Chart configurations
   const schoolChartConfig: ChartConfig = {
     count: { label: "Students", color: "#60A5FA" },
   };
@@ -446,7 +462,6 @@ export default function AdminApplicantsPage() {
     count: { label: "Students", color: "#60A5FA" },
   };
 
-  // ✅ Visible colors for dark/light mode
   const COLORS = [
     '#60A5FA',
     '#34D399',
@@ -484,7 +499,6 @@ export default function AdminApplicantsPage() {
                 </Badge>
               </div>
 
-              {/* ✅ Removed Publish/Unpublish Results button */}
               <div className="flex gap-2">
                 <Button
                   variant={allowExamApplications ? 'destructive' : 'default'}
@@ -528,7 +542,7 @@ export default function AdminApplicantsPage() {
 
         {selectedYear !== null && (
           <>
-            {/* ✅ Index No Instructions Card (UPDATED) */}
+            {/* Index No Instructions Card */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -701,7 +715,6 @@ export default function AdminApplicantsPage() {
 
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* School Distribution Pie Chart */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">School Distribution (Top 10)</CardTitle>
@@ -719,35 +732,11 @@ export default function AdminApplicantsPage() {
                           cx="50%"
                           cy="50%"
                           outerRadius={100}
-                          labelLine={false}
-                          label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
-                            const RADIAN = Math.PI / 180;
-                            const radius = innerRadius + (outerRadius - innerRadius) * 1.2;
-                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
-                            const shortName = `${name.substring(0, 15)}${name.length > 15 ? '...' : ''}`;
-                            const txt = `${shortName} (${(percent * 100).toFixed(0)}%)`;
-
-                            return (
-                              <text
-                                x={x}
-                                y={y}
-                                fill="hsl(var(--foreground))"
-                                textAnchor={x > cx ? 'start' : 'end'}
-                                dominantBaseline="central"
-                                fontSize={12}
-                              >
-                                {txt}
-                              </text>
-                            );
-                          }}
                         >
                           {stats.schoolData.map((_, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-
                         <Legend
                           wrapperStyle={{ color: 'hsl(var(--foreground))' }}
                           formatter={(value) => (
@@ -764,7 +753,6 @@ export default function AdminApplicantsPage() {
                 </CardContent>
               </Card>
 
-              {/* ✅ Stream Distribution Pie Chart (replaces Results Distribution) */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Stream Distribution</CardTitle>
@@ -782,35 +770,11 @@ export default function AdminApplicantsPage() {
                           cx="50%"
                           cy="50%"
                           outerRadius={100}
-                          labelLine={false}
-                          label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
-                            const RADIAN = Math.PI / 180;
-                            const radius = innerRadius + (outerRadius - innerRadius) * 1.2;
-                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
-                            const shortName = `${name.substring(0, 15)}${name.length > 15 ? '...' : ''}`;
-                            const txt = `${shortName} (${(percent * 100).toFixed(0)}%)`;
-
-                            return (
-                              <text
-                                x={x}
-                                y={y}
-                                fill="hsl(var(--foreground))"
-                                textAnchor={x > cx ? 'start' : 'end'}
-                                dominantBaseline="central"
-                                fontSize={12}
-                              >
-                                {txt}
-                              </text>
-                            );
-                          }}
                         >
                           {stats.streamData.map((_, index) => (
                             <Cell key={`stream-cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-
                         <Legend
                           wrapperStyle={{ color: 'hsl(var(--foreground))' }}
                           formatter={(value) => (
@@ -909,7 +873,6 @@ export default function AdminApplicantsPage() {
               </CardContent>
             </Card>
 
-            {/* ✅ Danger Zone: Super Admin only */}
             {isSuperAdmin && (
               <Card className="border-destructive/50">
                 <CardHeader>
@@ -954,7 +917,6 @@ export default function AdminApplicantsPage() {
           </>
         )}
 
-        {/* CSV Upload Dialog */}
         <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
           <DialogContent>
             <DialogHeader>
