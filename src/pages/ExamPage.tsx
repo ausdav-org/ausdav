@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { FileText, Download, Search, ClipboardList, Award, ImageDown } from 'lucide-react';
+import { FileText, Download, Search, ClipboardList, Award, ImageDown, Check, X } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
 import emblemImg from '@/assets/Exam/AUSDAV logo.png';
@@ -125,6 +128,22 @@ const ExamPage: React.FC = () => {
     agree: true,
   };
   const [applyForm, setApplyForm] = useState(initialApplyForm);
+  const [emailValid, setEmailValid] = useState<boolean | null>(null);
+  const [phoneValid, setPhoneValid] = useState<boolean | null>(null);
+  const [nicValid, setNicValid] = useState<boolean | null>(null);
+  const [nicDuplicate, setNicDuplicate] = useState<boolean | null>(null);
+  const nicCheckTimeoutRef = useRef<number | null>(null);
+  const [fieldErrors, setFieldErrors] = useState({
+    fullName: false,
+    email: false,
+    phone: false,
+    nic: false,
+    schoolName: false,
+    exam: false,
+    gender: false,
+  });
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
+  const [generatedIndexNo, setGeneratedIndexNo] = useState<string>('');
 
   const defaultResultsForm = { stream: '', idType: 'Index No', idValue: '', year: '' };
   const [resultsForm, setResultsForm] = useState(defaultResultsForm);
@@ -183,7 +202,125 @@ const ExamPage: React.FC = () => {
     },
   });
 
-  const handleApplyReset = () => setApplyForm(initialApplyForm);
+  const handleApplyReset = () => {
+    setApplyForm(initialApplyForm);
+    setEmailValid(null);
+    setPhoneValid(null);
+    setNicValid(null);
+    setNicDuplicate(null);
+    if (nicCheckTimeoutRef.current) {
+      window.clearTimeout(nicCheckTimeoutRef.current);
+      nicCheckTimeoutRef.current = null;
+    }
+    setFieldErrors({
+      fullName: false,
+      email: false,
+      phone: false,
+      nic: false,
+      schoolName: false,
+      exam: false,
+      gender: false,
+    });
+    setSuccessDialogOpen(false);
+    setGeneratedIndexNo('');
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (nicCheckTimeoutRef.current) {
+        window.clearTimeout(nicCheckTimeoutRef.current);
+        nicCheckTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  // Email validation function
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Phone validation function
+  const validatePhone = (phone: string) => {
+    const phoneRegex = /^\d{10}$/;
+    return phoneRegex.test(phone);
+  };
+
+  // NIC validation function
+  const validateNIC = (nic: string) => {
+    const nicRegex = /^\d{12}$/;
+    return nicRegex.test(nic);
+  };
+
+  // Check if NIC already exists
+  const checkNicDuplicate = async (nic: string) => {
+    try {
+      const { data, error } = await (supabase.rpc as any)('check_nic_exists', { p_nic: nic });
+      if (error) throw error;
+      setNicDuplicate(data as boolean);
+    } catch (error) {
+      console.error('Error checking NIC:', error);
+      setNicDuplicate(null); // Reset on error
+    }
+  };
+
+  // Handle email input change with validation
+  const handleEmailChange = (value: string) => {
+    setApplyForm({ ...applyForm, email: value });
+    if (value.trim() === '') {
+      setEmailValid(null);
+    } else {
+      setEmailValid(validateEmail(value));
+    }
+  };
+
+  // Handle phone input change with validation
+  const handlePhoneChange = (value: string) => {
+    const digitsOnly = onlyDigitsMax(value, 10);
+    setApplyForm({ ...applyForm, phone: digitsOnly });
+    if (digitsOnly === '') {
+      setPhoneValid(null);
+    } else {
+      setPhoneValid(validatePhone(digitsOnly));
+    }
+  };
+
+  // Handle NIC input change with validation (debounced duplicate check)
+  const handleNicChange = (value: string) => {
+    // Allow only digits and limit to 12 characters
+    const digitsOnly = value.replace(/\D/g, '').slice(0, 12);
+    setApplyForm({ ...applyForm, nic: digitsOnly });
+
+    // Reset duplicate state when clearing input
+    if (digitsOnly === '') {
+      setNicValid(null);
+      setNicDuplicate(null);
+      if (nicCheckTimeoutRef.current) {
+        window.clearTimeout(nicCheckTimeoutRef.current);
+        nicCheckTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    const isValid = validateNIC(digitsOnly);
+    setNicValid(isValid);
+
+    // Debounce RPC calls to avoid spamming the backend while typing
+    if (isValid) {
+      if (nicCheckTimeoutRef.current) window.clearTimeout(nicCheckTimeoutRef.current);
+      nicCheckTimeoutRef.current = window.setTimeout(() => {
+        checkNicDuplicate(digitsOnly);
+        nicCheckTimeoutRef.current = null;
+      }, 350) as unknown as number;
+    } else {
+      if (nicCheckTimeoutRef.current) {
+        window.clearTimeout(nicCheckTimeoutRef.current);
+        nicCheckTimeoutRef.current = null;
+      }
+      setNicDuplicate(null);
+    }
+  };
 
   // ✅ UPDATED (same logic as before style): use DB to fetch last index_no and generate next
   // Format: YY + 4 digits + StreamLetter
@@ -191,15 +328,32 @@ const ExamPage: React.FC = () => {
   const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (
-      !applyForm.fullName ||
-      !applyForm.email ||
-      !applyForm.phone ||
-      !applyForm.nic ||
-      !applyForm.schoolName ||
-      !applyForm.exam ||
-      !applyForm.gender
-    ) {
+    // Reset field errors
+    setFieldErrors({
+      fullName: false,
+      email: false,
+      phone: false,
+      nic: false,
+      schoolName: false,
+      exam: false,
+      gender: false,
+    });
+
+    // Check for empty required fields
+    const errors = {
+      fullName: !applyForm.fullName.trim(),
+      email: !applyForm.email.trim(),
+      phone: !applyForm.phone.trim(),
+      nic: !applyForm.nic.trim(),
+      schoolName: !applyForm.schoolName.trim(),
+      exam: !applyForm.exam.trim(),
+      gender: !applyForm.gender,
+    };
+
+    setFieldErrors(errors);
+
+    // Check if any field has error
+    if (Object.values(errors).some(error => error)) {
       toast.error(language === 'en' ? 'Please fill all required fields' : 'தயவுசெய்து அனைத்து தேவையான புலங்களையும் நிரப்பவும்');
       return;
     }
@@ -232,18 +386,25 @@ const ExamPage: React.FC = () => {
 
       if (error) throw error;
 
-      toast.success(
-        `${language === 'en' ? 'Application submitted successfully! Your reference number is:' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது! உங்கள் குறிப்பு எண்:'} ${indexNo}`
-      );
+      // Show success dialog with index number
+      setGeneratedIndexNo(indexNo);
+      setSuccessDialogOpen(true);
+      toast.success(language === 'en' ? 'Application submitted successfully!' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது!');
       handleApplyReset();
     } catch (error: any) {
       console.error('Error submitting application:', error);
-      toast.error(
-        error?.message ||
-          (language === 'en'
-            ? 'Failed to submit application. Please try again.'
-            : 'விண்ணப்பத்தை சமர்ப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.')
-      );
+      let errorMessage = language === 'en'
+        ? 'Failed to submit application. Please try again.'
+        : 'விண்ணப்பத்தை சமர்ப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.';
+
+      // Check for unique constraint violation on NIC
+      if (error?.code === '23505' && error?.message?.includes('applicants_nic_unique')) {
+        errorMessage = language === 'en'
+          ? 'An application with this NIC already exists.'
+          : 'இந்த NIC கொண்ட விண்ணப்பம் ஏற்கனவே உள்ளது.';
+      }
+
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -480,33 +641,105 @@ const ExamPage: React.FC = () => {
                         <form onSubmit={handleApplySubmit} className="space-y-5">
                           <div>
                             <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Full Name' : 'முழு பெயர்'}</label>
-                            <Input value={applyForm.fullName} onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })} required />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
-                            <Input type="email" value={applyForm.email} onChange={(e) => setApplyForm({ ...applyForm, email: e.target.value })} required />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}</label>
-                            <Input
-                              inputMode="numeric"
-                              value={applyForm.phone}
-                              onChange={(e) => setApplyForm({ ...applyForm, phone: onlyDigitsMax(e.target.value, 10) })}
-                              required
+                            <Input 
+                              value={applyForm.fullName} 
+                              onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })} 
+                              required 
+                              placeholder={language === 'en' ? 'Enter your full name' : 'உங்கள் முழு பெயரை உள்ளீடு செய்யவும்'}
+                              className={fieldErrors.fullName ? 'border-red-500' : ''}
                             />
                           </div>
 
                           <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
+                            <div className="relative">
+                              <Input 
+                                type="email" 
+                                value={applyForm.email} 
+                                onChange={(e) => handleEmailChange(e.target.value)} 
+                                required 
+                                placeholder={language === 'en' ? 'your.email@example.com' : 'your.email@example.com'}
+                                className={`${emailValid === false ? 'border-red-500 pr-10' : emailValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${fieldErrors.email ? 'border-red-500' : ''}`}
+                              />
+                              {applyForm.email && (
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                  {emailValid === true && <Check className="h-4 w-4 text-green-500" />}
+                                  {emailValid === false && <X className="h-4 w-4 text-red-500" />}
+                                </div>
+                              )}
+                            </div>
+                            {emailValid === false && (
+                              <p className="text-sm text-red-500 mt-1">
+                                {language === 'en' ? 'Please enter a valid email address' : 'சரியான மின்னஞ்சல் முகவரியை உள்ளீடு செய்யவும்'}
+                              </p>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}</label>
+                            <div className="relative">
+                              <Input
+                                inputMode="numeric"
+                                value={applyForm.phone}
+                                onChange={(e) => handlePhoneChange(e.target.value)}
+                                required
+                                placeholder={language === 'en' ? '0757575757' : '0757575757'}
+                                className={`${phoneValid === false ? 'border-red-500 pr-10' : phoneValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${fieldErrors.phone ? 'border-red-500' : ''}`}
+                              />
+                              {applyForm.phone && (
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                  {phoneValid === true && <Check className="h-4 w-4 text-green-500" />}
+                                  {phoneValid === false && <X className="h-4 w-4 text-red-500" />}
+                                </div>
+                              )}
+                            </div>
+                            {phoneValid === false && (
+                              <p className="text-sm text-red-500 mt-1">
+                                {language === 'en' ? 'Phone number must be exactly 10 digits' : 'தொலைபேசி எண் சரியாக 10 இலக்கங்கள் இருக்க வேண்டும்'}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {language === 'en' ? 'Format: 0757575757 (10 digits)' : 'வடிவம்: 0757575757 (10 இலக்கங்கள்)'}
+                            </p>
+                          </div>
+
+                          <div>
                             <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</label>
-                            <Input value={applyForm.nic} onChange={(e) => setApplyForm({ ...applyForm, nic: e.target.value })} required />
+                            <div className="relative">
+                              <Input 
+                                value={applyForm.nic} 
+                                onChange={(e) => handleNicChange(e.target.value)} 
+                                required 
+                                inputMode="numeric"
+                                placeholder={language === 'en' ? '123456789012' : '123456789012'}
+                                className={`${(nicValid === false || nicDuplicate === true) ? 'border-red-500 pr-10' : nicValid === true && nicDuplicate === false ? 'border-green-500 pr-10' : 'pr-10'} ${fieldErrors.nic ? 'border-red-500' : ''}`}
+                              />
+                              {applyForm.nic && (
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                  {nicValid === true && nicDuplicate === false && <Check className="h-4 w-4 text-green-500" />}
+                                  {(nicValid === false || nicDuplicate === true) && <X className="h-4 w-4 text-red-500" />}
+                                </div>
+                              )}
+                            </div>
+                            {nicValid === false && (
+                              <p className="text-sm text-red-500 mt-1">
+                                {language === 'en' ? 'NIC number must be exactly 12 digits' : 'தேசிய அடையாள எண் சரியாக 12 இலக்கங்கள் இருக்க வேண்டும்'}
+                              </p>
+                            )}
+                            {nicDuplicate === true && nicValid === true && (
+                              <p className="text-sm text-red-500 mt-1">
+                                {language === 'en' ? 'This NIC has already been used for an application' : 'இந்த தேசிய அடையாள எண் ஏற்கனவே விண்ணப்பத்திற்கு பயன்படுத்தப்பட்டுள்ளது'}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {language === 'en' ? 'Format: 123456789012 (12 digits)' : 'வடிவம்: 123456789012 (12 இலக்கங்கள்)'}
+                            </p>
                           </div>
 
                           <div>
                             <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Select Stream' : 'தேர்வைத் தேர்ந்தெடுக்கவும்'}</label>
                             <Select value={applyForm.exam} onValueChange={(v) => setApplyForm({ ...applyForm, exam: v })}>
-                              <SelectTrigger>
+                              <SelectTrigger className={fieldErrors.exam ? 'border-red-500' : ''}>
                                 <SelectValue placeholder={language === 'en' ? '-- Select Your Stream --' : '-- தேர்வு --'} />
                               </SelectTrigger>
                               <SelectContent>
@@ -524,7 +757,7 @@ const ExamPage: React.FC = () => {
                           <div>
                             <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'School Name' : 'பள்ளி பெயர்'}</label>
                             <Select value={applyForm.schoolName} onValueChange={(v) => setApplyForm({ ...applyForm, schoolName: v })}>
-                              <SelectTrigger>
+                              <SelectTrigger className={fieldErrors.schoolName ? 'border-red-500' : ''}>
                                 <SelectValue placeholder={language === 'en' ? 'Select school' : 'பள்ளியை தேர்வு செய்க'} />
                               </SelectTrigger>
                               <SelectContent>
@@ -539,15 +772,20 @@ const ExamPage: React.FC = () => {
 
                           <div>
                             <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Gender' : 'பாலினம்'}</label>
-                            <Select value={applyForm.gender} onValueChange={(v) => setApplyForm({ ...applyForm, gender: v as 'male' | 'female' })}>
-                              <SelectTrigger>
-                                <SelectValue placeholder={language === 'en' ? 'Select gender' : 'பாலினத்தைத் தேர்ந்தெடுக்கவும்'} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="male">{language === 'en' ? 'Male' : 'ஆண்'}</SelectItem>
-                                <SelectItem value="female">{language === 'en' ? 'Female' : 'பெண்'}</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <RadioGroup
+                              value={applyForm.gender}
+                              onValueChange={(v) => setApplyForm({ ...applyForm, gender: v as 'male' | 'female' })}
+                              className={`flex flex-row space-x-6 ${fieldErrors.gender ? 'border border-red-500 rounded-md p-2' : ''}`}
+                            >
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="male" id="male" />
+                                <Label htmlFor="male">{language === 'en' ? 'Male' : 'ஆண்'}</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="female" id="female" />
+                                <Label htmlFor="female">{language === 'en' ? 'Female' : 'பெண்'}</Label>
+                              </div>
+                            </RadioGroup>
                           </div>
 
                           <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -861,6 +1099,50 @@ const ExamPage: React.FC = () => {
           </Tabs>
         </div>
       </section>
+
+      {/* Success Dialog */}
+      <Dialog open={successDialogOpen} onOpenChange={setSuccessDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <Check className="h-5 w-5" />
+              {language === 'en' ? 'Application Submitted Successfully!' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது!'}
+            </DialogTitle>
+            <DialogDescription>
+              {language === 'en' 
+                ? 'Congratulations! Your exam application has been submitted successfully. Please save your reference number for future reference.'
+                : 'வாழ்த்துக்கள்! உங்கள் தேர்வு விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது. எதிர்கால குறிப்புக்கு உங்கள் குறிப்பு எண்ணை சேமிக்கவும்.'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex flex-col items-center space-y-4 py-4">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground mb-2">
+                {language === 'en' ? 'Your Reference Number:' : 'உங்கள் குறிப்பு எண்:'}
+              </p>
+              <div className="bg-primary/10 border-2 border-primary rounded-lg px-6 py-3">
+                <p className="text-2xl font-bold text-primary font-mono">
+                  {generatedIndexNo}
+                </p>
+              </div>
+            </div>
+            
+            <div className="text-center text-sm text-muted-foreground">
+              <p>
+                {language === 'en' 
+                  ? 'Use this number to check your results and for any future communications.'
+                  : 'உங்கள் முடிவுகளை சரிபார்க்க மற்றும் எதிர்கால தகவல்தொடர்புகளுக்கு இந்த எண்ணைப் பயன்படுத்தவும்.'}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setSuccessDialogOpen(false)} className="w-full">
+              {language === 'en' ? 'Close' : 'மூடு'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
