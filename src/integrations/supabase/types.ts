@@ -452,11 +452,30 @@ export type Database = {
         }
         Relationships: []
       }
+      index_counters: {
+        Row: {
+          last_sequence: number
+          year: number
+        }
+        Insert: {
+          last_sequence?: number
+          year: number
+        }
+        Update: {
+          last_sequence?: number
+          year?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      bulk_insert_applicants: {
+        Args: { p_applicants: Json; p_year: number }
+        Returns: Json
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -467,6 +486,19 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      insert_applicant: {
+        Args: {
+          p_fullname: string
+          p_gender: boolean
+          p_stream: string
+          p_nic: string
+          p_phone: string
+          p_email: string
+          p_school: string
+          p_year: number
+        }
+        Returns: string
       }
       is_admin_or_super: { Args: { _user_id: string }; Returns: boolean }
       log_audit_event: {

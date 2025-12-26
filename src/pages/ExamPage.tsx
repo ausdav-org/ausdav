@@ -18,19 +18,51 @@ type AppSettings = {
   allow_results_view: boolean;
 };
 
-const MOCK_RESULTS = {
-  'Maths|2024|Index No|1234': {
-    name: 'Kumar',
-    school: 'Vtmmv',
-    Nic_no: '200333110288',
-    physics_grade: 'A',
-    Maths_grade: 'A',
-    Chemistry_grade: 'B',
-    rank: 45,
-  },
-} as const;
+// Result type from database
+interface ResultRecord {
+  result_id: number;
+  index_no: string;
+  stream: string;
+  physics_marks: number | null;
+  chemistry_marks: number | null;
+  maths_marks: number | null;
+  bio_marks: number | null;
+  physics_grade: string | null;
+  chemistry_grade: string | null;
+  maths_grade: string | null;
+  bio_grade: string | null;
+  zscore: number | null;
+  rank: number | null;
+  year: number;
+}
 
-type ResultRow = (typeof MOCK_RESULTS)[keyof typeof MOCK_RESULTS];
+// Applicant type from database
+interface ApplicantRecord {
+  applicant_id: number;
+  index_no: string;
+  fullname: string;
+  stream: string;
+  gender: boolean;
+  nic: string;
+  phone: string | null;
+  email: string | null;
+  school: string;
+  year: number;
+}
+
+// Combined result for display
+interface ResultDisplay {
+  name: string;
+  school: string;
+  nic: string;
+  stream: string;
+  physics_grade: string;
+  chemistry_grade: string;
+  maths_or_bio_grade: string;
+  maths_or_bio_label: string;
+  zscore: string;
+  rank: number | null;
+}
 
 type PastPaper = {
   pp_id: number;
@@ -56,7 +88,7 @@ const schoolOptions = [
   'Cheddikulam Maha Vidyalayam',
 ];
 
-const resultsStreams = ['Maths', 'Biology', 'Commerce'];
+const resultsStreams = ['Maths', 'Biology'];
 const resultsYears = ['2025', '2024'];
 const idTypes = ['Index No', 'NIC No'];
 
@@ -97,7 +129,7 @@ const ExamPage: React.FC = () => {
   const defaultResultsForm = { stream: '', idType: 'Index No', idValue: '', year: '' };
   const [resultsForm, setResultsForm] = useState(defaultResultsForm);
 
-  const [resultData, setResultData] = useState<ResultRow | null>(null);
+  const [resultData, setResultData] = useState<ResultDisplay | null>(null);
   const [showResultSheet, setShowResultSheet] = useState(false);
 
   const [paperFilter, setPaperFilter] = useState({ subject: '' });
@@ -156,52 +188,6 @@ const ExamPage: React.FC = () => {
   // ✅ UPDATED (same logic as before style): use DB to fetch last index_no and generate next
   // Format: YY + 4 digits + StreamLetter
   // Auto range enforced: 0000–5555 only (manual/CSV 5556–9999 ignored)
-  const generateNextIndexNo = async (year: number, stream: string) => {
-    const streamLetter = (stream?.trim()?.[0] || 'X').toUpperCase();
-    const yy = String(year).slice(-2);
-
-    // Prefer the stream/year columns (safer than LIKE on index_no)
-    // Pull a few latest rows and pick the first valid "AUTO" one (0000–5555).
-    const { data, error } = await supabase
-      .from('applicants' as any)
-      .select('index_no')
-      .eq('year', year)
-      .eq('stream', stream)
-      .order('index_no', { ascending: false })
-      .limit(50);
-
-    if (error) throw error;
-
-    const rowsUnknown = data as unknown;
-    const rows: Array<{ index_no?: string | null }> = Array.isArray(rowsUnknown) ? (rowsUnknown as any[]) : [];
-
-    let lastSeq = -1; // next => 0000
-
-    for (const r of rows) {
-      const idx = typeof r?.index_no === 'string' ? r.index_no.trim() : '';
-
-      // Expected: YY + 4 digits + Letter => length 7, e.g. 250000M
-      if (idx.length === 7 && idx.startsWith(yy) && idx.endsWith(streamLetter)) {
-        const digitsPart = idx.substring(2, 6); // the "exact two digit that fetch from databace" part => actually 4 digits
-        const n = Number(digitsPart);
-
-        // only AUTO range
-        if (!Number.isNaN(n) && n >= 0 && n <= 5555) {
-          lastSeq = n;
-          break; // because ordered desc, first valid is the latest auto seq
-        }
-      }
-    }
-
-    const nextNum = lastSeq + 1;
-    if (nextNum > 5555) {
-      throw new Error('Index number limit reached (5555) for this year/stream.');
-    }
-
-    const fourDigits = String(nextNum).padStart(4, '0');
-    return `${yy}${fourDigits}${streamLetter}`;
-  };
-
   const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -231,18 +217,17 @@ const ExamPage: React.FC = () => {
     setSubmitting(true);
     try {
       const year = new Date().getFullYear();
-      const indexNo = await generateNextIndexNo(year, applyForm.exam);
 
-      const { error } = await supabase.from('applicants' as any).insert({
-        index_no: indexNo,
-        fullname: applyForm.fullName.trim(),
-        gender: applyForm.gender === 'male', // true for male, false for female
-        stream: applyForm.exam,
-        nic: applyForm.nic.trim(),
-        phone: applyForm.phone.trim(),
-        email: applyForm.email.trim().toLowerCase(),
-        school: applyForm.schoolName,
-        year: year,
+      // Call the database function to atomically generate index and insert
+      const { data: indexNo, error } = await supabase.rpc('insert_applicant', {
+        p_fullname: applyForm.fullName.trim(),
+        p_gender: applyForm.gender === 'male', // true for male, false for female
+        p_stream: applyForm.exam,
+        p_nic: applyForm.nic.trim(),
+        p_phone: applyForm.phone.trim(),
+        p_email: applyForm.email.trim().toLowerCase(),
+        p_school: applyForm.schoolName,
+        p_year: year,
       });
 
       if (error) throw error;
@@ -264,21 +249,81 @@ const ExamPage: React.FC = () => {
     }
   };
 
-  const handleResultsSubmit = (e: React.FormEvent) => {
+  const handleResultsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const key = `${resultsForm.stream}|${resultsForm.year}|${resultsForm.idType}|${resultsForm.idValue || ''}`;
-    const found = (MOCK_RESULTS as Record<string, ResultRow>)[key];
-
-    if (!found) {
-      toast.error(language === 'en' ? 'No results found' : 'முடிவுகள் கிடைக்கவில்லை');
-      setResultData(null);
-      setShowResultSheet(false);
+    if (!resultsForm.stream || !resultsForm.year || !resultsForm.idValue) {
+      toast.error(language === 'en' ? 'Please fill all fields' : 'அனைத்து புலங்களையும் நிரப்பவும்');
       return;
     }
 
-    setResultData(found);
-    setShowResultSheet(true);
+    try {
+      // First find the applicant by index_no or NIC
+      let applicantQuery = supabase
+        .from('applicants' as any)
+        .select('*')
+        .eq('stream', resultsForm.stream)
+        .eq('year', parseInt(resultsForm.year));
+
+      if (resultsForm.idType === 'Index No') {
+        applicantQuery = applicantQuery.eq('index_no', resultsForm.idValue);
+      } else {
+        applicantQuery = applicantQuery.eq('nic', resultsForm.idValue);
+      }
+
+      const { data: applicantData, error: applicantError } = await applicantQuery.maybeSingle();
+
+      if (applicantError) throw applicantError;
+
+      if (!applicantData) {
+        toast.error(language === 'en' ? 'No applicant found' : 'விண்ணப்பதாரர் கிடைக்கவில்லை');
+        setResultData(null);
+        setShowResultSheet(false);
+        return;
+      }
+
+      const applicant = applicantData as unknown as ApplicantRecord;
+
+      // Now find the result for this applicant
+      const { data: resultData, error: resultError } = await supabase
+        .from('results' as any)
+        .select('*')
+        .eq('index_no', applicant.index_no)
+        .maybeSingle();
+
+      if (resultError) throw resultError;
+
+      if (!resultData) {
+        toast.error(language === 'en' ? 'No results found for this applicant' : 'இந்த விண்ணப்பதாரருக்கு முடிவுகள் கிடைக்கவில்லை');
+        setResultData(null);
+        setShowResultSheet(false);
+        return;
+      }
+
+      const result = resultData as unknown as ResultRecord;
+      const isMaths = applicant.stream === 'Maths';
+
+      const displayResult: ResultDisplay = {
+        name: applicant.fullname,
+        school: applicant.school,
+        nic: applicant.nic,
+        stream: applicant.stream,
+        physics_grade: result.physics_grade || '-',
+        chemistry_grade: result.chemistry_grade || '-',
+        maths_or_bio_grade: isMaths ? (result.maths_grade || '-') : (result.bio_grade || '-'),
+        maths_or_bio_label: isMaths ? 'Maths' : 'Biology',
+        zscore: result.zscore?.toFixed(4) || '-',
+        rank: result.rank,
+      };
+
+      setResultData(displayResult);
+      setShowResultSheet(true);
+    } catch (error: any) {
+      console.error('Error fetching results:', error);
+      toast.error(language === 'en' ? 'Failed to fetch results' : 'முடிவுகளைப் பெற முடியவில்லை');
+      setResultData(null);
+      setShowResultSheet(false);
+    }
   };
 
   const handleResultsReset = () => {
@@ -323,7 +368,7 @@ const ExamPage: React.FC = () => {
   // Certificate display (from resultData)
   const certName = resultData?.name ?? '-';
   const certSchool = resultData?.school ?? '-';
-  const certNIC = resultData?.Nic_no ?? '-';
+  const certNIC = resultData?.nic ?? '-';
   const certRank = resultData?.rank ?? '-';
 
   // From search form
@@ -331,10 +376,12 @@ const ExamPage: React.FC = () => {
   const certYear = resultsForm.year || '-';
   const certIndex = resultsForm.idType === 'Index No' ? resultsForm.idValue || '-' : '-';
 
-  // Subject grades (from mock)
+  // Subject grades (from result)
   const physicsGrade = resultData?.physics_grade ?? '-';
-  const chemistryGrade = resultData?.Chemistry_grade ?? '-';
-  const mathsGrade = resultData?.Maths_grade ?? '-';
+  const chemistryGrade = resultData?.chemistry_grade ?? '-';
+  const mathsOrBioGrade = resultData?.maths_or_bio_grade ?? '-';
+  const mathsOrBioLabel = resultData?.maths_or_bio_label ?? 'Maths/Bio';
+  const zScore = resultData?.zscore ?? '-';
 
   const downloadSheetAsImage = async () => {
     try {
@@ -761,6 +808,7 @@ const ExamPage: React.FC = () => {
                                         <Row label="NIC Number" value={certNIC} />
                                         <Row label="School" value={certSchool} />
                                         <Row label="Stream" value={certStream} />
+                                        <Row label="Z-Score" value={zScore} />
                                         <Row label="Rank" value={certRank} />
                                       </div>
 
@@ -772,7 +820,7 @@ const ExamPage: React.FC = () => {
 
                                         <div className="bg-white">
                                           {[
-                                            { subject: 'COMBINED MATHEMATICS', result: mathsGrade },
+                                            { subject: mathsOrBioLabel.toUpperCase(), result: mathsOrBioGrade },
                                             { subject: 'PHYSICS', result: physicsGrade },
                                             { subject: 'CHEMISTRY', result: chemistryGrade },
                                           ].map((r) => (
