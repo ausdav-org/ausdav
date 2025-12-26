@@ -82,6 +82,7 @@ export default function AdminMembersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterBatch, setFilterBatch] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   // Invite dialog
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -144,18 +145,18 @@ export default function AdminMembersPage() {
     }
 
     try {
+      const targetIds = selectedIds && selectedIds.length > 0 ? selectedIds : [member.mem_id];
       const { error } = await supabase
         .from('members' as any)
         .update({ role: newRole as any })
-        .eq('mem_id', member.mem_id);
+        .in('mem_id', targetIds);
 
       if (error) throw error;
 
       setMembers((prev) =>
-        prev.map((m) =>
-          m.mem_id === member.mem_id ? { ...m, role: newRole } : m
-        )
+        prev.map((m) => (targetIds.includes(m.mem_id) ? { ...m, role: newRole } : m))
       );
+      setSelectedIds([]);
       toast.success('Role updated successfully');
     } catch (error: any) {
       toast.error(error.message || 'Failed to update role');
@@ -163,13 +164,17 @@ export default function AdminMembersPage() {
   };
 
   const deleteMember = async (member: Member) => {
-    const ok = window.confirm(`Delete member ${member.fullname} (${member.username})? This cannot be undone.`);
+    const targetIds = selectedIds && selectedIds.length > 0 ? selectedIds : [member.mem_id];
+    const ok = window.confirm(
+      `Delete ${targetIds.length} member(s)? This cannot be undone.`
+    );
     if (!ok) return;
     try {
-      const { error } = await supabase.from('members' as any).delete().eq('mem_id', member.mem_id);
+      const { error } = await supabase.from('members' as any).delete().in('mem_id', targetIds);
       if (error) throw error;
-      setMembers((prev) => prev.filter((m) => m.mem_id !== member.mem_id));
-      toast.success('Member removed');
+      setMembers((prev) => prev.filter((m) => !targetIds.includes(m.mem_id)));
+      setSelectedIds([]);
+      toast.success('Member(s) removed');
     } catch (err: any) {
       console.error('Delete member failed', err);
       toast.error(err?.message || 'Failed to delete member');
@@ -489,15 +494,43 @@ export default function AdminMembersPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Batch</TableHead>
-                    <TableHead>Role</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
+                      <TableHead>
+                        <input
+                          type="checkbox"
+                          aria-label="Select all"
+                          checked={filteredMembers.length > 0 && filteredMembers.every((m) => selectedIds.includes(m.mem_id))}
+                          onChange={() => {
+                            if (filteredMembers.length > 0 && filteredMembers.every((m) => selectedIds.includes(m.mem_id))) {
+                              setSelectedIds([]);
+                            } else {
+                              setSelectedIds(filteredMembers.map((m) => m.mem_id));
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Batch</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredMembers.map((member) => (
                     <TableRow key={member.mem_id}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${member.username}`}
+                          checked={selectedIds.includes(member.mem_id)}
+                          onChange={() => {
+                            if (selectedIds.includes(member.mem_id)) {
+                              setSelectedIds((prev) => prev.filter((id) => id !== member.mem_id));
+                            } else {
+                              setSelectedIds((prev) => [...prev, member.mem_id]);
+                            }
+                          }}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div>
                           <p className="font-medium">{member.fullname}</p>
@@ -549,7 +582,7 @@ export default function AdminMembersPage() {
                   ))}
                   {filteredMembers.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-12">
+                      <TableCell colSpan={5} className="text-center py-12">
                         <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                         <p className="text-muted-foreground">No members found</p>
                       </TableCell>
