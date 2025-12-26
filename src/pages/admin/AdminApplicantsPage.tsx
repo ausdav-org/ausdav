@@ -80,8 +80,8 @@ import { PieChart, Pie, Cell, Legend } from 'recharts';
  * - VITE_SUPABASE_ANON_KEY_2
  */
 const supabase2 = createClient(
-  import.meta.env.VITE_SUPABASE_URL_2 as string,
-  import.meta.env.VITE_SUPABASE_ANON_KEY_2 as string
+  import.meta.env.VITE_SUPABASE_URL as string,
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
 );
 
 type AppSettings = {
