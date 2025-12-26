@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   Users,
   Search,
@@ -51,6 +51,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { useAdminRefresh } from '@/hooks/useAdminRefresh';
 import { invokeFunction } from '@/integrations/supabase/functions';
 import Papa from 'papaparse';
 import { cn } from '@/lib/utils';
@@ -83,6 +84,7 @@ export default function AdminMembersPage() {
   const [filterBatch, setFilterBatch] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const fetchRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   // Invite dialog
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -129,6 +131,12 @@ export default function AdminMembersPage() {
       setLoading(false);
     }
   };
+
+  // keep a stable reference for external refresh triggers
+  fetchRef.current = fetchMembers;
+  useAdminRefresh(() => {
+    fetchRef.current?.();
+  });
 
   const toggleActive = async () => {
     toast.error('Activation toggle is not supported with the current members schema.');

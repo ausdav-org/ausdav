@@ -58,9 +58,13 @@ export async function invokeFunction(name: string, body: any): Promise<InvokeRes
 
       return { data, error: null };
     } catch (e) {
-      console.error('invokeFunction failed', { name, err, fallbackErr: e });
-      const wrapped = e instanceof Error ? e : new Error(String(e));
-      return { data: null, error: wrapped };
+      console.error('invokeFunction failed', { name, originalErr: err, fallbackErr: e });
+
+      // Build a combined error message with as much context as we can extract.
+      const origMsg = err instanceof Error ? err.message : JSON.stringify(err);
+      const fbMsg = e instanceof Error ? e.message : JSON.stringify(e);
+      const combined = new Error(`invokeFunction: primary error: ${origMsg}; fallback error: ${fbMsg}`);
+      return { data: null, error: combined };
     }
   }
 }
