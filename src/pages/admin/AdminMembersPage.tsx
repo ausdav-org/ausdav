@@ -162,6 +162,20 @@ export default function AdminMembersPage() {
     }
   };
 
+  const deleteMember = async (member: Member) => {
+    const ok = window.confirm(`Delete member ${member.fullname} (${member.username})? This cannot be undone.`);
+    if (!ok) return;
+    try {
+      const { error } = await supabase.from('members' as any).delete().eq('mem_id', member.mem_id);
+      if (error) throw error;
+      setMembers((prev) => prev.filter((m) => m.mem_id !== member.mem_id));
+      toast.success('Member removed');
+    } catch (err: any) {
+      console.error('Delete member failed', err);
+      toast.error(err?.message || 'Failed to delete member');
+    }
+  };
+
   const handleInvite = async () => {
     if (!inviteEmail || !inviteName) {
       toast.error('Please fill in all fields');
@@ -478,9 +492,7 @@ export default function AdminMembersPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Batch</TableHead>
                     <TableHead>Role</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Finance</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -501,29 +513,7 @@ export default function AdminMembersPage() {
                         </Badge>
                       </TableCell>
 
-                      <TableCell>
-                        <Badge
-                          className={cn(
-                            member.is_active
-                              ? 'bg-green-500/20 text-green-400'
-                              : 'bg-red-500/20 text-red-400'
-                          )}
-                        >
-                          {member.is_active ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </TableCell>
-
-                      <TableCell>
-                        <Badge
-                          className={cn(
-                            member.can_submit_finance
-                              ? 'bg-green-500/20 text-green-400'
-                              : 'bg-muted text-muted-foreground'
-                          )}
-                        >
-                          {member.can_submit_finance ? 'Enabled' : 'Disabled'}
-                        </Badge>
-                      </TableCell>
+                      {/* Status and Finance columns removed per admin UI requirements */}
 
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -533,22 +523,7 @@ export default function AdminMembersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => toggleActive()}>
-                              {member.is_active ? (
-                                <>
-                                  <X className="mr-2 h-4 w-4" />
-                                  Deactivate
-                                </>
-                              ) : (
-                                <>
-                                  <Check className="mr-2 h-4 w-4" />
-                                  Activate
-                                </>
-                              )}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => toggleFinancePermission()}>
-                              Toggle Finance Permission
-                            </DropdownMenuItem>
+                            {/* Deactivate and Toggle Finance actions removed */}
                             <DropdownMenuSeparator />
                             {isSuperAdmin && (
                               <>
@@ -561,6 +536,10 @@ export default function AdminMembersPage() {
                                 <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')} disabled={member.role === 'super_admin'} className="text-red-400">
                                   Set as Super Admin
                                 </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => deleteMember(member)} className="text-red-600">
+                                  Remove
+                                </DropdownMenuItem>
                               </>
                             )}
                           </DropdownMenuContent>
@@ -570,7 +549,7 @@ export default function AdminMembersPage() {
                   ))}
                   {filteredMembers.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-12">
+                      <TableCell colSpan={4} className="text-center py-12">
                         <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                         <p className="text-muted-foreground">No members found</p>
                       </TableCell>
