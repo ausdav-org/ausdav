@@ -61,7 +61,7 @@ serve(async (req: Request) => {
 
     const { data: memberRow, error: memberErr } = await adminClient
       .from('members')
-      .select('role')
+      .select('mem_id, role')
       .eq('auth_user_id', userId)
       .maybeSingle();
 
@@ -69,10 +69,41 @@ serve(async (req: Request) => {
     if (!memberRow) return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     const callerRole = memberRow.role;
+    const callerMemId = memberRow.mem_id;
+
+    // Fetch target rows early for subsequent checks
+    const { data: targets, error: targetsErr } = await adminClient
+      .from('members')
+      .select('mem_id, role')
+      .in('mem_id', memIds as number[]);
+    if (targetsErr) throw targetsErr;
+
+    // Count existing super_admins
+    const { data: superAdmins, error: saErr } = await adminClient
+      .from('members')
+      .select('mem_id')
+      .eq('role', 'super_admin');
+    if (saErr) throw saErr;
+    const totalSuper = (superAdmins || []).length;
+
+    console.log('update-member-role called by', userId, 'callerRole=', callerRole, 'callerMemId=', callerMemId, 'memIds=', memIds, 'newRole=', newRole, 'totalSuper=', totalSuper);
 
     // Prevent non-super_admins from promoting to admin/super_admin
     if ((newRole === 'admin' || newRole === 'super_admin') && callerRole !== 'super_admin') {
       return new Response(JSON.stringify({ error: 'Only super admins can promote to admin or super_admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Enforce at most 2 super_admins: if promoting targets to super_admin, ensure limit
+    if (newRole === 'super_admin') {
+      const toPromote = (targets || []).filter((t: any) => t.role !== 'super_admin').length;
+      if (totalSuper + toPromote > 2) {
+        return new Response(JSON.stringify({ error: 'Cannot have more than 2 super_admins' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
+    // Prevent the last remaining super_admin from downgrading themselves
+    if (callerRole === 'super_admin' && memIds.includes(callerMemId) && newRole !== 'super_admin' && totalSuper <= 1) {
+      return new Response(JSON.stringify({ error: 'Cannot change role: would remove the last super_admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // If caller is admin (not super_admin), ensure targets are not admins/super_admins (no downgrades)
@@ -81,11 +112,6 @@ serve(async (req: Request) => {
         return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      const { data: targets, error: tErr } = await adminClient
-        .from('members')
-        .select('mem_id,role')
-        .in('mem_id', memIds as number[]);
-      if (tErr) throw tErr;
       const protectedTarget = (targets || []).find((t: any) => t.role === 'admin' || t.role === 'super_admin');
       if (protectedTarget) {
         return new Response(JSON.stringify({ error: 'Admins may not change roles of admin/super_admin users' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
