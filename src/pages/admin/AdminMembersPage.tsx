@@ -594,45 +594,11 @@ export default function AdminMembersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {/* Deactivate and Toggle Finance actions removed */}
-                            <DropdownMenuSeparator />
-                            {isAdmin && (
-                              <>
-                                <DropdownMenuItem
-                                  onClick={() => changeRole(member, 'honourable')}
-                                  disabled={
-                                    member.role === 'honourable' || (isAdmin && !isSuperAdmin && (member.role === 'admin' || member.role === 'super_admin'))
-                                  }
-                                >
-                                  Set as Honourable
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => changeRole(member, 'member')}
-                                  disabled={
-                                    member.role === 'member' || (isAdmin && !isSuperAdmin && (member.role === 'admin' || member.role === 'super_admin'))
-                                  }
-                                >
-                                  Set as Member
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            {isSuperAdmin && (
-                              <>
-                                <DropdownMenuItem onClick={() => changeRole(member, 'admin')} disabled={member.role === 'admin'}>
-                                  Set as Admin
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')} disabled={member.role === 'super_admin'} className="text-red-400">
-                                  Set as Super Admin
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            {isAdmin && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => deleteMember(member)} className="text-red-600">
-                                  Remove
-                                </DropdownMenuItem>
-                              </>
+                            {/* Only show the Remove action in the row menu — no role-change options */}
+                            {(isAdmin || isSuperAdmin) && (
+                              <DropdownMenuItem onClick={() => deleteMember(member)} className="text-red-600">
+                                Remove
+                              </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
