@@ -216,9 +216,9 @@ function validateRanges(r: GradeRanges): string | null {
   return null;
 }
 
-function gradeFromMark(mark: unknown, ranges: GradeRanges): 'A' | 'B' | 'C' | 'S' | 'F' | '-' {
+function gradeFromMark(mark: unknown, ranges: GradeRanges): 'A' | 'B' | 'C' | 'S' | 'F' | null {
   const n = toNumberOrNull(mark);
-  if (n === null) return '-';
+  if (n === null) return null;
   if (n >= ranges.A_min) return 'A';
   if (n >= ranges.B_min) return 'B';
   if (n >= ranges.C_min) return 'C';
