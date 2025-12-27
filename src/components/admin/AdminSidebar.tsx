@@ -46,6 +46,8 @@ const navItems: NavItem[] = [
   // If your route is different, just change href.
   { title: 'Results', href: '/admin/results', icon: TrendingUp, roles: ['admin', 'super_admin'], permissionKey: 'applicant' },
 
+  { title: 'Patrons', href: '/admin/patrons', icon: UserPlus, roles: ['super_admin'] },
+
   { title: 'Events', href: '/admin/events', icon: CalendarDays, roles: ['admin', 'super_admin'], permissionKey: 'events' },
   { title: 'Exam', href: '/admin/exam', icon: GraduationCap, roles: ['admin', 'super_admin'], permissionKey: 'exam' },
   { title: 'Seminar', href: '/admin/seminar', icon: BookOpen, roles: ['admin', 'super_admin'], permissionKey: 'seminar' },

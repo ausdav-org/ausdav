@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
 
-import patronsImg1 from '@/assets/Committee/patrons/sivakumar sir.jpg';
 import presidentImg from '@/assets/Committee/2022/piri.jpg';
 import vicep_presidentImg from '@/assets/Committee/2022/janu.jpg';
 import SecretaryImg from '@/assets/Committee/2022/Thiso.jpg';
@@ -22,7 +23,7 @@ import rep_uni8 from '@/assets/Committee/2022/thani.jpg';
 
 type Lang = 'en' | 'ta';
 type Member = {
-  id: number;
+  id: string | number;
   role: string;
   roleTA: string;
   name: string;
@@ -60,12 +61,7 @@ const TITLES = {
 };
 
 const data = {
-  top: [
-    { id: 101, role: 'Patron', roleTA: ROLE_TA.Patron, name: 'Dr.(Eng) S.S.Sivakumar.', nameTA: 'Dr.(Eng) S.S.Sivakumar.', Work: 'Senior Lecturer,Department of Civil Engineering,University of Jaffna.', photo: patronsImg1, linkedin: 'https://www.linkedin.com/' },
-    { id: 102, role: 'Patron', roleTA: ROLE_TA.Patron, name: 'Mr.P.Anton Punethanayagam', nameTA: 'Mr.P.Anton Punethanayagam', Work: 'LLB (Col) Commissioner for oaths,Notary Public & Un Official Magistrate,Vavuniya.', photo: null, linkedin: 'https://www.linkedin.com/' },
-    { id: 103, role: 'Patron', roleTA: ROLE_TA.Patron, name: 'Prof.Y.Nanthagopan', nameTA: 'Prof.Y.Nanthagopan', Work: 'Professor in Project Management,Dean Faculty of Business Studies,University of Vavuniya.', photo: null, linkedin: 'https://www.linkedin.com/' },
-    { id: 104, role: 'Patron', roleTA: ROLE_TA.Patron, name: 'Mr.M.Rajmohan (J.P)', nameTA: 'Mr.M.Rajmohan (J.P)', Work: 'Retired CO-OP Auditor', photo: null, linkedin: 'https://www.linkedin.com/' },
-  ] as Member[],
+  top: [] as Member[],
 
   y2025_exec: [
     { id: 2501, role: 'President', roleTA: ROLE_TA.President, name: 'Piriyatharsan M.', nameTA: 'Piriyatharsan M.', Work: 'BSc Eng. (Hons) (Reading),Electrical Engineering,University of Moratuwa', photo: presidentImg, linkedin: 'https://www.linkedin.com/in/maharajah-piriyatharsan-618202344/' },
@@ -139,7 +135,11 @@ const IconLI = () => (
   </svg>
 );
 
-const initial = (n: string) => ((n || '').trim().split(/\s+/).pop()?.[0] || '?').toUpperCase();
+const IconUser = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+    <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-4.418 0-8 2.239-8 5v1h16v-1c0-2.761-3.582-5-8-5z" />
+  </svg>
+);
 
 const Card = ({
   m,
@@ -187,13 +187,18 @@ const Card = ({
 
       {m.photo ? (
         <div className="w-24 h-24 mx-auto mb-4 rounded-full p-[2px] bg-gradient-to-br from-cyan-400/70 via-sky-500/70 to-indigo-500/70 shadow">
-          <img src={m.photo} alt={name} className="w-full h-full rounded-full object-cover" loading="lazy" />
+          <img src={m.photo} alt={m.role === 'Patron' ? '' : name} className="w-full h-full rounded-full object-cover" loading="lazy" />
         </div>
       ) : (
         <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-to-br from-cyan-400/70 to-indigo-500/70 flex items-center justify-center shadow">
-          <span className={cn('text-3xl font-serif font-bold', isDark ? 'text-black/80' : 'text-black/80')}>
-            {initial(name)}
-          </span>
+          <div
+            className={cn(
+              'w-12 h-12 rounded-full flex items-center justify-center',
+              isDark ? 'bg-white/10 text-white' : 'bg-white/20 text-black'
+            )}
+          >
+            <IconUser />
+          </div>
         </div>
       )}
 
@@ -302,6 +307,7 @@ const CommitteePage: React.FC = () => {
       {
         year: 2025,
         blocks: [
+          // `patrons` block will be replaced by live DB results below
           { tEn: TITLES.patrons.en, tTa: TITLES.patrons.ta, sEn: 'Meet the dedicated team guiding AUSDAV', sTa: 'AUSDAV ஐ வழிநடத்தும் அர்ப்பணிப்பு குழுவை சந்திக்கவும்', members: data.top, cols: 'grid sm:grid-cols-2 lg:grid-cols-4 gap-6', gradient: true },
           { tEn: TITLES.exec.en, tTa: TITLES.exec.ta, members: data.y2025_exec, gradient: true },
           { tEn: TITLES.reps.en, tTa: TITLES.reps.ta, members: data.y2025_reps, gradient: true },
@@ -316,6 +322,50 @@ const CommitteePage: React.FC = () => {
 
   const [idx, setIdx] = useState(0);
   const cur = pages[idx];
+
+  // Fetch patrons from DB and map to Member shape
+  type PatronRow = {
+    id: string | number;
+    name: string;
+    designation?: string | null;
+    image_paths?: string[] | null;
+    display_order?: number | null;
+    is_active?: boolean | null;
+    image_alt?: string | null;
+    linkedin_id?: string | null;
+  };
+
+  const { data: patronsRows } = useQuery<PatronRow[]>({
+    queryKey: ['patrons', 'public'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('patrons' as any)
+        .select('id, name, designation, image_paths, display_order, is_active, image_alt, linkedin_id')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as PatronRow[];
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const patronsMembers: Member[] = (patronsRows ?? []).map((p: PatronRow, i: number) => {
+    const imgPath = Array.isArray(p.image_paths) && p.image_paths.length > 0 && p.image_paths[0] ? p.image_paths[0] : null;
+    // Only get publicUrl if there's a valid path; otherwise set photo to null so placeholder shows
+    const publicUrl = imgPath
+      ? supabase.storage.from('patrons').getPublicUrl(imgPath).data?.publicUrl ?? null
+      : null;
+    return {
+      id: p.id,
+      role: 'Patron',
+      roleTA: ROLE_TA.Patron,
+      name: p.name,
+      nameTA: p.name,
+      Work: p.designation || '',
+      photo: publicUrl,
+      linkedin: p.linkedin_id || null,
+    } as Member;
+  });
 
   const bgStyle = useMemo(
     () => ({
@@ -368,19 +418,22 @@ const CommitteePage: React.FC = () => {
 
   return (
     <div className="min-h-screen" style={bgStyle}>
-      {cur.blocks.map((b, bi) => (
-        <React.Fragment key={`${cur.year}-${bi}`}>
-          <Section
-            title={lang === 'en' ? b.tEn : b.tTa}
-            sub={lang === 'en' ? b.sEn : b.sTa}
-            members={b.members}
-            cols={b.cols}
-            gradient={b.gradient}
-            lang={lang}
-            isDark={isDark}
-          />
-        </React.Fragment>
-      ))}
+      {cur.blocks.map((b, bi) => {
+        const membersForBlock = b.tEn === TITLES.patrons.en ? (patronsMembers.length ? patronsMembers : b.members) : b.members;
+        return (
+          <React.Fragment key={`${cur.year}-${bi}`}>
+            <Section
+              title={lang === 'en' ? b.tEn : b.tTa}
+              sub={lang === 'en' ? b.sEn : b.sTa}
+              members={membersForBlock}
+              cols={b.cols}
+              gradient={b.gradient}
+              lang={lang}
+              isDark={isDark}
+            />
+          </React.Fragment>
+        );
+      })}
 
       <div className="flex items-center justify-center gap-2 pb-14">
         {pages.map((p, i) => (
