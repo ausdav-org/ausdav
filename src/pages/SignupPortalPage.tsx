@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { ShieldCheck, Lock, Sparkles, ArrowRight, AlertTriangle, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeFunction } from '@/integrations/supabase/functions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -72,14 +73,10 @@ const SignupPortalPage = () => {
     setSubmitLoading(true);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('controlled-signup', {
-        body: { email, password },
-      });
+      const { data, error: fnError } = await invokeFunction('controlled-signup', { email, password });
 
       if (fnError) throw fnError;
-      if (!data?.userId) {
-        throw new Error('Failed to create account');
-      }
+      if (!data?.userId) throw new Error('Failed to create account');
 
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 

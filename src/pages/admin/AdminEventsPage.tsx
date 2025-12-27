@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +30,7 @@ import { format } from 'date-fns';
 import GalleryBulkUpload from './GalleryBulkUpload';
 
 interface Event {
-  id: string;
+  id: number;
   title_en: string;
   title_ta: string | null;
   description_en: string | null;
@@ -44,8 +45,12 @@ interface Event {
 
 interface Gallery {
   id: string;
+  event_id: number;
   year: number;
-  title: string;
+  title: string | null;
+  description_en: string | null;
+  description_ta: string | null;
+  max_images?: number | null;
   created_at: string;
 }
 
@@ -65,22 +70,25 @@ type EventInsert = {
 
 type GalleryInsert = {
   id?: string;
+  event_id: number;
   year: number;
-  title: string;
+  title?: string | null;
+  description_en?: string | null;
+  description_ta?: string | null;
   created_at?: string;
 };
 
 type GalleryImageRow = {
   id: string;
   gallery_id: string;
-  image_path: string;
+  file_path: string;
   created_at: string;
 };
 
 type GalleryImageInsert = {
   id?: string;
   gallery_id: string;
-  image_path: string;
+  file_path: string;
   created_at?: string;
 };
 
@@ -134,6 +142,8 @@ const AdminEventsPage: React.FC = () => {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [createdGalleryId, setCreatedGalleryId] = useState<string | null>(null);
   const [newGalleryYear, setNewGalleryYear] = useState('');
+  const [newGalleryDescriptionEn, setNewGalleryDescriptionEn] = useState('');
+  const [newGalleryDescriptionTa, setNewGalleryDescriptionTa] = useState('');
   const [formData, setFormData] = useState<EventFormState>({
     title_en: '',
     title_ta: '',
@@ -162,13 +172,14 @@ const AdminEventsPage: React.FC = () => {
 
   // Fetch galleries for a specific year
   const { data: galleries, isLoading: galleriesLoading } = useQuery({
-    queryKey: ['galleries', selectedEventForGallery?.event_date ? new Date(selectedEventForGallery.event_date).getFullYear() : null],
+    queryKey: ['galleries', selectedEventForGallery?.id ?? null],
     queryFn: async () => {
       if (!selectedEventForGallery) return [];
       const year = new Date(selectedEventForGallery.event_date).getFullYear();
       const { data, error } = await supabaseDb
         .from('galleries')
-        .select('id, year, title, created_at')
+        .select('id, event_id, year, title, description_en, description_ta, max_images, created_at')
+        .eq('event_id', selectedEventForGallery.id)
         .eq('year', year)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -213,11 +224,11 @@ const AdminEventsPage: React.FC = () => {
 
   // Update event mutation
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: EventFormState }) => {
+    mutationFn: async ({ id, data }: { id: number; data: EventFormState }) => {
       const { error } = await supabase
         .from('events')
         .update(data)
-        .eq('id', id);
+        .eq('id', id.toString());
       if (error) throw error;
     },
     onSuccess: () => {
@@ -236,17 +247,24 @@ const AdminEventsPage: React.FC = () => {
 
   // Create gallery mutation
   const createGalleryMutation = useMutation({
-    mutationFn: async ({ year, title }: { year: number; title: string }) => {
+    mutationFn: async ({ year, title, description_en, description_ta }: { year: number; title: string; description_en?: string | null; description_ta?: string | null }) => {
+      if (!selectedEventForGallery) throw new Error('No event selected');
       const { data, error } = await supabaseDb
         .from('galleries')
-        .insert([{ year, title }])
+        .insert([{ 
+          event_id: selectedEventForGallery.id, 
+          year, 
+          title,
+          description_en,
+          description_ta
+        }])
         .select()
         .single();
       if (error) throw error;
       return data as Gallery;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['galleries'] });
+      queryClient.invalidateQueries({ queryKey: ['galleries', selectedEventForGallery?.id ?? null] });
       toast.success('Gallery created successfully');
       setCreatedGalleryId(data.id);
       setShowBulkUpload(true);
@@ -256,13 +274,85 @@ const AdminEventsPage: React.FC = () => {
     },
   });
 
-  // Delete event mutation
+  // Delete gallery mutation
+  const deleteGalleryMutation = useMutation({
+    mutationFn: async (galleryId: string) => {
+      console.log('Starting gallery deletion for:', galleryId);
+
+      // First, get all images associated with this gallery
+      const { data: galleryImages, error: fetchError } = await supabaseDb
+        .from('gallery_images')
+        .select('id, file_path')
+        .eq('gallery_id', galleryId);
+
+      if (fetchError) {
+        console.error('Failed to fetch gallery images:', fetchError);
+        throw new Error('Failed to fetch gallery images: ' + fetchError.message);
+      }
+
+      console.log('Found images to delete:', galleryImages?.length || 0);
+
+      // Delete images from storage if any exist
+      if (galleryImages && galleryImages.length > 0) {
+        const filePaths = galleryImages.map(img => img.file_path);
+        console.log('Deleting files from storage:', filePaths);
+
+        const { error: storageError } = await supabase.storage
+          .from('event-gallery')
+          .remove(filePaths);
+
+        if (storageError) {
+          console.error('Storage deletion failed:', storageError);
+          // Continue with database deletion even if storage fails
+          console.warn('Continuing with database deletion despite storage error');
+        } else {
+          console.log('Successfully deleted files from storage');
+        }
+
+        // Delete all gallery_images records
+        const { error: imagesDeleteError } = await supabaseDb
+          .from('gallery_images')
+          .delete()
+          .eq('gallery_id', galleryId);
+
+        if (imagesDeleteError) {
+          console.error('Failed to delete gallery images from database:', imagesDeleteError);
+          throw new Error('Failed to delete gallery images: ' + imagesDeleteError.message);
+        }
+
+        console.log('Successfully deleted gallery images from database');
+      }
+
+      // Finally, delete the gallery record
+      const { error: galleryDeleteError } = await supabaseDb
+        .from('galleries')
+        .delete()
+        .eq('id', galleryId);
+
+      if (galleryDeleteError) {
+        console.error('Failed to delete gallery:', galleryDeleteError);
+        throw new Error('Failed to delete gallery: ' + galleryDeleteError.message);
+      }
+
+      console.log('Successfully deleted gallery record');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['galleries', selectedEventForGallery?.id ?? null] });
+      toast.success('Gallery and all associated images deleted successfully');
+    },
+    onError: (error) => {
+      console.error('Gallery deletion failed:', error);
+      toast.error('Failed to delete gallery: ' + error.message);
+      // Refresh queries to show current state
+      queryClient.invalidateQueries({ queryKey: ['galleries', selectedEventForGallery?.id ?? null] });
+    },
+  });
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async (id: number) => {
       const { error } = await supabase
         .from('events')
         .delete()
-        .eq('id', id);
+        .eq('id', id.toString());
       if (error) throw error;
     },
     onSuccess: () => {
@@ -276,11 +366,11 @@ const AdminEventsPage: React.FC = () => {
 
   // Toggle active status
   const toggleMutation = useMutation({
-    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
+    mutationFn: async ({ id, is_active }: { id: number; is_active: boolean }) => {
       const { error } = await supabase
         .from('events')
         .update({ is_active })
-        .eq('id', id);
+        .eq('id', id.toString());
       if (error) throw error;
     },
     onSuccess: () => {
@@ -325,7 +415,12 @@ const AdminEventsPage: React.FC = () => {
       toast.error('Please enter a valid year');
       return;
     }
-    createGalleryMutation.mutate({ year, title: `Gallery ${year}` });
+    createGalleryMutation.mutate({
+      year,
+      title: `Gallery ${year}`,
+      description_en: newGalleryDescriptionEn || null,
+      description_ta: newGalleryDescriptionTa || null
+    });
   };
 
   const handleEdit = (event: Event) => {
@@ -411,8 +506,9 @@ const AdminEventsPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <PermissionGate permissionKey="events" permissionName="Event Handling">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Events Management</h1>
           <p className="text-muted-foreground mt-1">Create and manage events for the organization</p>
@@ -536,7 +632,17 @@ const AdminEventsPage: React.FC = () => {
       </div>
 
       {/* Gallery Management Dialog */}
-      <Dialog open={galleryDialogOpen} onOpenChange={setGalleryDialogOpen}>
+      <Dialog open={galleryDialogOpen} onOpenChange={(open) => {
+        setGalleryDialogOpen(open);
+        if (!open) {
+          setNewGalleryYear('');
+          setNewGalleryDescriptionEn('');
+          setNewGalleryDescriptionTa('');
+          setSelectedEventForGallery(null);
+          setShowBulkUpload(false);
+          setCreatedGalleryId(null);
+        }
+      }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
@@ -546,6 +652,7 @@ const AdminEventsPage: React.FC = () => {
           {showBulkUpload && selectedEventForGallery ? (
             <GalleryBulkUpload
               galleryId={createdGalleryId || galleries?.[0]?.id || ''}
+              eventId={selectedEventForGallery.id}
               year={new Date(selectedEventForGallery.event_date).getFullYear()}
               onBack={() => setShowBulkUpload(false)}
             />
@@ -558,17 +665,36 @@ const AdminEventsPage: React.FC = () => {
                   {galleries.map((gallery) => (
                     <Card key={gallery.id}>
                       <CardHeader>
-                        <CardTitle>{gallery.title}</CardTitle>
+                        <CardTitle>{gallery.title || `Gallery ${gallery.year}`}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <p>Year: {gallery.year}</p>
                         <p>Created: {format(new Date(gallery.created_at), 'MMM d, yyyy')}</p>
-                        <Button
-                          onClick={() => setShowBulkUpload(true)}
-                          className="mt-2"
-                        >
-                          Add Images
-                        </Button>
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            onClick={() => {
+                              setCreatedGalleryId(gallery.id);
+                              setShowBulkUpload(true);
+                            }}
+                          >
+                            Add Images
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this gallery? This will also delete all images in the gallery.')) {
+                                deleteGalleryMutation.mutate(gallery.id);
+                              }
+                            }}
+                            disabled={deleteGalleryMutation.isPending}
+                          >
+                            {deleteGalleryMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
@@ -582,20 +708,44 @@ const AdminEventsPage: React.FC = () => {
               )}
 
               <div className="border-t pt-4">
-                <Label htmlFor="gallery-year">Create New Gallery</Label>
-                <div className="flex gap-2 mt-2">
-                  <Input
-                    id="gallery-year"
-                    type="number"
-                    placeholder="Enter year"
-                    value={newGalleryYear}
-                    onChange={(e) => setNewGalleryYear(e.target.value)}
-                    min="1900"
-                    max="2100"
-                  />
+                <h3 className="text-lg font-medium mb-4">Create New Gallery</h3>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="gallery-year">Year</Label>
+                    <Input
+                      id="gallery-year"
+                      type="number"
+                      placeholder="Enter year"
+                      value={newGalleryYear}
+                      onChange={(e) => setNewGalleryYear(e.target.value)}
+                      min="1900"
+                      max="2100"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="gallery-description-en">Description (English)</Label>
+                    <Textarea
+                      id="gallery-description-en"
+                      placeholder="Enter gallery description in English"
+                      value={newGalleryDescriptionEn}
+                      onChange={(e) => setNewGalleryDescriptionEn(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="gallery-description-ta">Description (Tamil)</Label>
+                    <Textarea
+                      id="gallery-description-ta"
+                      placeholder="Enter gallery description in Tamil"
+                      value={newGalleryDescriptionTa}
+                      onChange={(e) => setNewGalleryDescriptionTa(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
                   <Button
                     onClick={handleCreateGallery}
                     disabled={createGalleryMutation.isPending}
+                    className="w-full"
                   >
                     {createGalleryMutation.isPending ? (
                       <>
@@ -603,7 +753,7 @@ const AdminEventsPage: React.FC = () => {
                         Creating...
                       </>
                     ) : (
-                      'Create'
+                      'Create Gallery'
                     )}
                   </Button>
                 </div>
@@ -712,7 +862,8 @@ const AdminEventsPage: React.FC = () => {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PermissionGate>
   );
 };
 

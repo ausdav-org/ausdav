@@ -1,72 +1,105 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { FileText, Download, Search, ClipboardList, Award, ImageDown } from 'lucide-react';
+import { FileText, Download, Search, ClipboardList, Award, ImageDown, Check, X } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
 import emblemImg from '@/assets/Exam/AUSDAV logo.png';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
-
-const MOCK_RESULTS = {
-  'Maths|2024|Index No|1234': {
-    name: 'Kumar',
-    school: 'Vtmmv',
-    Nic_no: '200333110288',
-    physics_grade: 'A',
-    Maths_grade: 'A',
-    Chemistry_grade: 'B',
-    rank: 45,
-  },
-} as const;
-
-type ResultRow = (typeof MOCK_RESULTS)[keyof typeof MOCK_RESULTS];
-
-type PastPaper = {
-  id: number;
-  year: string;
-  subject: string;
-  stream: string;
-  paperUrl: string;
-  schemeUrl: string;
+type AppSettings = {
+  allow_exam_applications: boolean;
+  allow_results_view: boolean;
 };
 
-const pastPapers: PastPaper[] = [
-  { id: 1, year: '2025', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 2, year: '2025', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 3, year: '2025', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 4, year: '2025', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 5, year: '2024', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 6, year: '2024', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 7, year: '2024', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 8, year: '2024', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 9, year: '2023', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 10, year: '2023', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 11, year: '2023', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 12, year: '2023', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 13, year: '2022', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 14, year: '2022', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 15, year: '2022', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 16, year: '2022', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 17, year: '2021', subject: 'Combined Mathematics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 18, year: '2021', subject: 'Biology', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 19, year: '2021', subject: 'Physics', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-  { id: 20, year: '2021', subject: 'Chemistry', stream: 'Science', paperUrl: '#', schemeUrl: '#' },
-];
+// Result type from database
+interface ResultRecord {
+  result_id: number;
+  index_no: string;
+  stream: string;
+  physics_marks: number | null;
+  chemistry_marks: number | null;
+  maths_marks: number | null;
+  bio_marks: number | null;
+  physics_grade: string | null;
+  chemistry_grade: string | null;
+  maths_grade: string | null;
+  bio_grade: string | null;
+  zscore: number | null;
+  rank: number | null;
+  year: number;
+}
+
+// Applicant type from database
+interface ApplicantRecord {
+  applicant_id: number;
+  index_no: string;
+  fullname: string;
+  stream: string;
+  gender: boolean;
+  nic: string;
+  phone: string | null;
+  email: string | null;
+  school: string;
+  year: number;
+}
+
+// Combined result for display
+interface ResultDisplay {
+  name: string;
+  school: string;
+  nic: string;
+  stream: string;
+  physics_grade: string;
+  chemistry_grade: string;
+  maths_or_bio_grade: string;
+  maths_or_bio_label: string;
+  zscore: string;
+  rank: number | null;
+}
+
+type PastPaper = {
+  pp_id: number;
+  yrs: number;
+  subject: string;
+  exam_paper_bucket: string;
+  exam_paper_path: string | null;
+  scheme_bucket: string;
+  scheme_path: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 // Apply form options
 const applyExams = ['-- Select Your Stream --', 'Maths', 'Biology'];
-const schoolOptions = ['Vavniya Tamil Madhya Maha Vidyalayam',"V/Rambaikulam girls' maha vidyalayam",'Saivapragasa Ladies College','Vipulanantha College Vavuniya',
-  'Puthukkulam Maha Vidiyalyam','Vavuniya Nelukkulam Kalaimakal Maha Vidyalayam','Cheddikulam Maha Vidyalayam'];
+const schoolOptions = [
+  'Vavniya Tamil Madhya Maha Vidyalayam',
+  "V/Rambaikulam girls' maha vidyalayam",
+  'Saivapragasa Ladies College',
+  'Vipulanantha College Vavuniya',
+  'Puthukkulam Maha Vidiyalyam',
+  'Vavuniya Nelukkulam Kalaimakal Maha Vidyalayam',
+  'Cheddikulam Maha Vidyalayam',
+];
 
-const resultsStreams = ['Maths', 'Biology', 'Commerce'];
+const resultsStreams = ['Maths', 'Biology'];
 const resultsYears = ['2025', '2024'];
 const idTypes = ['Index No', 'NIC No'];
 
-const collapseVariants = { hidden: { height: 0, opacity: 0 }, visible: { height: 'auto', opacity: 1 }, exit: { height: 0, opacity: 0 } };
+const collapseVariants = {
+  hidden: { height: 0, opacity: 0 },
+  visible: { height: 'auto', opacity: 1 },
+  exit: { height: 0, opacity: 0 },
+};
 const itemVariants = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
 const onlyDigitsMax = (value: string, maxLen: number) => value.replace(/\D/g, '').slice(0, maxLen);
@@ -82,6 +115,7 @@ const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
 const ExamPage: React.FC = () => {
   const { t, language } = useLanguage();
   const [activeTab, setActiveTab] = useState('apply');
+  const [submitting, setSubmitting] = useState(false);
 
   const initialApplyForm = {
     fullName: '',
@@ -90,30 +124,248 @@ const ExamPage: React.FC = () => {
     nic: '',
     exam: '',
     schoolName: '',
+    gender: '' as 'male' | 'female' | '',
     agree: true,
   };
   const [applyForm, setApplyForm] = useState(initialApplyForm);
+  const [emailValid, setEmailValid] = useState<boolean | null>(null);
+  const [phoneValid, setPhoneValid] = useState<boolean | null>(null);
+  const [nicValid, setNicValid] = useState<boolean | null>(null);
+  const [nicDuplicate, setNicDuplicate] = useState<boolean | null>(null);
+  const nicCheckTimeoutRef = useRef<number | null>(null);
+  const [fieldErrors, setFieldErrors] = useState({
+    fullName: false,
+    email: false,
+    phone: false,
+    nic: false,
+    schoolName: false,
+    exam: false,
+    gender: false,
+  });
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
+  const [generatedIndexNo, setGeneratedIndexNo] = useState<string>('');
+  const [registeredFullName, setRegisteredFullName] = useState<string>('');
+  // Registration check states
+  const [regCheckIndex, setRegCheckIndex] = useState<string>('');
+  const [regCheckIdType, setRegCheckIdType] = useState<string>('NIC No');
+  const [regCheckResult, setRegCheckResult] = useState<{ found: boolean; applicant?: ApplicantRecord } | null>(null);
+  const [regChecking, setRegChecking] = useState<boolean>(false);
 
   const defaultResultsForm = { stream: '', idType: 'Index No', idValue: '', year: '' };
   const [resultsForm, setResultsForm] = useState(defaultResultsForm);
 
-  const [resultData, setResultData] = useState<ResultRow | null>(null);
+  const [resultData, setResultData] = useState<ResultDisplay | null>(null);
   const [showResultSheet, setShowResultSheet] = useState(false);
 
   const [paperFilter, setPaperFilter] = useState({ subject: '' });
   const [expandedYear, setExpandedYear] = useState<string | null>(null);
 
   const [downloading, setDownloading] = useState(false);
+  const [examApplicationsOpen, setExamApplicationsOpen] = useState(true);
+  const [examSettingLoading, setExamSettingLoading] = useState(true);
+  const [resultsPublished, setResultsPublished] = useState(false);
+  const [resultsSettingLoading, setResultsSettingLoading] = useState(true);
 
-  // ✅ Now we capture the WHOLE sheet (including header)
   const sheetRef = useRef<HTMLDivElement | null>(null);
 
-  const handleApplyReset = () => setApplyForm(initialApplyForm);
+  useEffect(() => {
+    const loadSetting = async () => {
+      setExamSettingLoading(true);
+      setResultsSettingLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('app_settings' as any)
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
 
-  const handleApplySubmit = (e: React.FormEvent) => {
+        if (error) throw error;
+
+        const settings = data as unknown as AppSettings | null;
+        setExamApplicationsOpen(settings?.allow_exam_applications ?? false);
+        setResultsPublished(settings?.allow_results_view ?? false);
+      } catch (error) {
+        console.error('Error loading exam application setting:', error);
+        toast.error(language === 'en' ? 'Unable to load exam application status' : 'தேர்வு விண்ணப்ப நிலையை ஏற்ற முடியவில்லை');
+        setExamApplicationsOpen(false);
+        setResultsPublished(false);
+      } finally {
+        setExamSettingLoading(false);
+        setResultsSettingLoading(false);
+      }
+    };
+
+    loadSetting();
+  }, [language]);
+
+  // Fetch past papers from database
+  const { data: pastPapers = [], isLoading: papersLoading } = useQuery({
+    queryKey: ['past-papers'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('past_papers').select('*').order('yrs', { ascending: false });
+      if (error) throw error;
+      return data as PastPaper[];
+    },
+  });
+
+  const handleApplyReset = () => {
+    setApplyForm(initialApplyForm);
+    setEmailValid(null);
+    setPhoneValid(null);
+    setNicValid(null);
+    setNicDuplicate(null);
+    if (nicCheckTimeoutRef.current) {
+      window.clearTimeout(nicCheckTimeoutRef.current);
+      nicCheckTimeoutRef.current = null;
+    }
+    setFieldErrors({
+      fullName: false,
+      email: false,
+      phone: false,
+      nic: false,
+      schoolName: false,
+      exam: false,
+      gender: false,
+    });
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (nicCheckTimeoutRef.current) {
+        window.clearTimeout(nicCheckTimeoutRef.current);
+        nicCheckTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  // Clear dialog-related temporary data when dialog is closed
+  useEffect(() => {
+    if (!successDialogOpen) {
+      setGeneratedIndexNo('');
+      setRegisteredFullName('');
+    }
+  }, [successDialogOpen]);
+
+  // Email validation function
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Phone validation function
+  const validatePhone = (phone: string) => {
+    const phoneRegex = /^\d{10}$/;
+    return phoneRegex.test(phone);
+  };
+
+  // NIC validation function
+  const validateNIC = (nic: string) => {
+    const nicRegex = /^\d{12}$/;
+    return nicRegex.test(nic);
+  };
+
+  // Check if NIC already exists
+  const checkNicDuplicate = async (nic: string) => {
+    try {
+      const { data, error } = await (supabase.rpc as any)('check_nic_exists', { p_nic: nic });
+      if (error) throw error;
+      setNicDuplicate(data as boolean);
+    } catch (error) {
+      console.error('Error checking NIC:', error);
+      setNicDuplicate(null); // Reset on error
+    }
+  };
+
+  // Handle email input change with validation
+  const handleEmailChange = (value: string) => {
+    setApplyForm({ ...applyForm, email: value });
+    if (value.trim() === '') {
+      setEmailValid(null);
+    } else {
+      setEmailValid(validateEmail(value));
+    }
+  };
+
+  // Handle phone input change with validation
+  const handlePhoneChange = (value: string) => {
+    const digitsOnly = onlyDigitsMax(value, 10);
+    setApplyForm({ ...applyForm, phone: digitsOnly });
+    if (digitsOnly === '') {
+      setPhoneValid(null);
+    } else {
+      setPhoneValid(validatePhone(digitsOnly));
+    }
+  };
+
+  // Handle NIC input change with validation (debounced duplicate check)
+  const handleNicChange = (value: string) => {
+    // Allow only digits and limit to 12 characters
+    const digitsOnly = value.replace(/\D/g, '').slice(0, 12);
+    setApplyForm({ ...applyForm, nic: digitsOnly });
+
+    // Reset duplicate state when clearing input
+    if (digitsOnly === '') {
+      setNicValid(null);
+      setNicDuplicate(null);
+      if (nicCheckTimeoutRef.current) {
+        window.clearTimeout(nicCheckTimeoutRef.current);
+        nicCheckTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    const isValid = validateNIC(digitsOnly);
+    setNicValid(isValid);
+
+    // Debounce RPC calls to avoid spamming the backend while typing
+    if (isValid) {
+      if (nicCheckTimeoutRef.current) window.clearTimeout(nicCheckTimeoutRef.current);
+      nicCheckTimeoutRef.current = window.setTimeout(() => {
+        checkNicDuplicate(digitsOnly);
+        nicCheckTimeoutRef.current = null;
+      }, 350) as unknown as number;
+    } else {
+      if (nicCheckTimeoutRef.current) {
+        window.clearTimeout(nicCheckTimeoutRef.current);
+        nicCheckTimeoutRef.current = null;
+      }
+      setNicDuplicate(null);
+    }
+  };
+
+  // ✅ UPDATED (same logic as before style): use DB to fetch last index_no and generate next
+  // Format: YY + 4 digits + StreamLetter
+  // Auto range enforced: 0000–5555 only (manual/CSV 5556–9999 ignored)
+  const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!applyForm.fullName || !applyForm.email || !applyForm.phone || !applyForm.nic || !applyForm.schoolName || !applyForm.exam) {
+    // Reset field errors
+    setFieldErrors({
+      fullName: false,
+      email: false,
+      phone: false,
+      nic: false,
+      schoolName: false,
+      exam: false,
+      gender: false,
+    });
+
+    // Check for empty required fields
+    const errors = {
+      fullName: !applyForm.fullName.trim(),
+      email: !applyForm.email.trim(),
+      phone: !applyForm.phone.trim(),
+      nic: !applyForm.nic.trim(),
+      schoolName: !applyForm.schoolName.trim(),
+      exam: !applyForm.exam.trim(),
+      gender: !applyForm.gender,
+    };
+
+    setFieldErrors(errors);
+
+    // Check if any field has error
+    if (Object.values(errors).some(error => error)) {
       toast.error(language === 'en' ? 'Please fill all required fields' : 'தயவுசெய்து அனைத்து தேவையான புலங்களையும் நிரப்பவும்');
       return;
     }
@@ -123,26 +375,129 @@ const ExamPage: React.FC = () => {
       return;
     }
 
-    const refNumber = `AUSDAV-${Date.now().toString(36).toUpperCase()}`;
-    toast.success(`${language === 'en' ? 'Application submitted. Reference:' : 'விண்ணப்பம் சமர்ப்பிக்கப்பட்டது. குறிப்பு:'} ${refNumber}`);
-    handleApplyReset();
-  };
-
-  const handleResultsSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const key = `${resultsForm.stream}|${resultsForm.year}|${resultsForm.idType}|${resultsForm.idValue || ''}`;
-    const found = (MOCK_RESULTS as Record<string, ResultRow>)[key];
-
-    if (!found) {
-      toast.error(language === 'en' ? 'No results found' : 'முடிவுகள் கிடைக்கவில்லை');
-      setResultData(null);
-      setShowResultSheet(false);
+    if (!examApplicationsOpen) {
+      toast.error(language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது');
       return;
     }
 
-    setResultData(found);
-    setShowResultSheet(true);
+    setSubmitting(true);
+    try {
+      const year = new Date().getFullYear();
+
+      // Call the database function to atomically generate index and insert
+      const { data: indexNo, error } = await supabase.rpc('insert_applicant', {
+        p_fullname: applyForm.fullName.trim(),
+        p_gender: applyForm.gender === 'male', // true for male, false for female
+        p_stream: applyForm.exam,
+        p_nic: applyForm.nic.trim(),
+        p_phone: applyForm.phone.trim(),
+        p_email: applyForm.email.trim().toLowerCase(),
+        p_school: applyForm.schoolName,
+        p_year: year,
+      });
+
+      if (error) throw error;
+
+      // Show success dialog with index number and greeting
+      setRegisteredFullName(applyForm.fullName.trim());
+      setGeneratedIndexNo(indexNo as string);
+      setSuccessDialogOpen(true);
+      toast.success(language === 'en' ? 'Application submitted successfully!' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது!');
+      handleApplyReset();
+    } catch (error: any) {
+      console.error('Error submitting application:', error);
+      let errorMessage = language === 'en'
+        ? 'Failed to submit application. Please try again.'
+        : 'விண்ணப்பத்தை சமர்ப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.';
+
+      // Check for unique constraint violation on NIC
+      if (error?.code === '23505' && error?.message?.includes('applicants_nic_unique')) {
+        errorMessage = language === 'en'
+          ? 'An application with this NIC already exists.'
+          : 'இந்த NIC கொண்ட விண்ணப்பம் ஏற்கனவே உள்ளது.';
+      }
+
+      toast.error(errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResultsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!resultsForm.stream || !resultsForm.year || !resultsForm.idValue) {
+      toast.error(language === 'en' ? 'Please fill all fields' : 'அனைத்து புலங்களையும் நிரப்பவும்');
+      return;
+    }
+
+    try {
+      // First find the applicant by index_no or NIC
+      let applicantQuery = supabase
+        .from('applicants' as any)
+        .select('*')
+        .eq('stream', resultsForm.stream)
+        .eq('year', parseInt(resultsForm.year));
+
+      if (resultsForm.idType === 'Index No') {
+        applicantQuery = applicantQuery.eq('index_no', resultsForm.idValue);
+      } else {
+        applicantQuery = applicantQuery.eq('nic', resultsForm.idValue);
+      }
+
+      const { data: applicantData, error: applicantError } = await applicantQuery.maybeSingle();
+
+      if (applicantError) throw applicantError;
+
+      if (!applicantData) {
+        toast.error(language === 'en' ? 'No applicant found' : 'விண்ணப்பதாரர் கிடைக்கவில்லை');
+        setResultData(null);
+        setShowResultSheet(false);
+        return;
+      }
+
+      const applicant = applicantData as unknown as ApplicantRecord;
+
+      // Now find the result for this applicant
+      const { data: resultData, error: resultError } = await supabase
+        .from('results' as any)
+        .select('*')
+        .eq('index_no', applicant.index_no)
+        .maybeSingle();
+
+      if (resultError) throw resultError;
+
+      if (!resultData) {
+        toast.error(language === 'en' ? 'No results found for this applicant' : 'இந்த விண்ணப்பதாரருக்கு முடிவுகள் கிடைக்கவில்லை');
+        setResultData(null);
+        setShowResultSheet(false);
+        return;
+      }
+
+      const result = resultData as unknown as ResultRecord;
+      const isMaths = applicant.stream === 'Maths';
+
+      const displayResult: ResultDisplay = {
+        name: applicant.fullname,
+        school: applicant.school,
+        nic: applicant.nic,
+        stream: applicant.stream,
+        physics_grade: result.physics_grade || '-',
+        chemistry_grade: result.chemistry_grade || '-',
+        maths_or_bio_grade: isMaths ? (result.maths_grade || '-') : (result.bio_grade || '-'),
+        maths_or_bio_label: isMaths ? 'Maths' : 'Biology',
+        zscore: result.zscore?.toFixed(4) || '-',
+        rank: result.rank,
+      };
+
+      setResultData(displayResult);
+      setShowResultSheet(true);
+    } catch (error: any) {
+      console.error('Error fetching results:', error);
+      toast.error(language === 'en' ? 'Failed to fetch results' : 'முடிவுகளைப் பெற முடியவில்லை');
+      setResultData(null);
+      setShowResultSheet(false);
+    }
   };
 
   const handleResultsReset = () => {
@@ -151,27 +506,87 @@ const ExamPage: React.FC = () => {
     setShowResultSheet(false);
   };
 
+  // Check whether an index number is registered
+  const handleCheckIndex = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    let idx = regCheckIndex.trim();
+    if (!idx) {
+      if (regCheckIdType === 'Index No') {
+        toast.error(language === 'en' ? 'Please enter an index number' : 'ஒரு குறிப்பு எண்ணை உள்ளிடவும்');
+      } else {
+        toast.error(language === 'en' ? 'Please enter an NIC' : 'NIC ஒன்றை உள்ளிடவும்');
+      }
+      return;
+    }
+
+    // Normalize NIC input: allow only digits
+    if (regCheckIdType === 'NIC No') {
+      idx = idx.replace(/\D/g, '');
+    }
+
+    try {
+      setRegChecking(true);
+      setRegCheckResult(null);
+
+      // Query by chosen identifier
+      const query = supabase.from('applicants' as any).select('*');
+      const res = regCheckIdType === 'Index No'
+        ? await query.eq('index_no', idx).maybeSingle()
+        : await query.eq('nic', idx).maybeSingle();
+
+      if (res.error) throw res.error;
+
+      if (!res.data) {
+        setRegCheckResult({ found: false });
+      } else {
+        setRegCheckResult({ found: true, applicant: res.data as unknown as ApplicantRecord });
+      }
+    } catch (err) {
+      console.error('Error checking index:', err);
+      toast.error(language === 'en' ? 'Failed to check registration' : 'பதிவை சரிபார்க்க முடியவில்லை');
+      setRegCheckResult(null);
+    } finally {
+      setRegChecking(false);
+    }
+  };
+
   const availableYears = useMemo(
-    () => Array.from(new Set(pastPapers.map((p) => String(p.year)))).sort((a, b) => Number(b) - Number(a)),
-    []
+    () => Array.from(new Set(pastPapers.map((p) => String(p.yrs)))).sort((a, b) => Number(b) - Number(a)),
+    [pastPapers]
   );
 
   const papersForYear = (year: string) =>
     pastPapers.filter((paper) => {
-      if (paper.year !== year) return false;
+      if (String(paper.yrs) !== year) return false;
       if (paperFilter.subject && !paper.subject.toLowerCase().includes(paperFilter.subject.toLowerCase())) return false;
       return true;
     });
 
-  const openDownload = (url: string) => {
-    if (!url || url === '#') return toast.error(language === 'en' ? 'Download link not available' : 'பதிவிறக்க இணைப்பு கிடைக்கவில்லை');
-    window.open(url, '_blank');
+  const openDownload = (paper: PastPaper, type: 'paper' | 'scheme') => {
+    const bucket = type === 'paper' ? paper.exam_paper_bucket : paper.scheme_bucket;
+    const path = type === 'paper' ? paper.exam_paper_path : paper.scheme_path;
+
+    if (!path) {
+      toast.error(
+        language === 'en'
+          ? `${type === 'paper' ? 'Paper' : 'Scheme'} not available`
+          : `${type === 'paper' ? 'வினாத்தாள்' : 'திட்டம்'} கிடைக்கவில்லை`
+      );
+      return;
+    }
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    if (data?.publicUrl) {
+      window.open(data.publicUrl, '_blank');
+    } else {
+      toast.error(language === 'en' ? 'Download link not available' : 'பதிவிறக்க இணைப்பு கிடைக்கவில்லை');
+    }
   };
 
   // Certificate display (from resultData)
   const certName = resultData?.name ?? '-';
   const certSchool = resultData?.school ?? '-';
-  const certNIC = resultData?.Nic_no ?? '-';
+  const certNIC = resultData?.nic ?? '-';
   const certRank = resultData?.rank ?? '-';
 
   // From search form
@@ -179,10 +594,12 @@ const ExamPage: React.FC = () => {
   const certYear = resultsForm.year || '-';
   const certIndex = resultsForm.idType === 'Index No' ? resultsForm.idValue || '-' : '-';
 
-  // Subject grades (from mock)
+  // Subject grades (from result)
   const physicsGrade = resultData?.physics_grade ?? '-';
-  const chemistryGrade = resultData?.Chemistry_grade ?? '-';
-  const mathsGrade = resultData?.Maths_grade ?? '-';
+  const chemistryGrade = resultData?.chemistry_grade ?? '-';
+  const mathsOrBioGrade = resultData?.maths_or_bio_grade ?? '-';
+  const mathsOrBioLabel = resultData?.maths_or_bio_label ?? 'Maths/Bio';
+  const zScore = resultData?.zscore ?? '-';
 
   const downloadSheetAsImage = async () => {
     try {
@@ -231,6 +648,60 @@ const ExamPage: React.FC = () => {
 
       <section className="py-16 md:py-24 bg-background">
         <div className="container mx-auto px-4">
+
+          {/* Registration check card */}
+          <div className="max-w-2xl mx-auto mb-6">
+            <Card>
+              <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-3">
+                <div className="w-full sm:w-40">
+                  <Select value={regCheckIdType} onValueChange={(v) => setRegCheckIdType(v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Index No">{language === 'en' ? 'Index No' : 'குறிப்பு எண்'}</SelectItem>
+                      <SelectItem value="NIC No">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Input
+                  value={regCheckIndex}
+                  onChange={(e) => setRegCheckIndex(e.target.value)}
+                  placeholder={regCheckIdType === 'Index No' ? (language === 'en' ? 'Enter Index Number (e.g. 250001M)' : 'குறிப்பு எண் உள்ளிடவும் (எ.கா. 250001M)') : (language === 'en' ? 'Enter NIC (12 digits)' : 'NIC உள்ளிடவும் (12 இலக்கங்கள்)')}
+                  className="flex-1"
+                />
+
+                <div className="flex gap-2">
+                  <Button onClick={(e) => handleCheckIndex(e)} disabled={regChecking} className="whitespace-nowrap">
+                    {regChecking ? (language === 'en' ? 'Checking...' : 'சரிபாரித்தல்...') : (language === 'en' ? 'Check Registration' : 'பதிவைச் சரிபார்')}
+                  </Button>
+                  <Button variant="ghost" onClick={() => { setRegCheckIndex(''); setRegCheckResult(null); }}>
+                    {language === 'en' ? 'Clear' : 'அழி'}
+                  </Button>
+                </div>
+              </CardContent>
+
+              {regCheckResult && (
+                <CardContent className="border-t">
+                  {regCheckResult.found ? (
+                    <div>
+                      <div className="text-sm text-muted-foreground">{language === 'en' ? 'Registered' : 'பதிவுசெய்யப்பட்டுள்ளது'}</div>
+                      <div className="font-semibold mt-1">{regCheckResult.applicant?.fullname}</div>
+                      <div className="text-xs text-muted-foreground">{regCheckResult.applicant?.index_no} • {regCheckResult.applicant?.school} • {regCheckResult.applicant?.nic}</div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-destructive">
+                      {regCheckIdType === 'Index No'
+                        ? (language === 'en' ? 'No registration found for that index number.' : 'அந்த குறிப்பு எண்ணிற்கு பதிவு கிடைக்கவில்லை.')
+                        : (language === 'en' ? 'No registration found for that NIC.' : 'அந்த NICக்கான பதிவு கிடைக்கவில்லை.')}
+                    </div>
+                  )}
+                </CardContent>
+              )}
+            </Card>
+          </div>
+
           <Tabs value={activeTab} onValueChange={setActiveTab} className="max-w-4xl mx-auto">
             <TabsList className="grid w-full grid-cols-3 mb-8">
               <TabsTrigger value="apply" className="flex items-center gap-2">
@@ -264,70 +735,180 @@ const ExamPage: React.FC = () => {
                     </div>
 
                     <div className="p-5 md:p-6 bg-card">
-                      <form onSubmit={handleApplySubmit} className="space-y-5">
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Full Name' : 'முழு பெயர்'}</label>
-                          <Input value={applyForm.fullName} onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })} required />
-                        </div>
+                      {!examSettingLoading && !examApplicationsOpen ? (
+                        <Card className="border-destructive/30 bg-destructive/5">
+                          <CardContent className="p-6 space-y-2">
+                            <h3 className="text-xl font-semibold text-destructive">
+                              {language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது'}
+                            </h3>
+                            <p className="text-muted-foreground">
+                              {language === 'en'
+                                ? 'Exam applications are currently closed. Please check back later.'
+                                : 'தேர்வு விண்ணப்பங்கள் தற்போது மூடப்பட்டுள்ளது. தயவுசெய்து பின்னர் மீண்டும் பார்க்கவும்.'}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <form onSubmit={handleApplySubmit} className="space-y-5">
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Full Name' : 'முழு பெயர்'}</label>
+                            <Input 
+                              value={applyForm.fullName} 
+                              onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })} 
+                              required 
+                              placeholder={language === 'en' ? 'Enter your full name' : 'உங்கள் முழு பெயரை உள்ளீடு செய்யவும்'}
+                              className={fieldErrors.fullName ? 'border-red-500' : ''}
+                            />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
-                          <Input type="email" value={applyForm.email} onChange={(e) => setApplyForm({ ...applyForm, email: e.target.value })} required />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
+                            <div className="relative">
+                              <Input 
+                                type="email" 
+                                value={applyForm.email} 
+                                onChange={(e) => handleEmailChange(e.target.value)} 
+                                required 
+                                placeholder={language === 'en' ? 'your.email@example.com' : 'your.email@example.com'}
+                                className={`${emailValid === false ? 'border-red-500 pr-10' : emailValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${fieldErrors.email ? 'border-red-500' : ''}`}
+                              />
+                              {applyForm.email && (
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                  {emailValid === true && <Check className="h-4 w-4 text-green-500" />}
+                                  {emailValid === false && <X className="h-4 w-4 text-red-500" />}
+                                </div>
+                              )}
+                            </div>
+                            {emailValid === false && (
+                              <p className="text-sm text-red-500 mt-1">
+                                {language === 'en' ? 'Please enter a valid email address' : 'சரியான மின்னஞ்சல் முகவரியை உள்ளீடு செய்யவும்'}
+                              </p>
+                            )}
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}</label>
-                          <Input inputMode="numeric" value={applyForm.phone} onChange={(e) => setApplyForm({ ...applyForm, phone: onlyDigitsMax(e.target.value, 10) })} required />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}</label>
+                            <div className="relative">
+                              <Input
+                                inputMode="numeric"
+                                value={applyForm.phone}
+                                onChange={(e) => handlePhoneChange(e.target.value)}
+                                required
+                                placeholder={language === 'en' ? '0757575757' : '0757575757'}
+                                className={`${phoneValid === false ? 'border-red-500 pr-10' : phoneValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${fieldErrors.phone ? 'border-red-500' : ''}`}
+                              />
+                              {applyForm.phone && (
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                  {phoneValid === true && <Check className="h-4 w-4 text-green-500" />}
+                                  {phoneValid === false && <X className="h-4 w-4 text-red-500" />}
+                                </div>
+                              )}
+                            </div>
+                            {phoneValid === false && (
+                              <p className="text-sm text-red-500 mt-1">
+                                {language === 'en' ? 'Phone number must be exactly 10 digits' : 'தொலைபேசி எண் சரியாக 10 இலக்கங்கள் இருக்க வேண்டும்'}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {language === 'en' ? 'Format: 0757575757 (10 digits)' : 'வடிவம்: 0757575757 (10 இலக்கங்கள்)'}
+                            </p>
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</label>
-                          <Input value={applyForm.nic} onChange={(e) => setApplyForm({ ...applyForm, nic: e.target.value })} required />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</label>
+                            <div className="relative">
+                              <Input 
+                                value={applyForm.nic} 
+                                onChange={(e) => handleNicChange(e.target.value)} 
+                                required 
+                                inputMode="numeric"
+                                placeholder={language === 'en' ? '123456789012' : '123456789012'}
+                                className={`${(nicValid === false || nicDuplicate === true) ? 'border-red-500 pr-10' : nicValid === true && nicDuplicate === false ? 'border-green-500 pr-10' : 'pr-10'} ${fieldErrors.nic ? 'border-red-500' : ''}`}
+                              />
+                              {applyForm.nic && (
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                  {nicValid === true && nicDuplicate === false && <Check className="h-4 w-4 text-green-500" />}
+                                  {(nicValid === false || nicDuplicate === true) && <X className="h-4 w-4 text-red-500" />}
+                                </div>
+                              )}
+                            </div>
+                            {nicValid === false && (
+                              <p className="text-sm text-red-500 mt-1">
+                                {language === 'en' ? 'NIC number must be exactly 12 digits' : 'தேசிய அடையாள எண் சரியாக 12 இலக்கங்கள் இருக்க வேண்டும்'}
+                              </p>
+                            )}
+                            {nicDuplicate === true && nicValid === true && (
+                              <p className="text-sm text-red-500 mt-1">
+                                {language === 'en' ? 'This NIC has already been used for an application' : 'இந்த தேசிய அடையாள எண் ஏற்கனவே விண்ணப்பத்திற்கு பயன்படுத்தப்பட்டுள்ளது'}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {language === 'en' ? 'Format: 123456789012 (12 digits)' : 'வடிவம்: 123456789012 (12 இலக்கங்கள்)'}
+                            </p>
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Select Stream' : 'தேர்வைத் தேர்ந்தெடுக்கவும்'}</label>
-                          <Select value={applyForm.exam} onValueChange={(v) => setApplyForm({ ...applyForm, exam: v })}>
-                            <SelectTrigger>
-                              <SelectValue placeholder={language === 'en' ? '-- Select Your Stream --' : '-- தேர்வு --'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {applyExams
-                                .filter((x) => x !== '-- Select Your Stream --')
-                                .map((exam) => (
-                                  <SelectItem key={exam} value={exam}>
-                                    {exam}
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Select Stream' : 'தேர்வைத் தேர்ந்தெடுக்கவும்'}</label>
+                            <Select value={applyForm.exam} onValueChange={(v) => setApplyForm({ ...applyForm, exam: v })}>
+                              <SelectTrigger className={fieldErrors.exam ? 'border-red-500' : ''}>
+                                <SelectValue placeholder={language === 'en' ? '-- Select Your Stream --' : '-- தேர்வு --'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {applyExams
+                                  .filter((x) => x !== '-- Select Your Stream --')
+                                  .map((exam) => (
+                                    <SelectItem key={exam} value={exam}>
+                                      {exam}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'School Name' : 'பள்ளி பெயர்'}</label>
+                            <Select value={applyForm.schoolName} onValueChange={(v) => setApplyForm({ ...applyForm, schoolName: v })}>
+                              <SelectTrigger className={fieldErrors.schoolName ? 'border-red-500' : ''}>
+                                <SelectValue placeholder={language === 'en' ? 'Select school' : 'பள்ளியை தேர்வு செய்க'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {schoolOptions.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s}
                                   </SelectItem>
                                 ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'School Name' : 'பள்ளி பெயர்'}</label>
-                          <Select value={applyForm.schoolName} onValueChange={(v) => setApplyForm({ ...applyForm, schoolName: v })}>
-                            <SelectTrigger>
-                              <SelectValue placeholder={language === 'en' ? 'Select school' : 'பள்ளியை தேர்வு செய்க'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {schoolOptions.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Gender' : 'பாலினம்'}</label>
+                            <RadioGroup
+                              value={applyForm.gender}
+                              onValueChange={(v) => setApplyForm({ ...applyForm, gender: v as 'male' | 'female' })}
+                              className={`flex flex-row space-x-6 ${fieldErrors.gender ? 'border border-red-500 rounded-md p-2' : ''}`}
+                            >
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="male" id="male" />
+                                <Label htmlFor="male">{language === 'en' ? 'Male' : 'ஆண்'}</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="female" id="female" />
+                                <Label htmlFor="female">{language === 'en' ? 'Female' : 'பெண்'}</Label>
+                              </div>
+                            </RadioGroup>
+                          </div>
 
-                        <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset}>
-                            {language === 'en' ? 'Reset' : 'மீட்டமை'}
-                          </Button>
-                          <Button type="submit" variant="donate" className="w-full">
-                            {language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்'}
-                          </Button>
-                        </div>
-                      </form>
+                          <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset} disabled={examSettingLoading || submitting}>
+                              {language === 'en' ? 'Reset' : 'மீட்டமை'}
+                            </Button>
+                            <Button type="submit" variant="donate" className="w-full" disabled={!examApplicationsOpen || examSettingLoading || submitting}>
+                              {submitting ? (language === 'en' ? 'Submitting...' : 'சமர்ப்பிக்கிறது...') : language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்'}
+                            </Button>
+                          </div>
+                        </form>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -343,65 +924,109 @@ const ExamPage: React.FC = () => {
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
                   <div className="flex items-center gap-2 flex-1">
                     <Search className="w-4 h-4 text-muted-foreground" />
-                    <Input placeholder={language === 'en' ? 'Search subject...' : 'பாடத்தைத் தேடு...'} value={paperFilter.subject} onChange={(e) => { setPaperFilter({ subject: e.target.value }); setExpandedYear(null); }} />
+                    <Input
+                      placeholder={language === 'en' ? 'Search subject...' : 'பாடத்தைத் தேடு...'}
+                      value={paperFilter.subject}
+                      onChange={(e) => {
+                        setPaperFilter({ subject: e.target.value });
+                        setExpandedYear(null);
+                      }}
+                    />
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  {availableYears.map((year) => {
-                    const yearPapers = papersForYear(year);
-                    const isOpen = expandedYear === year;
+                  {papersLoading ? (
+                    <div className="text-center py-8">
+                      <div className="text-muted-foreground">{language === 'en' ? 'Loading past papers...' : 'கடந்த கால வினாத்தாள்களை ஏற்றுகிறது...'}</div>
+                    </div>
+                  ) : availableYears.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-muted-foreground">{language === 'en' ? 'No past papers available' : 'கடந்த கால வினாத்தாள்கள் கிடைக்கவில்லை'}</div>
+                    </div>
+                  ) : (
+                    availableYears.map((year) => {
+                      const yearPapers = papersForYear(year);
+                      const isOpen = expandedYear === year;
 
-                    return (
-                      <div key={year} className="bg-muted rounded-lg p-4">
-                        <button type="button" onClick={() => setExpandedYear(isOpen ? null : year)} className="w-full flex items-center justify-between">
-                          <div className="text-left">
-                            <p className="font-semibold text-foreground">{year}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {yearPapers.length}{' '}
-                              {yearPapers.length === 1 ? (language === 'en' ? 'paper' : 'வினாத்தாள்') : language === 'en' ? 'papers' : 'வினாத்தாள்கள்'}
-                            </p>
-                          </div>
-                          <span className="text-sm text-muted-foreground">{isOpen ? (language === 'en' ? 'Hide' : 'மூடு') : language === 'en' ? 'View' : 'காண'}</span>
-                        </button>
+                      return (
+                        <div key={year} className="bg-muted rounded-lg p-4">
+                          <button type="button" onClick={() => setExpandedYear(isOpen ? null : year)} className="w-full flex items-center justify-between">
+                            <div className="text-left">
+                              <p className="font-semibold text-foreground">{year}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {yearPapers.length}{' '}
+                                {yearPapers.length === 1 ? (language === 'en' ? 'paper' : 'வினாத்தாள்') : language === 'en' ? 'papers' : 'வினாத்தாள்கள்'}
+                              </p>
+                            </div>
+                            <span className="text-sm text-muted-foreground">{isOpen ? (language === 'en' ? 'Hide' : 'மூடு') : language === 'en' ? 'View' : 'காண'}</span>
+                          </button>
 
-                        <AnimatePresence initial={false}>
-                          {isOpen && (
-                            <motion.div key={`panel-${year}`} variants={collapseVariants} initial="hidden" animate="visible" exit="exit" transition={{ duration: 0.25, ease: 'easeInOut' }} className="overflow-hidden">
-                              <div className="mt-4 space-y-3">
-                                {yearPapers.length === 0 ? (
-                                  <p className="text-center text-muted-foreground py-6">{t('common.noResults')}</p>
-                                ) : (
-                                  yearPapers.map((paper) => (
-                                    <motion.div key={paper.id} variants={itemVariants} initial="hidden" animate="visible" transition={{ duration: 0.2 }} className="flex items-center justify-between p-4 bg-card rounded-lg hover:bg-card/80 transition-colors">
-                                      <div className="flex items-center gap-3">
-                                        <FileText className="w-5 h-5 text-secondary" />
-                                        <div>
-                                          <p className="font-medium text-foreground">{paper.subject}</p>
-                                          <p className="text-sm text-muted-foreground">{paper.year}</p>
+                          <AnimatePresence initial={false}>
+                            {isOpen && (
+                              <motion.div
+                                key={`panel-${year}`}
+                                variants={collapseVariants}
+                                initial="hidden"
+                                animate="visible"
+                                exit="exit"
+                                transition={{ duration: 0.25, ease: 'easeInOut' }}
+                                className="overflow-hidden"
+                              >
+                                <div className="mt-4 space-y-3">
+                                  {yearPapers.length === 0 ? (
+                                    <p className="text-center text-muted-foreground py-6">{t('common.noResults')}</p>
+                                  ) : (
+                                    yearPapers.map((paper) => (
+                                      <motion.div
+                                        key={paper.pp_id}
+                                        variants={itemVariants}
+                                        initial="hidden"
+                                        animate="visible"
+                                        transition={{ duration: 0.2 }}
+                                        className="flex items-center justify-between p-4 bg-card rounded-lg hover:bg-card/80 transition-colors"
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          <FileText className="w-5 h-5 text-secondary" />
+                                          <div>
+                                            <p className="font-medium text-foreground">{paper.subject}</p>
+                                            <p className="text-sm text-muted-foreground">{paper.yrs}</p>
+                                          </div>
                                         </div>
-                                      </div>
 
-                                      <div className="flex w-full sm:w-auto gap-2 sm:justify-end">
-                                        <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => openDownload(paper.paperUrl)}>
-                                          <Download className="w-4 h-4 mr-1" />
-                                          {language === 'en' ? 'Paper' : 'வினாத்தாள்'}
-                                        </Button>
-                                        <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => openDownload(paper.schemeUrl)}>
-                                          <Download className="w-4 h-4 mr-1" />
-                                          {language === 'en' ? 'Scheme' : 'திட்டம்'}
-                                        </Button>
-                                      </div>
-                                    </motion.div>
-                                  ))
-                                )}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    );
-                  })}
+                                        <div className="flex w-full sm:w-auto gap-2 sm:justify-end">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="flex-1 sm:flex-none"
+                                            onClick={() => openDownload(paper, 'paper')}
+                                            disabled={!paper.exam_paper_path}
+                                          >
+                                            <Download className="w-4 h-4 mr-1" />
+                                            {language === 'en' ? 'Paper' : 'வினாத்தாள்'}
+                                          </Button>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="flex-1 sm:flex-none"
+                                            onClick={() => openDownload(paper, 'scheme')}
+                                            disabled={!paper.scheme_path}
+                                          >
+                                            <Download className="w-4 h-4 mr-1" />
+                                            {language === 'en' ? 'Scheme' : 'திட்டம்'}
+                                          </Button>
+                                        </div>
+                                      </motion.div>
+                                    ))
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </motion.div>
             </TabsContent>
@@ -411,161 +1036,173 @@ const ExamPage: React.FC = () => {
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card rounded-xl p-6 md:p-8 shadow-lg">
                 <div className="min-h-[40vh] flex items-center justify-center">
                   <div className="w-full max-w-3xl">
-                    <AnimatePresence mode="wait">
-                      {!showResultSheet ? (
-                        <motion.div key="results-form" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.2 }}>
-                          <h2 className="text-2xl font-bold text-foreground mb-2">{language === 'en' ? 'View Results' : 'முடிவுகளை காண'}</h2>
-                          <p className="text-muted-foreground mb-6">{language === 'en' ? 'Check your examination results' : 'உங்கள் தேர்வு முடிவுகளை சரிபார்க்கவும்'}</p>
+                    {!resultsSettingLoading && !resultsPublished ? (
+                      <Card className="border-destructive/30 bg-destructive/5">
+                        <CardContent className="p-6 space-y-2">
+                          <h3 className="text-xl font-semibold text-destructive">{language === 'en' ? 'Results not published yet' : 'முடிவுகள் இன்னும் வெளியிடப்படவில்லை'}</h3>
+                          <p className="text-muted-foreground">
+                            {language === 'en'
+                              ? 'Examination results are not yet available. Please check back later.'
+                              : 'தேர்வு முடிவுகள் இன்னும் கிடைக்கவில்லை. தயவுசெய்து பின்னர் மீண்டும் பார்க்கவும்.'}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <AnimatePresence mode="wait">
+                        {!showResultSheet ? (
+                          <motion.div key="results-form" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.2 }}>
+                            <h2 className="text-2xl font-bold text-foreground mb-2">{language === 'en' ? 'View Results' : 'முடிவுகளை காண'}</h2>
+                            <p className="text-muted-foreground mb-6">{language === 'en' ? 'Check your examination results' : 'உங்கள் தேர்வு முடிவுகளை சரிபார்க்கவும்'}</p>
 
-                          <form onSubmit={handleResultsSubmit} className="space-y-4 max-w-lg">
-                            <div>
-                              <label className="block text-sm font-medium text-foreground mb-1">{language === 'en' ? 'Select Stream' : 'பிரிவைத் தேர்ந்தெடுக்கவும்'}</label>
-                              <Select value={resultsForm.stream} onValueChange={(v) => setResultsForm({ ...resultsForm, stream: v })}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder={language === 'en' ? 'Choose stream' : 'பிரிவை தேர்வு செய்க'} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {resultsStreams.map((s) => (
-                                    <SelectItem key={s} value={s}>
-                                      {s}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-foreground mb-1">{language === 'en' ? 'Select Index / NIC' : 'Index / NIC தேர்ந்தெடுக்கவும்'}</label>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <Select value={resultsForm.idType} onValueChange={(v) => setResultsForm({ ...resultsForm, idType: v })}>
+                            <form onSubmit={handleResultsSubmit} className="space-y-4 max-w-lg">
+                              <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">{language === 'en' ? 'Select Stream' : 'பிரிவைத் தேர்ந்தெடுக்கவும்'}</label>
+                                <Select value={resultsForm.stream} onValueChange={(v) => setResultsForm({ ...resultsForm, stream: v })}>
                                   <SelectTrigger>
-                                    <SelectValue />
+                                    <SelectValue placeholder={language === 'en' ? 'Choose stream' : 'பிரிவை தேர்வு செய்க'} />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {idTypes.map((type) => (
-                                      <SelectItem key={type} value={type}>
-                                        {type}
+                                    {resultsStreams.map((s) => (
+                                      <SelectItem key={s} value={s}>
+                                        {s}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
                                 </Select>
-                                <Input value={resultsForm.idValue} onChange={(e) => setResultsForm({ ...resultsForm, idValue: e.target.value })} placeholder={language === 'en' ? 'Enter value' : 'உள்ளிடவும்'} />
                               </div>
-                            </div>
 
-                            <div>
-                              <label className="block text-sm font-medium text-foreground mb-1">{language === 'en' ? 'Select Year' : 'ஆண்டைத் தேர்ந்தெடுக்கவும்'}</label>
-                              <Select value={resultsForm.year} onValueChange={(v) => setResultsForm({ ...resultsForm, year: v })}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder={language === 'en' ? 'Choose year' : 'ஆண்டை தேர்வு செய்க'} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {resultsYears.map((y) => (
-                                    <SelectItem key={y} value={y}>
-                                      {y}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3 pt-2">
-                              <Button type="button" variant="outline" className="w-full" onClick={handleResultsReset}>
-                                {language === 'en' ? 'Reset' : 'மீட்டமை'}
-                              </Button>
-                              <Button type="submit" variant="donate" className="w-full">
-                                {language === 'en' ? 'View Results' : 'முடிவுகளை காண'}
-                              </Button>
-                            </div>
-                          </form>
-                        </motion.div>
-                      ) : (
-                        <motion.div key="results-sheet" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.25 }}>
-                          <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-sky-50 via-white to-sky-100 shadow-xl">
-                            <div className="pointer-events-none absolute inset-0 opacity-40">
-                              <div className="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-sky-200 blur-3xl" />
-                              <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-sky-200 blur-3xl" />
-                            </div>
-
-                            <div className="relative px-6 py-10 md:px-10">
-                              <div ref={sheetRef} className="mx-auto w-full max-w-3xl">
-                                <div className="flex flex-col items-center text-center">
-                                  <div className="h-16 w-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 flex items-center justify-center overflow-hidden">
-                                    <img src={emblemImg} alt="Emblem" className="h-full w-full object-cover" onError={e => (e.currentTarget.style.display = 'none')} />
-
-                                  </div>
-
-                                  <div className="mt-4 flex items-center gap-3 w-full max-w-2xl">
-                                    <div className="h-px flex-1 bg-amber-200" />
-                                    <div className="h-2 w-2 rounded-full bg-amber-300" />
-                                    <div className="h-px flex-1 bg-amber-200" />
-                                  </div>
-
-                                  <h3 className="mt-5 text-2xl md:text-3xl font-bold tracking-wide text-slate-900">
-                                    G.C.E. (A/L) EXAMINATION - {certYear}
-                                  </h3>
-                                </div>
-
-                                <div className="mt-8 rounded-2xl bg-white/90 backdrop-blur border border-amber-200 shadow-sm">
-                                  <div className="p-8">
-                                    <div className="grid grid-cols-1 gap-5 text-base">
-                                      <Row label="Name" value={certName} />
-                                      <Row label="Index Number" value={certIndex} />
-                                      <Row label="NIC Number" value={certNIC} />
-                                      <Row label="School" value={certSchool} />
-                                      <Row label="Stream" value={certStream} />
-                                      <Row label="Rank" value={certRank} />
-                                    </div>
-
-                                    <div className="mt-10 overflow-hidden rounded-xl border border-slate-700">
-                                      <div className="grid grid-cols-2 bg-slate-700 text-white font-semibold">
-                                        <div className="px-6 py-4 text-left">Subject</div>
-                                        <div className="px-6 py-4 text-center">Result</div>
-                                      </div>
-
-                                      <div className="bg-white">
-                                        {[
-                                          { subject: 'COMBINED MATHEMATICS', result: mathsGrade },
-                                          { subject: 'PHYSICS', result: physicsGrade },
-                                          { subject: 'CHEMISTRY', result: chemistryGrade },
-                                        ].map((r) => (
-                                          <div key={r.subject} className="grid grid-cols-2 border-t border-slate-200">
-                                            <div className="px-6 py-6 text-slate-700 font-semibold">{r.subject}</div>
-                                            <div className="px-6 py-6 text-center font-extrabold text-amber-700 text-xl">{r.result}</div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-
-                                    <p className="mt-12 text-center text-sm text-slate-500">
-                                      This result is provisional and subject to official confirmation.
-                                    </p>
-                                    <p className="mt-3 text-center text-sm text-slate-500">
-                                      Copyright © Ausdav, Vavuniya. All Rights Reserved.
-                                    </p>
-                                  </div>
+                              <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">{language === 'en' ? 'Select Index / NIC' : 'Index / NIC தேர்ந்தெடுக்கவும்'}</label>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <Select value={resultsForm.idType} onValueChange={(v) => setResultsForm({ ...resultsForm, idType: v })}>
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {idTypes.map((type) => (
+                                        <SelectItem key={type} value={type}>
+                                          {type}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <Input
+                                    value={resultsForm.idValue}
+                                    onChange={(e) => setResultsForm({ ...resultsForm, idValue: e.target.value })}
+                                    placeholder={language === 'en' ? 'Enter value' : 'உள்ளிடவும்'}
+                                  />
                                 </div>
                               </div>
 
-                              <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-                                <Button
-                                  onClick={downloadSheetAsImage}
-                                  disabled={downloading}
-                                  className="bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
-                                >
-                                  <ImageDown className="w-4 h-4 mr-2" />
-                                  {downloading ? (language === 'en' ? 'Downloading...' : 'பதிவிறக்கம்...') : language === 'en' ? 'Download' : 'பதிவிறக்கு'}
-                                </Button>
+                              <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">{language === 'en' ? 'Select Year' : 'ஆண்டைத் தேர்ந்தெடுக்கவும்'}</label>
+                                <Select value={resultsForm.year} onValueChange={(v) => setResultsForm({ ...resultsForm, year: v })}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder={language === 'en' ? 'Choose year' : 'ஆண்டை தேர்வு செய்க'} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {resultsYears.map((y) => (
+                                      <SelectItem key={y} value={y}>
+                                        {y}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
 
-                                <Button onClick={handleResultsReset} className="bg-amber-600 text-white hover:bg-amber-500">
-                                  {language === 'en' ? 'Back' : 'மீண்டும்'}
+                              <div className="grid grid-cols-2 gap-3 pt-2">
+                                <Button type="button" variant="outline" className="w-full" onClick={handleResultsReset}>
+                                  {language === 'en' ? 'Reset' : 'மீட்டமை'}
+                                </Button>
+                                <Button type="submit" variant="donate" className="w-full">
+                                  {language === 'en' ? 'View Results' : 'முடிவுகளை காண'}
                                 </Button>
                               </div>
+                            </form>
+                          </motion.div>
+                        ) : (
+                          <motion.div key="results-sheet" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.25 }}>
+                            <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-sky-50 via-white to-sky-100 shadow-xl">
+                              <div className="pointer-events-none absolute inset-0 opacity-40">
+                                <div className="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-sky-200 blur-3xl" />
+                                <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-sky-200 blur-3xl" />
+                              </div>
+
+                              <div className="relative px-6 py-10 md:px-10">
+                                <div ref={sheetRef} className="mx-auto w-full max-w-3xl">
+                                  <div className="flex flex-col items-center text-center">
+                                    <div className="h-16 w-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 flex items-center justify-center overflow-hidden">
+                                      <img
+                                        src={emblemImg}
+                                        alt="Emblem"
+                                        className="h-full w-full object-cover"
+                                        onError={(e) => (e.currentTarget.style.display = 'none')}
+                                      />
+                                    </div>
+
+                                    <div className="mt-4 flex items-center gap-3 w-full max-w-2xl">
+                                      <div className="h-px flex-1 bg-amber-200" />
+                                      <div className="h-2 w-2 rounded-full bg-amber-300" />
+                                      <div className="h-px flex-1 bg-amber-200" />
+                                    </div>
+
+                                    <h3 className="mt-5 text-2xl md:text-3xl font-bold tracking-wide text-slate-900">G.C.E. (A/L) EXAMINATION - {certYear}</h3>
+                                  </div>
+
+                                  <div className="mt-8 rounded-2xl bg-white/90 backdrop-blur border border-amber-200 shadow-sm">
+                                    <div className="p-8">
+                                      <div className="grid grid-cols-1 gap-5 text-base">
+                                        <Row label="Name" value={certName} />
+                                        <Row label="Index Number" value={certIndex} />
+                                        <Row label="NIC Number" value={certNIC} />
+                                        <Row label="School" value={certSchool} />
+                                        <Row label="Stream" value={certStream} />
+                                        <Row label="Z-Score" value={zScore} />
+                                        <Row label="Rank" value={certRank} />
+                                      </div>
+
+                                      <div className="mt-10 overflow-hidden rounded-xl border border-slate-700">
+                                        <div className="grid grid-cols-2 bg-slate-700 text-white font-semibold">
+                                          <div className="px-6 py-4 text-left">Subject</div>
+                                          <div className="px-6 py-4 text-center">Result</div>
+                                        </div>
+
+                                        <div className="bg-white">
+                                          {[
+                                            { subject: mathsOrBioLabel.toUpperCase(), result: mathsOrBioGrade },
+                                            { subject: 'PHYSICS', result: physicsGrade },
+                                            { subject: 'CHEMISTRY', result: chemistryGrade },
+                                          ].map((r) => (
+                                            <div key={r.subject} className="grid grid-cols-2 border-t border-slate-200">
+                                              <div className="px-6 py-6 text-slate-700 font-semibold">{r.subject}</div>
+                                              <div className="px-6 py-6 text-center font-extrabold text-amber-700 text-xl">{r.result}</div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      <p className="mt-12 text-center text-sm text-slate-500">This result is provisional and subject to official confirmation.</p>
+                                      <p className="mt-3 text-center text-sm text-slate-500">Copyright © Ausdav, Vavuniya. All Rights Reserved.</p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+                                  <Button onClick={downloadSheetAsImage} disabled={downloading} className="bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60">
+                                    <ImageDown className="w-4 h-4 mr-2" />
+                                    {downloading ? (language === 'en' ? 'Downloading...' : 'பதிவிறக்கம்...') : language === 'en' ? 'Download' : 'பதிவிறக்கு'}
+                                  </Button>
+
+                                  <Button onClick={handleResultsReset} className="bg-amber-600 text-white hover:bg-amber-500">
+                                    {language === 'en' ? 'Back' : 'மீண்டும்'}
+                                  </Button>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -573,6 +1210,58 @@ const ExamPage: React.FC = () => {
           </Tabs>
         </div>
       </section>
+
+      {/* Success Dialog */}
+      <Dialog open={successDialogOpen} onOpenChange={setSuccessDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <Check className="h-5 w-5" />
+              {language === 'en' ? 'Application Submitted Successfully!' : 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது!'}
+            </DialogTitle>
+            <DialogDescription>
+              {language === 'en' ? (
+                <>
+                  <div className="text-lg font-medium mb-2">{registeredFullName ? `Hello ${registeredFullName}!` : 'Hello!'}</div>
+                  <div>Congratulations! Your exam application has been submitted successfully. Please save your reference number for future reference.</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-lg font-medium mb-2">{registeredFullName ? `வணக்கம் ${registeredFullName}!` : 'வணக்கம்!'}</div>
+                  <div>வாழ்த்துக்கள்! உங்கள் தேர்வு விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது. எதிர்கால குறிப்புக்கு உங்கள் குறிப்பு எண்ணை சேமிக்கவும்.</div>
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex flex-col items-center space-y-4 py-4">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground mb-2">
+                {language === 'en' ? 'Your Reference Number:' : 'உங்கள் குறிப்பு எண்:'}
+              </p>
+              <div className="bg-primary/10 border-2 border-primary rounded-lg px-6 py-3">
+                <p className="text-2xl font-bold text-primary font-mono">
+                  {generatedIndexNo}
+                </p>
+              </div>
+            </div>
+            
+            <div className="text-center text-sm text-muted-foreground">
+              <p>
+                {language === 'en' 
+                  ? 'Use this number to check your results and for any future communications.'
+                  : 'உங்கள் முடிவுகளை சரிபார்க்க மற்றும் எதிர்கால தகவல்தொடர்புகளுக்கு இந்த எண்ணைப் பயன்படுத்தவும்.'}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setSuccessDialogOpen(false)} className="w-full">
+              {language === 'en' ? 'Close' : 'மூடு'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

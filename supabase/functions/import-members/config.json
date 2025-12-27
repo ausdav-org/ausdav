@@ -1,0 +1,7 @@
+{
+  "runtime": "deno",
+  "name": "import-members",
+  "slug": "import-members",
+  "version": "1.0.0",
+  "use_calling_user_token": false
+}

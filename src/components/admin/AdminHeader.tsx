@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { LogOut, User, Shield, ChevronDown } from 'lucide-react';
+import { LogOut, User, Shield, ChevronDown, RefreshCw } from 'lucide-react';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,6 +12,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import LiveViewerBadge from '@/components/LiveViewerBadge';
+import { dispatchAdminRefresh } from '@/hooks/useAdminRefresh';
 
 interface AdminHeaderProps {
   title: string;
@@ -46,7 +47,21 @@ export function AdminHeader({ title, breadcrumb }: AdminHeaderProps) {
       {/* Live Viewer Badge & Profile Menu */}
       <div className="flex items-center gap-4">
         <LiveViewerBadge size="sm" />
-        
+        <Button
+          variant="ghost"
+          title="Refresh admin tables"
+          onClick={() => {
+            try {
+              dispatchAdminRefresh();
+            } catch (e) {
+              // fallback to full reload
+              window.location.reload();
+            }
+          }}
+        >
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="flex items-center gap-3 px-3">
