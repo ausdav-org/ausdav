@@ -288,6 +288,18 @@ export default function AdminResultsPage() {
   });
   const [rangesSaving, setRangesSaving] = useState(false);
 
+  const rangesDifferent = useMemo(() => {
+    const subject = selectedSubjectForGrade;
+    const draft = gradeRangesDraftBySubject[subject];
+    const applied = gradeRangesAppliedBySubject[subject];
+    return (
+      draft.A_min !== applied.A_min ||
+      draft.B_min !== applied.B_min ||
+      draft.C_min !== applied.C_min ||
+      draft.S_min !== applied.S_min
+    );
+  }, [selectedSubjectForGrade, gradeRangesDraftBySubject, gradeRangesAppliedBySubject]);
+
   const [sortMode, setSortMode] = useState<SortMode>('default');
 
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -1594,7 +1606,7 @@ export default function AdminResultsPage() {
               </div>
 
               <div className="flex flex-wrap gap-2 items-center">
-                <Button onClick={saveGradeRanges} disabled={!canManageSettings || rangesSaving}>
+                <Button onClick={saveGradeRanges} disabled={!canManageSettings || rangesSaving || !rangesDifferent}>
                   {rangesSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                   Save Changes
                 </Button>
