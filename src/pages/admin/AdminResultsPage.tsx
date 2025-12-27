@@ -66,6 +66,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeFunction } from '@/integrations/supabase/functions';
 import {
   ChartContainer,
   ChartTooltip,
@@ -435,18 +436,19 @@ export default function AdminResultsPage() {
     setAllowResultsView(next);
 
     try {
-      const { error } = await supabase
-        .from('app_settings' as any)
-        .update({ allow_results_view: next })
-        .eq('id', 1);
-
+      const { data, error } = await invokeFunction('update-results-publish', { allow_results_view: next });
       if (error) throw error;
 
+      const updated = data?.updated ?? [];
+      if (!updated || (Array.isArray(updated) && updated.length === 0)) {
+        throw new Error('No rows updated — check permissions or server logs');
+      }
+
       toast.success(next ? 'Results published' : 'Results unpublished');
-    } catch (error) {
-      console.error('Error updating setting:', error);
+    } catch (error: any) {
+      console.error('Error updating setting via function:', error);
       setAllowResultsView(!next);
-      toast.error('Failed to update publish setting');
+      toast.error(error?.message || 'Failed to update publish setting');
     } finally {
       await loadResultsSetting();
       setResultsSaving(false);
