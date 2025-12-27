@@ -177,6 +177,24 @@ function fmt(v: unknown): string {
   return String(v);
 }
 
+function gradeBadgeClass(g: string | null | undefined): string {
+  const grade = (g || '').toString().toUpperCase();
+  switch (grade) {
+    case 'A':
+      return 'bg-emerald-600 text-white';
+    case 'B':
+      return 'bg-blue-600 text-white';
+    case 'C':
+      return 'bg-yellow-400 text-black';
+    case 'S':
+      return 'bg-orange-400 text-black';
+    case 'F':
+      return 'bg-red-600 text-white';
+    default:
+      return 'bg-muted text-muted-foreground';
+  }
+}
+
 function parseCsvLine(line: string): string[] {
   const out: string[] = [];
   let cur = '';
@@ -1696,17 +1714,17 @@ export default function AdminResultsPage() {
 
                           <TableCell className="font-mono text-sm">{fmt(mathsOrBioMarks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{mathsOrBioGrade ?? '-'}</Badge>
+                            <Badge className={gradeBadgeClass(mathsOrBioGrade)}>{mathsOrBioGrade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{fmt(result?.physics_marks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{result?.physics_grade ?? '-'}</Badge>
+                            <Badge className={gradeBadgeClass(result?.physics_grade)}>{result?.physics_grade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{fmt(result?.chemistry_marks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{result?.chemistry_grade ?? '-'}</Badge>
+                            <Badge className={gradeBadgeClass(result?.chemistry_grade)}>{result?.chemistry_grade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{z}</TableCell>
@@ -1892,9 +1910,8 @@ export default function AdminResultsPage() {
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">{selectedApplicant.stream === 'Maths' ? 'Maths' : 'Biology'}</div>
                     <div className="font-mono">
-                      {fmt(selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_marks : selectedApplicant.result?.bio_marks)}
-                      {' '}
-                      <Badge variant="secondary">
+                      {fmt(selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_marks : selectedApplicant.result?.bio_marks)}{' '}
+                      <Badge className={gradeBadgeClass(selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_grade : selectedApplicant.result?.bio_grade)}>
                         {selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_grade : selectedApplicant.result?.bio_grade}
                       </Badge>
                     </div>
@@ -1902,13 +1919,13 @@ export default function AdminResultsPage() {
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Physics</div>
                     <div className="font-mono">
-                      {fmt(selectedApplicant.result?.physics_marks)} <Badge variant="secondary">{selectedApplicant.result?.physics_grade ?? '-'}</Badge>
+                      {fmt(selectedApplicant.result?.physics_marks)} <Badge className={gradeBadgeClass(selectedApplicant.result?.physics_grade)}>{selectedApplicant.result?.physics_grade ?? '-'}</Badge>
                     </div>
                   </div>
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Chemistry</div>
                     <div className="font-mono">
-                      {fmt(selectedApplicant.result?.chemistry_marks)} <Badge variant="secondary">{selectedApplicant.result?.chemistry_grade ?? '-'}</Badge>
+                      {fmt(selectedApplicant.result?.chemistry_marks)} <Badge className={gradeBadgeClass(selectedApplicant.result?.chemistry_grade)}>{selectedApplicant.result?.chemistry_grade ?? '-'}</Badge>
                     </div>
                   </div>
                   <div className="p-3 rounded-lg border">
