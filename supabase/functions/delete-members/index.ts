@@ -86,11 +86,40 @@ serve(async (req: Request) => {
       }
     }
 
+    // Fetch affected members to collect `auth_user_id`s before deleting rows
+    const { data: targets, error: fetchErr } = await adminClient
+      .from('members')
+      .select('mem_id, auth_user_id')
+      .in('mem_id', memIds as number[]);
+    if (fetchErr) throw fetchErr;
+
+    const authIds = (targets || []).map((t: any) => t.auth_user_id).filter(Boolean) as string[];
+
     // Perform deletion using service role
     const { data: deleted, error: delErr } = await adminClient.from('members').delete().in('mem_id', memIds).select('mem_id');
     if (delErr) throw delErr;
 
-    return new Response(JSON.stringify({ deleted: deleted ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    // Delete corresponding auth users (best-effort). log but don't fail overall if some deletions fail.
+    const deletedAuth: string[] = [];
+    for (const aid of authIds) {
+      try {
+        // supabase-js admin API: auth.admin.deleteUser
+        // @ts-ignore - runtime provides admin API
+        const { error: authErr } = await (adminClient as any).auth.admin.deleteUser(aid);
+        if (authErr) {
+          console.error('Failed to delete auth user', aid, authErr.message || authErr);
+        } else {
+          deletedAuth.push(aid);
+        }
+      } catch (e) {
+        console.error('Exception deleting auth user', aid, e);
+      }
+    }
+
+    return new Response(
+      JSON.stringify({ deleted: deleted ?? [], deleted_auth_ids: deletedAuth }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   } catch (e) {
     console.error('Delete-members failed', e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Delete failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
