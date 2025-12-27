@@ -17,7 +17,6 @@ import ExamPage from "@/pages/ExamPage";
 import SeminarPage from "@/pages/SeminarPage";
 import EventsPage from "@/pages/EventsPage";
 import EventDetailsPage from "@/pages/EventDetailsPage";
-import GalleryPage from "@/pages/GalleryPage";
 import DonatePage from "@/pages/DonatePage";
 import LoginPage from "@/pages/LoginPage";
 import NotFoundPage from "@/pages/NotFoundPage";
@@ -42,6 +41,8 @@ import AdminExamPage from "@/pages/admin/AdminExamPage";
 import AdminSeminarPage from "@/pages/admin/AdminSeminarPage";
 import AdminApplicantsPage from "@/pages/admin/AdminApplicantsPage";
 import ClaimPermissionPage from "@/pages/admin/ClaimPermissionPage";
+
+import AdminPatronsPage from "@/pages/admin/AdminPatronsPage";
 
 // ✅ ADD THIS IMPORT (create this file or update the path to your actual results page)
 import AdminResultsPage from "@/pages/admin/AdminResultsPage";
@@ -84,7 +85,6 @@ const App = () => {
                   <Route path="/seminar" element={<Layout><SeminarPage /></Layout>} />
                   <Route path="/events" element={<Layout><EventsPage /></Layout>} />
                   <Route path="/events/:id" element={<Layout><EventDetailsPage /></Layout>} />
-                  <Route path="/gallery" element={<Layout><GalleryPage /></Layout>} />
                   <Route path="/donate" element={<Layout><DonatePage /></Layout>} />
                   <Route path="/login" element={<Layout><LoginPage /></Layout>} />
                   <Route path="/signup" element={<Layout><SignupPortalPage /></Layout>} />
@@ -115,6 +115,7 @@ const App = () => {
                     <Route path="profile" element={<AdminProfilePage />} />
                     <Route path="members" element={<AdminMembersPage />} />
                     <Route path="applicants" element={<AdminApplicantsPage />} />
+                    <Route path="patrons" element={<AdminPatronsPage />} />
 
                     {/* ✅ ADDED: Results page route */}
                     <Route path="results" element={<AdminResultsPage />} />
