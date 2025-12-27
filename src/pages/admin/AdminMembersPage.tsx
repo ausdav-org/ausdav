@@ -77,7 +77,7 @@ type RawMember = Pick<
 >;
 
 export default function AdminMembersPage() {
-  const { isSuperAdmin, isAdmin } = useAdminAuth();
+  const { isSuperAdmin, isAdmin, role } = useAdminAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -149,6 +149,7 @@ export default function AdminMembersPage() {
   const changeRole = async (member: Member, newRole: string) => {
     // Only super admins may change roles
     if (!isSuperAdmin) {
+      console.error('changeRole blocked: isSuperAdmin=', isSuperAdmin, 'role=', role);
       toast.error('Only super admins can change roles');
       return;
     }
@@ -454,6 +455,13 @@ export default function AdminMembersPage() {
     <PermissionGate permissionKey="member" permissionName="Member Handling">
       <div className="min-h-screen">
         <AdminHeader title="Members" breadcrumb="Management" />
+
+      {/* Debug banner - remove after testing */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 p-2 text-xs text-center">
+          DEBUG: role={role || 'null'} | isSuperAdmin={String(isSuperAdmin)} | isAdmin={String(isAdmin)}
+        </div>
+      )}
 
       <div className="p-6 space-y-6">
         {/* Actions Bar */}
