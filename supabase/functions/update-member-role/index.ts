@@ -88,9 +88,9 @@ serve(async (req: Request) => {
 
     console.log('update-member-role called by', userId, 'callerRole=', callerRole, 'callerMemId=', callerMemId, 'memIds=', memIds, 'newRole=', newRole, 'totalSuper=', totalSuper);
 
-    // Prevent non-super_admins from promoting to admin/super_admin
-    if ((newRole === 'admin' || newRole === 'super_admin') && callerRole !== 'super_admin') {
-      return new Response(JSON.stringify({ error: 'Only super admins can promote to admin or super_admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    // Only super_admin can change roles
+    if (callerRole !== 'super_admin') {
+      return new Response(JSON.stringify({ error: 'Only super admins can change roles' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Enforce at most 2 super_admins: if promoting targets to super_admin, ensure limit
@@ -102,28 +102,16 @@ serve(async (req: Request) => {
     }
 
     // Prevent the last remaining super_admin from downgrading themselves
-    if (callerRole === 'super_admin' && memIds.includes(callerMemId) && newRole !== 'super_admin' && totalSuper <= 1) {
+    if (memIds.includes(callerMemId) && newRole !== 'super_admin' && totalSuper <= 1) {
       return new Response(JSON.stringify({ error: 'Cannot change role: would remove the last super_admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // If caller is admin (not super_admin), ensure targets are not admins/super_admins (no downgrades)
-    if (callerRole !== 'super_admin') {
-      if (callerRole !== 'admin') {
-        return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
-      const protectedTarget = (targets || []).find((t: any) => t.role === 'admin' || t.role === 'super_admin');
-      if (protectedTarget) {
-        return new Response(JSON.stringify({ error: 'Admins may not change roles of admin/super_admin users' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-    }
-
-    // Perform update using a security-definer RPC which sets a session flag
-    // that the trigger respects. This avoids the trigger raising 'forbidden'.
-    const { data: updated, error: updErr } = await adminClient.rpc('set_member_roles', {
-      p_ids: memIds,
-      p_role: newRole,
-    }) as any;
+    // Perform update directly with service role (bypasses RLS)
+    const { data: updated, error: updErr } = await adminClient
+      .from('members')
+      .update({ role: newRole })
+      .in('mem_id', memIds)
+      .select('mem_id, role');
     if (updErr) throw updErr;
 
     return new Response(JSON.stringify({ updated: updated ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
