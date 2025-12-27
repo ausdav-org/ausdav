@@ -14,6 +14,7 @@ import {
   Save,
   RotateCcw,
   Settings2,
+  Pencil,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { PermissionGate } from '@/components/admin/PermissionGate';
@@ -215,9 +216,9 @@ function validateRanges(r: GradeRanges): string | null {
   return null;
 }
 
-function gradeFromMark(mark: unknown, ranges: GradeRanges): 'A' | 'B' | 'C' | 'S' | 'F' | '-' {
+function gradeFromMark(mark: unknown, ranges: GradeRanges): 'A' | 'B' | 'C' | 'S' | 'F' | null {
   const n = toNumberOrNull(mark);
-  if (n === null) return '-';
+  if (n === null) return null;
   if (n >= ranges.A_min) return 'A';
   if (n >= ranges.B_min) return 'B';
   if (n >= ranges.C_min) return 'C';
@@ -295,6 +296,24 @@ export default function AdminResultsPage() {
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedApplicant, setSelectedApplicant] = useState<ApplicantWithResult | null>(null);
+
+  // Edit applicant dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingApplicant, setEditingApplicant] = useState<ApplicantWithResult | null>(null);
+  const [editForm, setEditForm] = useState({
+    fullname: '',
+    gender: true,
+    stream: '',
+    nic: '',
+    phone: '',
+    email: '',
+    school: '',
+    physics_marks: '',
+    chemistry_marks: '',
+    maths_marks: '',
+    bio_marks: '',
+  });
+  const [editSaving, setEditSaving] = useState(false);
 
   const uniqueYears = useMemo(() => {
     return [...new Set(applicants.map((a) => a.year))].sort((a, b) => b - a);
@@ -950,10 +969,14 @@ export default function AdminResultsPage() {
       const bioRanges = gradeRangesAppliedBySubject.bio;
 
       const chunkSize = 120;
+      let successCount = 0;
+      let errorCount = 0;
+      const errorMessages: string[] = [];
+
       for (let i = 0; i < records.length; i += chunkSize) {
         const chunk = records.slice(i, i + chunkSize);
 
-        await Promise.all(
+        const results = await Promise.all(
           chunk.map(async (r) => {
             // Compute grades
             const physics_grade = gradeFromMark(r.physics_marks, phyRanges);
@@ -962,7 +985,7 @@ export default function AdminResultsPage() {
             const bio_grade = r.stream === 'Biology' ? gradeFromMark(r.bio_marks, bioRanges) : null;
 
             // Upsert into results table
-            return supabase
+            const { error } = await supabase
               .from('results' as any)
               .upsert({
                 index_no: r.index_no,
@@ -993,14 +1016,42 @@ export default function AdminResultsPage() {
                 bio_c_min: bioRanges.C_min,
                 bio_s_min: bioRanges.S_min,
               }, { onConflict: 'index_no' });
+
+            if (error) {
+              console.error(`Error upserting ${r.index_no}:`, error);
+              return { success: false, index_no: r.index_no, error: error.message };
+            }
+            return { success: true, index_no: r.index_no };
           })
         );
+
+        for (const result of results) {
+          if (result.success) {
+            successCount++;
+          } else {
+            errorCount++;
+            if (errorMessages.length < 5) {
+              errorMessages.push(`${result.index_no}: ${result.error}`);
+            }
+          }
+        }
       }
 
       await fetchApplicants();
-      await recalcZScoreAndRankForYear(selectedYear);
+      if (successCount > 0 && selectedYear) {
+        await recalcZScoreAndRankForYear(selectedYear);
+      }
 
-      toast.success(`Successfully uploaded ${records.length} results`);
+      if (errorCount > 0) {
+        const errorSummary = errorMessages.join('\n');
+        toast.error(`Failed to upload ${errorCount} records. First errors:\n${errorSummary}`);
+        if (successCount > 0) {
+          toast.success(`Successfully uploaded ${successCount} results`);
+        }
+      } else {
+        toast.success(`Successfully uploaded ${successCount} results`);
+      }
+      
       setUploadOpen(false);
       setCsvFile(null);
 
@@ -1040,6 +1091,153 @@ export default function AdminResultsPage() {
   const openDetails = (applicant: ApplicantWithResult) => {
     setSelectedApplicant(applicant);
     setDetailsOpen(true);
+  };
+
+  // Edit applicant handlers
+  const openEditDialog = (applicant: ApplicantWithResult) => {
+    setEditingApplicant(applicant);
+    setEditForm({
+      fullname: applicant.fullname,
+      gender: applicant.gender,
+      stream: applicant.stream,
+      nic: applicant.nic,
+      phone: applicant.phone || '',
+      email: applicant.email || '',
+      school: applicant.school,
+      physics_marks: applicant.result?.physics_marks?.toString() || '',
+      chemistry_marks: applicant.result?.chemistry_marks?.toString() || '',
+      maths_marks: applicant.result?.maths_marks?.toString() || '',
+      bio_marks: applicant.result?.bio_marks?.toString() || '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingApplicant) return;
+
+    if (!editForm.fullname.trim()) {
+      toast.error('Full name is required');
+      return;
+    }
+    if (!editForm.stream.trim()) {
+      toast.error('Stream is required');
+      return;
+    }
+    if (!editForm.nic.trim()) {
+      toast.error('NIC is required');
+      return;
+    }
+    if (!editForm.school.trim()) {
+      toast.error('School is required');
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      // Update applicant info
+      const { error: applicantError } = await supabase
+        .from('applicants' as any)
+        .update({
+          fullname: editForm.fullname.trim(),
+          gender: editForm.gender,
+          stream: editForm.stream.trim(),
+          nic: editForm.nic.trim(),
+          phone: editForm.phone.trim() || null,
+          email: editForm.email.trim() || null,
+          school: editForm.school.trim(),
+        })
+        .eq('applicant_id', editingApplicant.applicant_id);
+
+      if (applicantError) throw applicantError;
+
+      // Parse marks
+      const physicsMarks = editForm.physics_marks.trim() ? Number(editForm.physics_marks) : null;
+      const chemistryMarks = editForm.chemistry_marks.trim() ? Number(editForm.chemistry_marks) : null;
+      const mathsMarks = editForm.maths_marks.trim() ? Number(editForm.maths_marks) : null;
+      const bioMarks = editForm.bio_marks.trim() ? Number(editForm.bio_marks) : null;
+
+      // Compute grades based on current ranges
+      const phyRanges = gradeRangesAppliedBySubject.physics;
+      const cheRanges = gradeRangesAppliedBySubject.chemistry;
+      const mathsRanges = gradeRangesAppliedBySubject.maths;
+      const bioRanges = gradeRangesAppliedBySubject.bio;
+
+      const physics_grade = gradeFromMark(physicsMarks, phyRanges);
+      const chemistry_grade = gradeFromMark(chemistryMarks, cheRanges);
+      const maths_grade = editForm.stream === 'Maths' ? gradeFromMark(mathsMarks, mathsRanges) : null;
+      const bio_grade = editForm.stream === 'Biology' ? gradeFromMark(bioMarks, bioRanges) : null;
+
+      // Update or insert results
+      if (editingApplicant.result) {
+        // Update existing result
+        const { error: resultError } = await supabase
+          .from('results' as any)
+          .update({
+            stream: editForm.stream.trim(),
+            physics_marks: physicsMarks,
+            chemistry_marks: chemistryMarks,
+            maths_marks: mathsMarks,
+            bio_marks: bioMarks,
+            physics_grade,
+            chemistry_grade,
+            maths_grade,
+            bio_grade,
+          })
+          .eq('result_id', editingApplicant.result.result_id);
+
+        if (resultError) throw resultError;
+      } else if (physicsMarks !== null || chemistryMarks !== null || mathsMarks !== null || bioMarks !== null) {
+        // Insert new result if any marks are provided
+        const { error: resultError } = await supabase
+          .from('results' as any)
+          .insert({
+            index_no: editingApplicant.index_no,
+            stream: editForm.stream.trim(),
+            year: editingApplicant.year,
+            physics_marks: physicsMarks,
+            chemistry_marks: chemistryMarks,
+            maths_marks: mathsMarks,
+            bio_marks: bioMarks,
+            physics_grade,
+            chemistry_grade,
+            maths_grade,
+            bio_grade,
+            phy_a_min: phyRanges.A_min,
+            phy_b_min: phyRanges.B_min,
+            phy_c_min: phyRanges.C_min,
+            phy_s_min: phyRanges.S_min,
+            che_a_min: cheRanges.A_min,
+            che_b_min: cheRanges.B_min,
+            che_c_min: cheRanges.C_min,
+            che_s_min: cheRanges.S_min,
+            maths_a_min: mathsRanges.A_min,
+            maths_b_min: mathsRanges.B_min,
+            maths_c_min: mathsRanges.C_min,
+            maths_s_min: mathsRanges.S_min,
+            bio_a_min: bioRanges.A_min,
+            bio_b_min: bioRanges.B_min,
+            bio_c_min: bioRanges.C_min,
+            bio_s_min: bioRanges.S_min,
+          });
+
+        if (resultError) throw resultError;
+      }
+
+      // Recalculate z-scores and ranks for the year
+      if (selectedYear) {
+        await recalcZScoreAndRankForYear(selectedYear);
+      }
+
+      toast.success('Applicant updated successfully');
+      setEditOpen(false);
+      setEditingApplicant(null);
+      await fetchApplicants();
+    } catch (error) {
+      console.error('Error updating applicant:', error);
+      toast.error('Failed to update applicant');
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   if (loading) {
@@ -1510,6 +1708,10 @@ export default function AdminResultsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openEditDialog(a)}>
+                                  <Pencil className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => openDetails(a)}>
                                   <FileText className="h-4 w-4 mr-2" />
                                   View Details
@@ -1737,6 +1939,202 @@ export default function AdminResultsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDetailsOpen(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Applicant Dialog */}
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) setEditingApplicant(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Applicant</DialogTitle>
+            <DialogDescription>
+              Update applicant details and marks. Index number cannot be changed.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingApplicant && (
+            <div className="space-y-6">
+              <div className="p-3 bg-muted rounded-lg">
+                <span className="text-sm text-muted-foreground">Index No: </span>
+                <span className="font-mono font-medium">{editingApplicant.index_no}</span>
+              </div>
+
+              {/* Personal Information */}
+              <div className="space-y-4">
+                <h4 className="font-medium text-sm text-muted-foreground">Personal Information</h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-fullname">Full Name *</Label>
+                    <Input
+                      id="edit-fullname"
+                      value={editForm.fullname}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, fullname: e.target.value }))}
+                      placeholder="Enter full name"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Gender *</Label>
+                    <Select
+                      value={editForm.gender ? 'male' : 'female'}
+                      onValueChange={(v) => setEditForm((prev) => ({ ...prev, gender: v === 'male' }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select gender" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="male">Male</SelectItem>
+                        <SelectItem value="female">Female</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-stream">Stream *</Label>
+                    <Select
+                      value={editForm.stream}
+                      onValueChange={(v) => setEditForm((prev) => ({ ...prev, stream: v }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select stream" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Maths">Maths</SelectItem>
+                        <SelectItem value="Biology">Biology</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-nic">NIC *</Label>
+                    <Input
+                      id="edit-nic"
+                      value={editForm.nic}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, nic: e.target.value }))}
+                      placeholder="Enter NIC"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-phone">Phone</Label>
+                    <Input
+                      id="edit-phone"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                      placeholder="Enter phone number"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-email">Email</Label>
+                    <Input
+                      id="edit-email"
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                      placeholder="Enter email"
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="edit-school">School *</Label>
+                    <Input
+                      id="edit-school"
+                      value={editForm.school}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, school: e.target.value }))}
+                      placeholder="Enter school name"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Marks */}
+              <div className="space-y-4">
+                <h4 className="font-medium text-sm text-muted-foreground">Marks (leave empty if not available)</h4>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-physics">Physics</Label>
+                    <Input
+                      id="edit-physics"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editForm.physics_marks}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, physics_marks: e.target.value }))}
+                      placeholder="0-100"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-chemistry">Chemistry</Label>
+                    <Input
+                      id="edit-chemistry"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editForm.chemistry_marks}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, chemistry_marks: e.target.value }))}
+                      placeholder="0-100"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-maths">
+                      Maths {editForm.stream === 'Biology' && <span className="text-muted-foreground">(N/A)</span>}
+                    </Label>
+                    <Input
+                      id="edit-maths"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editForm.maths_marks}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, maths_marks: e.target.value }))}
+                      placeholder="0-100"
+                      disabled={editForm.stream === 'Biology'}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-bio">
+                      Biology {editForm.stream === 'Maths' && <span className="text-muted-foreground">(N/A)</span>}
+                    </Label>
+                    <Input
+                      id="edit-bio"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editForm.bio_marks}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, bio_marks: e.target.value }))}
+                      placeholder="0-100"
+                      disabled={editForm.stream === 'Maths'}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Grades will be automatically calculated based on current grade ranges. Z-scores and ranks will be recalculated after saving.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditSave} disabled={editSaving}>
+              {editSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
