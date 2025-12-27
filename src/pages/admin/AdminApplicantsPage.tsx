@@ -138,6 +138,19 @@ export default function AdminApplicantsPage() {
   });
   const [editSaving, setEditSaving] = useState(false);
 
+  // Add single applicant dialog
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({
+    fullname: '',
+    gender: true,
+    stream: '',
+    nic: '',
+    phone: '',
+    email: '',
+    school: '',
+  });
+  const [addSaving, setAddSaving] = useState(false);
+
   // Get unique years from all applicants (descending order)
   const uniqueYears = useMemo(() => {
     return [...new Set(applicants.map(a => a.year))].sort((a, b) => b - a);
@@ -757,6 +770,12 @@ export default function AdminApplicantsPage() {
                       <Upload className="h-4 w-4 mr-1" />
                       Import
                     </Button>
+                    {isAdmin && (
+                      <Button size="sm" onClick={() => setAddOpen(true)}>
+                        <UserPlus className="h-4 w-4 mr-1" />
+                        Add Applicant
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -1171,6 +1190,148 @@ export default function AdminApplicantsPage() {
               <Button onClick={handleEditSave} disabled={editSaving}>
                 {editSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Applicant Dialog */}
+        <Dialog
+          open={addOpen}
+          onOpenChange={(open) => {
+            setAddOpen(open);
+            if (!open) setAddForm({ fullname: '', gender: true, stream: '', nic: '', phone: '', email: '', school: '' });
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Add Applicant</DialogTitle>
+              <DialogDescription>
+                Create a single applicant record. Index number will be generated automatically.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="add-fullname">Full Name *</Label>
+                <Input
+                  id="add-fullname"
+                  value={addForm.fullname}
+                  onChange={(e) => setAddForm((p) => ({ ...p, fullname: e.target.value }))}
+                  placeholder="Enter full name"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Gender *</Label>
+                <Select
+                  value={addForm.gender ? 'male' : 'female'}
+                  onValueChange={(v) => setAddForm((p) => ({ ...p, gender: v === 'male' }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="male">Male</SelectItem>
+                    <SelectItem value="female">Female</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Stream *</Label>
+                <Select value={addForm.stream} onValueChange={(v) => setAddForm((p) => ({ ...p, stream: v }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select stream" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Maths">Maths</SelectItem>
+                    <SelectItem value="Biology">Biology</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="add-nic">NIC *</Label>
+                <Input
+                  id="add-nic"
+                  value={addForm.nic}
+                  onChange={(e) => setAddForm((p) => ({ ...p, nic: e.target.value }))}
+                  placeholder="Enter NIC"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="add-phone">Phone</Label>
+                <Input
+                  id="add-phone"
+                  value={addForm.phone}
+                  onChange={(e) => setAddForm((p) => ({ ...p, phone: e.target.value }))}
+                  placeholder="Enter phone number"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="add-email">Email</Label>
+                <Input
+                  id="add-email"
+                  type="email"
+                  value={addForm.email}
+                  onChange={(e) => setAddForm((p) => ({ ...p, email: e.target.value }))}
+                  placeholder="Enter email"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="add-school">School *</Label>
+                <Input
+                  id="add-school"
+                  value={addForm.school}
+                  onChange={(e) => setAddForm((p) => ({ ...p, school: e.target.value }))}
+                  placeholder="Enter school name"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAddOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={async () => {
+                // validate
+                if (!addForm.fullname.trim()) { toast.error('Full name is required'); return; }
+                if (!addForm.stream.trim()) { toast.error('Stream is required'); return; }
+                if (!addForm.nic.trim()) { toast.error('NIC is required'); return; }
+                if (!addForm.school.trim()) { toast.error('School is required'); return; }
+                if (selectedYear === null) { toast.error('Select a year first'); return; }
+
+                setAddSaving(true);
+                try {
+                  const { data: generatedIndex, error } = await supabase.rpc('insert_applicant', {
+                    p_fullname: addForm.fullname.trim(),
+                    p_gender: addForm.gender,
+                    p_stream: addForm.stream.trim(),
+                    p_nic: addForm.nic.trim(),
+                    p_phone: addForm.phone.trim() || null,
+                    p_email: addForm.email.trim() || null,
+                    p_school: addForm.school.trim(),
+                    p_year: selectedYear,
+                  });
+
+                  if (error) throw error;
+                  toast.success(`Applicant created (${generatedIndex as string})`);
+                  setAddOpen(false);
+                  setAddForm({ fullname: '', gender: true, stream: '', nic: '', phone: '', email: '', school: '' });
+                  fetchApplicants();
+                } catch (err) {
+                  console.error('Error creating applicant:', err);
+                  toast.error('Failed to create applicant');
+                } finally {
+                  setAddSaving(false);
+                }
+              }} disabled={addSaving}>
+                {addSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Create
               </Button>
             </DialogFooter>
           </DialogContent>
