@@ -1,0 +1,7 @@
+{
+  "name": "update-member-role",
+  "runtime": "deno",
+  "slug": "update-member-role",
+  "path": "./",
+  "entrypoint": "index.ts"
+}

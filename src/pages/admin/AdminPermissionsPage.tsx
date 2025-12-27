@@ -27,6 +27,7 @@ import { AdminHeader } from '@/components/admin/AdminHeader';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { usePermissionRequests, PermissionRequest, AdminWithPermissions } from '@/hooks/usePermissionRequests';
+import { useAdminRefresh } from '@/hooks/useAdminRefresh';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -89,6 +90,14 @@ const AdminPermissionsPage: React.FC = () => {
     revokePermission,
     refresh,
   } = usePermissionRequests();
+
+  useAdminRefresh(() => {
+    try {
+      refresh();
+    } catch (e) {
+      // ignore
+    }
+  });
 
   const [reviewingRequest, setReviewingRequest] = useState<PermissionRequest | null>(null);
   const [reviewNote, setReviewNote] = useState('');

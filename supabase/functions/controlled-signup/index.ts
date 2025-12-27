@@ -51,8 +51,22 @@ serve(async (req: Request) => {
   const email = payload?.email?.trim();
   const password = payload?.password;
 
-  if (!email || !password || password.length < 8) {
-    return new Response(JSON.stringify({ error: "Email and password are required" }), {
+  if (!email) {
+    return new Response(JSON.stringify({ error: "Email is required" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (!password) {
+    return new Response(JSON.stringify({ error: "Password is required" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (password.length < 8) {
+    return new Response(JSON.stringify({ error: "Password must be at least 8 characters" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

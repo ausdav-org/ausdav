@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Info,
   AlertTriangle,
+  Pencil,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { PermissionGate } from '@/components/admin/PermissionGate';
@@ -79,8 +80,8 @@ import { PieChart, Pie, Cell, Legend } from 'recharts';
  * - VITE_SUPABASE_ANON_KEY_2
  */
 const supabase2 = createClient(
-  import.meta.env.VITE_SUPABASE_URL_2 as string,
-  import.meta.env.VITE_SUPABASE_ANON_KEY_2 as string
+  import.meta.env.VITE_SUPABASE_URL as string,
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
 );
 
 type AppSettings = {
@@ -122,6 +123,20 @@ export default function AdminApplicantsPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+
+  // Edit applicant dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingApplicant, setEditingApplicant] = useState<Applicant | null>(null);
+  const [editForm, setEditForm] = useState({
+    fullname: '',
+    gender: true,
+    stream: '',
+    nic: '',
+    phone: '',
+    email: '',
+    school: '',
+  });
+  const [editSaving, setEditSaving] = useState(false);
 
   // Get unique years from all applicants (descending order)
   const uniqueYears = useMemo(() => {
@@ -268,6 +283,75 @@ export default function AdminApplicantsPage() {
   const exampleYearTwoDigits = String(exampleYear).slice(-2);
   const indexExample = `${exampleYearTwoDigits}0000${currentStreamLetter}`;
 
+  // Edit applicant handlers
+  const openEditDialog = (applicant: Applicant) => {
+    setEditingApplicant(applicant);
+    setEditForm({
+      fullname: applicant.fullname,
+      gender: applicant.gender,
+      stream: applicant.stream,
+      nic: applicant.nic,
+      phone: applicant.phone || '',
+      email: applicant.email || '',
+      school: applicant.school,
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingApplicant) return;
+
+    if (!editForm.fullname.trim()) {
+      toast.error('Full name is required');
+      return;
+    }
+    if (!editForm.stream.trim()) {
+      toast.error('Stream is required');
+      return;
+    }
+    if (!editForm.nic.trim()) {
+      toast.error('NIC is required');
+      return;
+    }
+    if (!editForm.school.trim()) {
+      toast.error('School is required');
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      const { error } = await supabase
+        .from('applicants' as any)
+        .update({
+          fullname: editForm.fullname.trim(),
+          gender: editForm.gender,
+          stream: editForm.stream.trim(),
+          nic: editForm.nic.trim(),
+          phone: editForm.phone.trim() || null,
+          email: editForm.email.trim() || null,
+          school: editForm.school.trim(),
+        })
+        .eq('applicant_id', editingApplicant.applicant_id);
+
+      if (error) throw error;
+
+      toast.success('Applicant updated successfully');
+      setEditOpen(false);
+      setEditingApplicant(null);
+      fetchApplicants();
+    } catch (error) {
+      console.error('Error updating applicant:', error);
+      toast.error('Failed to update applicant');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // ✅ UPDATED CSV UPLOAD:
+  // - index_no in CSV must be EMPTY
+  // - system generates YY + (last 4 digits + 1, padded) + StreamLetter
+  // - 4 digits are COMMON for the entire year (not per stream)
+  // - increment follows CSV row order
   const handleCsvUpload = async () => {
     if (!csvFile) {
       toast.error('Please select a CSV file');
@@ -870,6 +954,10 @@ export default function AdminApplicantsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openEditDialog(applicant)}>
+                                  <Pencil className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
                                 <DropdownMenuItem>
                                   <FileText className="h-4 w-4 mr-2" />
                                   View Details
@@ -963,6 +1051,126 @@ export default function AdminApplicantsPage() {
               <Button onClick={handleCsvUpload} disabled={uploading}>
                 {uploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Upload
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Applicant Dialog */}
+        <Dialog
+          open={editOpen}
+          onOpenChange={(open) => {
+            setEditOpen(open);
+            if (!open) setEditingApplicant(null);
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit Applicant</DialogTitle>
+              <DialogDescription>
+                Update the applicant details. Index number cannot be changed.
+              </DialogDescription>
+            </DialogHeader>
+
+            {editingApplicant && (
+              <div className="space-y-4">
+                <div className="p-3 bg-muted rounded-lg">
+                  <span className="text-sm text-muted-foreground">Index No: </span>
+                  <span className="font-mono font-medium">{editingApplicant.index_no}</span>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-fullname">Full Name *</Label>
+                  <Input
+                    id="edit-fullname"
+                    value={editForm.fullname}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, fullname: e.target.value }))}
+                    placeholder="Enter full name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Gender *</Label>
+                  <Select
+                    value={editForm.gender ? 'male' : 'female'}
+                    onValueChange={(v) => setEditForm((prev) => ({ ...prev, gender: v === 'male' }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-stream">Stream *</Label>
+                  <Select
+                    value={editForm.stream}
+                    onValueChange={(v) => setEditForm((prev) => ({ ...prev, stream: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select stream" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Maths">Maths</SelectItem>
+                      <SelectItem value="Biology">Biology</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-nic">NIC *</Label>
+                  <Input
+                    id="edit-nic"
+                    value={editForm.nic}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, nic: e.target.value }))}
+                    placeholder="Enter NIC"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-phone">Phone</Label>
+                  <Input
+                    id="edit-phone"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="Enter phone number"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-email">Email</Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                    placeholder="Enter email"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-school">School *</Label>
+                  <Input
+                    id="edit-school"
+                    value={editForm.school}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, school: e.target.value }))}
+                    placeholder="Enter school name"
+                  />
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleEditSave} disabled={editSaving}>
+                {editSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save Changes
               </Button>
             </DialogFooter>
           </DialogContent>
