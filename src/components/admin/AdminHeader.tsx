@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { LogOut, User, Shield, ChevronDown, RefreshCw } from 'lucide-react';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ interface AdminHeaderProps {
 export function AdminHeader({ title, breadcrumb }: AdminHeaderProps) {
   const { profile, role, signOut } = useAdminAuth();
   const navigate = useNavigate();
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
@@ -52,14 +54,25 @@ export function AdminHeader({ title, breadcrumb }: AdminHeaderProps) {
           title="Refresh admin tables"
           onClick={() => {
             try {
+              setRefreshing(true);
               dispatchAdminRefresh();
+              // Fallback: stop animation after a short delay if no explicit done event
+              const t = setTimeout(() => setRefreshing(false), 1200);
+              // Listen once for an optional explicit completion event
+              const doneHandler = () => {
+                clearTimeout(t);
+                setRefreshing(false);
+                window.removeEventListener('admin:refresh:done', doneHandler);
+              };
+              window.addEventListener('admin:refresh:done', doneHandler);
             } catch (e) {
               // fallback to full reload
               window.location.reload();
             }
           }}
+          disabled={refreshing}
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className={`h-4 w-4 transition-transform ${refreshing ? 'animate-spin' : ''}`} />
         </Button>
 
         <DropdownMenu>
