@@ -157,6 +157,9 @@ const ExamPage: React.FC = () => {
   const [resultData, setResultData] = useState<ResultDisplay | null>(null);
   const [showResultSheet, setShowResultSheet] = useState(false);
 
+  // ✅ NEW: store the applicant's real index number (works even when searching by NIC)
+  const [foundIndexNo, setFoundIndexNo] = useState<string>('');
+
   const [paperFilter, setPaperFilter] = useState({ subject: '' });
   const [expandedYear, setExpandedYear] = useState<string | null>(null);
 
@@ -365,7 +368,7 @@ const ExamPage: React.FC = () => {
     setFieldErrors(errors);
 
     // Check if any field has error
-    if (Object.values(errors).some(error => error)) {
+    if (Object.values(errors).some((error) => error)) {
       toast.error(language === 'en' ? 'Please fill all required fields' : 'தயவுசெய்து அனைத்து தேவையான புலங்களையும் நிரப்பவும்');
       return;
     }
@@ -406,15 +409,15 @@ const ExamPage: React.FC = () => {
       handleApplyReset();
     } catch (error: any) {
       console.error('Error submitting application:', error);
-      let errorMessage = language === 'en'
-        ? 'Failed to submit application. Please try again.'
-        : 'விண்ணப்பத்தை சமர்ப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.';
+      let errorMessage =
+        language === 'en'
+          ? 'Failed to submit application. Please try again.'
+          : 'விண்ணப்பத்தை சமர்ப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.';
 
       // Check for unique constraint violation on NIC
       if (error?.code === '23505' && error?.message?.includes('applicants_nic_unique')) {
-        errorMessage = language === 'en'
-          ? 'An application with this NIC already exists.'
-          : 'இந்த NIC கொண்ட விண்ணப்பம் ஏற்கனவே உள்ளது.';
+        errorMessage =
+          language === 'en' ? 'An application with this NIC already exists.' : 'இந்த NIC கொண்ட விண்ணப்பம் ஏற்கனவே உள்ளது.';
       }
 
       toast.error(errorMessage);
@@ -453,10 +456,14 @@ const ExamPage: React.FC = () => {
         toast.error(language === 'en' ? 'No applicant found' : 'விண்ணப்பதாரர் கிடைக்கவில்லை');
         setResultData(null);
         setShowResultSheet(false);
+        setFoundIndexNo(''); // ✅ clear
         return;
       }
 
       const applicant = applicantData as unknown as ApplicantRecord;
+
+      // ✅ NEW: keep the real index number for certificate display
+      setFoundIndexNo(applicant.index_no);
 
       // Now find the result for this applicant
       const { data: resultData, error: resultError } = await supabase
@@ -472,6 +479,7 @@ const ExamPage: React.FC = () => {
         toast.error(language === 'en' ? 'No results found for this applicant' : 'இந்த விண்ணப்பதாரருக்கு முடிவுகள் கிடைக்கவில்லை');
         setResultData(null);
         setShowResultSheet(false);
+        setFoundIndexNo(''); // ✅ clear
         return;
       }
 
@@ -485,7 +493,7 @@ const ExamPage: React.FC = () => {
         stream: applicant.stream,
         physics_grade: result.physics_grade || '-',
         chemistry_grade: result.chemistry_grade || '-',
-        maths_or_bio_grade: isMaths ? (result.maths_grade || '-') : (result.bio_grade || '-'),
+        maths_or_bio_grade: isMaths ? result.maths_grade || '-' : result.bio_grade || '-',
         maths_or_bio_label: isMaths ? 'Maths' : 'Biology',
         zscore: result.zscore?.toFixed(4) || '-',
         rank: result.rank,
@@ -498,6 +506,7 @@ const ExamPage: React.FC = () => {
       toast.error(language === 'en' ? 'Failed to fetch results' : 'முடிவுகளைப் பெற முடியவில்லை');
       setResultData(null);
       setShowResultSheet(false);
+      setFoundIndexNo(''); // ✅ clear
     }
   };
 
@@ -505,6 +514,7 @@ const ExamPage: React.FC = () => {
     setResultsForm(defaultResultsForm);
     setResultData(null);
     setShowResultSheet(false);
+    setFoundIndexNo(''); // ✅ clear
   };
 
   // Check whether an index number is registered
@@ -531,9 +541,8 @@ const ExamPage: React.FC = () => {
 
       // Query by chosen identifier
       const query = supabase.from('applicants' as any).select('*');
-      const res = regCheckIdType === 'Index No'
-        ? await query.eq('index_no', idx).maybeSingle()
-        : await query.eq('nic', idx).maybeSingle();
+      const res =
+        regCheckIdType === 'Index No' ? await query.eq('index_no', idx).maybeSingle() : await query.eq('nic', idx).maybeSingle();
 
       if (res.error) throw res.error;
 
@@ -590,10 +599,12 @@ const ExamPage: React.FC = () => {
   const certNIC = resultData?.nic ?? '-';
   const certRank = resultData?.rank ?? '-';
 
-  // From search form
+  // From search form + applicant result
   const certStream = resultsForm.stream || '-';
   const certYear = resultsForm.year || '-';
-  const certIndex = resultsForm.idType === 'Index No' ? resultsForm.idValue || '-' : '-';
+
+  // ✅ UPDATED: always show the real index no (even when searched by NIC)
+  const certIndex = foundIndexNo || (resultsForm.idType === 'Index No' ? resultsForm.idValue || '-' : '-');
 
   // Subject grades (from result)
   const physicsGrade = resultData?.physics_grade ?? '-';
@@ -649,7 +660,6 @@ const ExamPage: React.FC = () => {
 
       <section className="py-16 md:py-24 bg-background">
         <div className="container mx-auto px-4">
-
           {/* Registration check card */}
           <div className="max-w-2xl mx-auto mb-6">
             <Card>
@@ -669,15 +679,29 @@ const ExamPage: React.FC = () => {
                 <Input
                   value={regCheckIndex}
                   onChange={(e) => setRegCheckIndex(e.target.value)}
-                  placeholder={regCheckIdType === 'Index No' ? (language === 'en' ? 'Enter Index Number (e.g. 250001M)' : 'குறிப்பு எண் உள்ளிடவும் (எ.கா. 250001M)') : (language === 'en' ? 'Enter NIC (12 digits)' : 'NIC உள்ளிடவும் (12 இலக்கங்கள்)')}
+                  placeholder={
+                    regCheckIdType === 'Index No'
+                      ? language === 'en'
+                        ? 'Enter Index Number (e.g. 250001M)'
+                        : 'குறிப்பு எண் உள்ளிடவும் (எ.கா. 250001M)'
+                      : language === 'en'
+                        ? 'Enter NIC (12 digits)'
+                        : 'NIC உள்ளிடவும் (12 இலக்கங்கள்)'
+                  }
                   className="flex-1"
                 />
 
                 <div className="flex gap-2">
                   <Button onClick={(e) => handleCheckIndex(e)} disabled={regChecking} className="whitespace-nowrap">
-                    {regChecking ? (language === 'en' ? 'Checking...' : 'சரிபாரித்தல்...') : (language === 'en' ? 'Check Registration' : 'பதிவைச் சரிபார்')}
+                    {regChecking ? (language === 'en' ? 'Checking...' : 'சரிபாரித்தல்...') : language === 'en' ? 'Check Registration' : 'பதிவைச் சரிபார்'}
                   </Button>
-                  <Button variant="ghost" onClick={() => { setRegCheckIndex(''); setRegCheckResult(null); }}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setRegCheckIndex('');
+                      setRegCheckResult(null);
+                    }}
+                  >
                     {language === 'en' ? 'Clear' : 'அழி'}
                   </Button>
                 </div>
@@ -689,13 +713,19 @@ const ExamPage: React.FC = () => {
                     <div>
                       <div className="text-sm text-muted-foreground">{language === 'en' ? 'Registered' : 'பதிவுசெய்யப்பட்டுள்ளது'}</div>
                       <div className="font-semibold mt-1">{regCheckResult.applicant?.fullname}</div>
-                      <div className="text-xs text-muted-foreground">{regCheckResult.applicant?.index_no} • {regCheckResult.applicant?.school} • {regCheckResult.applicant?.nic}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {regCheckResult.applicant?.index_no} • {regCheckResult.applicant?.school} • {regCheckResult.applicant?.nic}
+                      </div>
                     </div>
                   ) : (
                     <div className="text-sm text-destructive">
                       {regCheckIdType === 'Index No'
-                        ? (language === 'en' ? 'No registration found for that index number.' : 'அந்த குறிப்பு எண்ணிற்கு பதிவு கிடைக்கவில்லை.')
-                        : (language === 'en' ? 'No registration found for that NIC.' : 'அந்த NICக்கான பதிவு கிடைக்கவில்லை.')}
+                        ? language === 'en'
+                          ? 'No registration found for that index number.'
+                          : 'அந்த குறிப்பு எண்ணிற்கு பதிவு கிடைக்கவில்லை.'
+                        : language === 'en'
+                          ? 'No registration found for that NIC.'
+                          : 'அந்த NICக்கான பதிவு கிடைக்கவில்லை.'}
                     </div>
                   )}
                 </CardContent>
@@ -739,9 +769,7 @@ const ExamPage: React.FC = () => {
                       {!examSettingLoading && !examApplicationsOpen ? (
                         <Card className="border-destructive/30 bg-destructive/5">
                           <CardContent className="p-6 space-y-2">
-                            <h3 className="text-xl font-semibold text-destructive">
-                              {language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது'}
-                            </h3>
+                            <h3 className="text-xl font-semibold text-destructive">{language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது'}</h3>
                             <p className="text-muted-foreground">
                               {language === 'en'
                                 ? 'Exam applications are currently closed. Please check back later.'
@@ -753,10 +781,10 @@ const ExamPage: React.FC = () => {
                         <form onSubmit={handleApplySubmit} className="space-y-5">
                           <div>
                             <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Full Name' : 'முழு பெயர்'}</label>
-                            <Input 
-                              value={applyForm.fullName} 
-                              onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })} 
-                              required 
+                            <Input
+                              value={applyForm.fullName}
+                              onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })}
+                              required
                               placeholder={language === 'en' ? 'Enter your full name' : 'உங்கள் முழு பெயரை உள்ளீடு செய்யவும்'}
                               className={fieldErrors.fullName ? 'border-red-500' : ''}
                             />
@@ -765,13 +793,15 @@ const ExamPage: React.FC = () => {
                           <div>
                             <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
                             <div className="relative">
-                              <Input 
-                                type="email" 
-                                value={applyForm.email} 
-                                onChange={(e) => handleEmailChange(e.target.value)} 
-                                required 
+                              <Input
+                                type="email"
+                                value={applyForm.email}
+                                onChange={(e) => handleEmailChange(e.target.value)}
+                                required
                                 placeholder={language === 'en' ? 'your.email@example.com' : 'your.email@example.com'}
-                                className={`${emailValid === false ? 'border-red-500 pr-10' : emailValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${fieldErrors.email ? 'border-red-500' : ''}`}
+                                className={`${emailValid === false ? 'border-red-500 pr-10' : emailValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${
+                                  fieldErrors.email ? 'border-red-500' : ''
+                                }`}
                               />
                               {applyForm.email && (
                                 <div className="absolute inset-y-0 right-0 flex items-center pr-3">
@@ -796,7 +826,9 @@ const ExamPage: React.FC = () => {
                                 onChange={(e) => handlePhoneChange(e.target.value)}
                                 required
                                 placeholder={language === 'en' ? '0757575757' : '0757575757'}
-                                className={`${phoneValid === false ? 'border-red-500 pr-10' : phoneValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${fieldErrors.phone ? 'border-red-500' : ''}`}
+                                className={`${phoneValid === false ? 'border-red-500 pr-10' : phoneValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${
+                                  fieldErrors.phone ? 'border-red-500' : ''
+                                }`}
                               />
                               {applyForm.phone && (
                                 <div className="absolute inset-y-0 right-0 flex items-center pr-3">
@@ -818,13 +850,15 @@ const ExamPage: React.FC = () => {
                           <div>
                             <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</label>
                             <div className="relative">
-                              <Input 
-                                value={applyForm.nic} 
-                                onChange={(e) => handleNicChange(e.target.value)} 
-                                required 
+                              <Input
+                                value={applyForm.nic}
+                                onChange={(e) => handleNicChange(e.target.value)}
+                                required
                                 inputMode="numeric"
                                 placeholder={language === 'en' ? '123456789012' : '123456789012'}
-                                className={`${(nicValid === false || nicDuplicate === true) ? 'border-red-500 pr-10' : nicValid === true && nicDuplicate === false ? 'border-green-500 pr-10' : 'pr-10'} ${fieldErrors.nic ? 'border-red-500' : ''}`}
+                                className={`${(nicValid === false || nicDuplicate === true) ? 'border-red-500 pr-10' : nicValid === true && nicDuplicate === false ? 'border-green-500 pr-10' : 'pr-10'} ${
+                                  fieldErrors.nic ? 'border-red-500' : ''
+                                }`}
                               />
                               {applyForm.nic && (
                                 <div className="absolute inset-y-0 right-0 flex items-center pr-3">
@@ -956,8 +990,7 @@ const ExamPage: React.FC = () => {
                             <div className="text-left">
                               <p className="font-semibold text-foreground">{year}</p>
                               <p className="text-sm text-muted-foreground">
-                                {yearPapers.length}{' '}
-                                {yearPapers.length === 1 ? (language === 'en' ? 'paper' : 'வினாத்தாள்') : language === 'en' ? 'papers' : 'வினாத்தாள்கள்'}
+                                {yearPapers.length} {yearPapers.length === 1 ? (language === 'en' ? 'paper' : 'வினாத்தாள்') : language === 'en' ? 'papers' : 'வினாத்தாள்கள்'}
                               </p>
                             </div>
                             <span className="text-sm text-muted-foreground">{isOpen ? (language === 'en' ? 'Hide' : 'மூடு') : language === 'en' ? 'View' : 'காண'}</span>
@@ -1133,12 +1166,7 @@ const ExamPage: React.FC = () => {
                                 <div ref={sheetRef} className="mx-auto w-full max-w-3xl">
                                   <div className="flex flex-col items-center text-center">
                                     <div className="h-16 w-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 flex items-center justify-center overflow-hidden">
-                                      <img
-                                        src={emblemImg}
-                                        alt="Emblem"
-                                        className="h-full w-full object-cover"
-                                        onError={(e) => (e.currentTarget.style.display = 'none')}
-                                      />
+                                      <img src={emblemImg} alt="Emblem" className="h-full w-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
                                     </div>
 
                                     <div className="mt-4 flex items-center gap-3 w-full max-w-2xl">
@@ -1234,22 +1262,18 @@ const ExamPage: React.FC = () => {
               )}
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="flex flex-col items-center space-y-4 py-4">
             <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-2">
-                {language === 'en' ? 'Your Reference Number:' : 'உங்கள் குறிப்பு எண்:'}
-              </p>
+              <p className="text-sm text-muted-foreground mb-2">{language === 'en' ? 'Your Reference Number:' : 'உங்கள் குறிப்பு எண்:'}</p>
               <div className="bg-primary/10 border-2 border-primary rounded-lg px-6 py-3">
-                <p className="text-2xl font-bold text-primary font-mono">
-                  {generatedIndexNo}
-                </p>
+                <p className="text-2xl font-bold text-primary font-mono">{generatedIndexNo}</p>
               </div>
             </div>
-            
+
             <div className="text-center text-sm text-muted-foreground">
               <p>
-                {language === 'en' 
+                {language === 'en'
                   ? 'Use this number to check your results and for any future communications.'
                   : 'உங்கள் முடிவுகளை சரிபார்க்க மற்றும் எதிர்கால தகவல்தொடர்புகளுக்கு இந்த எண்ணைப் பயன்படுத்தவும்.'}
               </p>
