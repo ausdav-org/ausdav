@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Megaphone,
@@ -28,6 +28,7 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import { useAdminRefresh } from '@/hooks/useAdminRefresh';
 
 interface Announcement {
   id: string;
@@ -105,6 +106,13 @@ export default function AdminAnnouncementsPage() {
       setLoading(false);
     }
   };
+
+  // external refresh support
+  const fetchRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  fetchRef.current = fetchAnnouncements;
+  useAdminRefresh(() => {
+    fetchRef.current?.();
+  });
 
   const toInputValue = (iso: string) => new Date(iso).toISOString().slice(0, 16);
 
