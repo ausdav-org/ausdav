@@ -1,17 +1,17 @@
-mem_id,fullname,email,role,auth_user_id,phone
-1,John Doe,john.doe+1@example.com,super_admin,auth_1,0400000001
-2,Jane Smith,jane.smith+2@example.com,super_admin,auth_2,0400000002
-3,Alan Turing,alan.turing+3@example.com,admin,auth_3,0400000003
-4,Ada Lovelace,ada.lovelace+4@example.com,admin,auth_4,0400000004
-5,Grace Hopper,grace.hopper+5@example.com,honourable,auth_5,0400000005
-6,Linus Torvalds,linus.torvalds+6@example.com,member,auth_6,0400000006
-7,Elena Gilbert,elena.gilbert+7@example.com,member,auth_7,0400000007
-8,Noah Centineo,noah.centineo+8@example.com,admin,auth_8,0400000008
-9,Olivia Wilde,olivia.wilde+9@example.com,honourable,auth_9,0400000009
-10,Liam Neeson,liam.neeson+10@example.com,member,auth_10,0400000010
-11,Isabella Rossellini,isabella.rossellini+11@example.com,member,auth_11,0400000011
-12,Michael Jordan,michael.jordan+12@example.com,admin,auth_12,0400000012
-13,Sarah Connor,sarah.connor+13@example.com,member,auth_13,0400000013
-14,Tony Stark,tony.stark+14@example.com,member,auth_14,0400000014
-15,Bruce Wayne,bruce.wayne+15@example.com,admin,auth_15,0400000015
-16,Clark Kent,clark.kent+16@example.com,member,,0400000016
+fullname,username,nic,gender,role,batch,university,school,phone,designation,uni_degree,profile_bucket,profile_path
+"John Doe","john.doe","199000000001","male","super_admin","2010","University of Colombo","Administration","0400000001","","MSc","member-profiles","profiles/john_doe.jpg"
+"Jane Smith","jane.smith","199000000002","female","super_admin","2011","University of Peradeniya","Administration","0400000002","","MSc","member-profiles","profiles/jane_smith.jpg"
+"Alan Turing","alan.turing","199000000003","male","admin","2009","University of Colombo","Computer Science","0400000003","lecturer","PhD","member-profiles","profiles/alan_turing.jpg"
+"Ada Lovelace","ada.lovelace","199000000004","female","admin","2008","University of Colombo","Computer Science","0400000004","lecturer","MSc","member-profiles","profiles/ada_lovelace.jpg"
+"Grace Hopper","grace.hopper","199000000005","female","honourable","2007","University of Colombo","Engineering","0400000005","senior","PhD","member-profiles","profiles/grace_hopper.jpg"
+"Linus Torvalds","linus.torvalds","199000000006","male","member","2012","University of Moratuwa","Engineering","0400000006","","BSc","member-profiles","profiles/linus_torvalds.jpg"
+"Elena Gilbert","elena.gilbert","199000000007","female","member","2013","University of Colombo","Arts","0400000007","","BA","member-profiles","profiles/elena_gilbert.jpg"
+"Noah Centineo","noah.centineo","199000000008","male","admin","2014","University of Colombo","Business","0400000008","","MBA","member-profiles","profiles/noah_centineo.jpg"
+"Olivia Wilde","olivia.wilde","199000000009","female","honourable","2015","University of Colombo","Arts","0400000009","honorary","BA","member-profiles","profiles/olivia_wilde.jpg"
+"Liam Neeson","liam.neeson","199000000010","male","member","2016","University of Colombo","Drama","0400000010","","BA","member-profiles","profiles/liam_neeson.jpg"
+"Isabella Rossellini","isabella.rossellini","199000000011","female","member","2017","University of Colombo","Arts","0400000011","","BA","member-profiles","profiles/isabella_rossellini.jpg"
+"Michael Jordan","michael.jordan","199000000012","male","admin","2018","University of Colombo","Sports Science","0400000012","coach","MSc","member-profiles","profiles/michael_jordan.jpg"
+"Sarah Connor","sarah.connor","199000000013","female","member","2019","University of Colombo","Science","0400000013","","BSc","member-profiles","profiles/sarah_connor.jpg"
+"Tony Stark","tony.stark","199000000014","male","member","2010","University of Moratuwa","Engineering","0400000014","","MEng","member-profiles","profiles/tony_stark.jpg"
+"Bruce Wayne","bruce.wayne","199000000015","male","admin","2011","University of Colombo","Business","0400000015","","MBA","member-profiles","profiles/bruce_wayne.jpg"
+"Clark Kent","clark.kent","199000000016","male","member","2012","University of Colombo","Journalism","0400000016","","BA","member-profiles","profiles/clark_kent.jpg"

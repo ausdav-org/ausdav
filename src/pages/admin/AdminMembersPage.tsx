@@ -105,17 +105,11 @@ export default function AdminMembersPage() {
 
   const fetchMembers = async () => {
     try {
-      const { data, error } = await supabase
-        // Cast to any until generated types include the new members table.
-        .from('members' as any)
-        .select(
-          'mem_id, auth_user_id, fullname, username, phone, batch, created_at, role, designation'
-        )
-        .order('created_at', { ascending: false });
-
+      // Use edge function so service-role can return all rows (including null auth_user_id)
+      const { data, error } = await invokeFunction('fetch-members', {});
       if (error) throw error;
 
-      const rows = ((data ?? []) as unknown) as RawMember[];
+      const rows = ((data?.members ?? []) as unknown) as RawMember[];
       const normalized: Member[] = rows.map((m) => ({
         ...m,
         // Keep legacy flags defined to avoid UI undefined access; server table lacks these.
