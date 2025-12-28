@@ -576,6 +576,7 @@ export default function AdminMembersPage() {
                       </TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Batch</TableHead>
+                      <TableHead>Designation</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -605,6 +606,8 @@ export default function AdminMembersPage() {
                       </TableCell>
 
                       <TableCell>{member.batch ?? '-'}</TableCell>
+
+                      <TableCell>{member.designation ? member.designation.replace(/_/g, ' ') : '-'}</TableCell>
 
                       <TableCell>
                         <Badge className={cn('capitalize', getRoleBadgeColor(member.role || ''))}>
