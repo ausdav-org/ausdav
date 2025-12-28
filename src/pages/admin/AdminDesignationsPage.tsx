@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { AdminHeader } from '@/components/admin/AdminHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -93,6 +94,8 @@ export default function AdminDesignationsPage() {
 
   return (
     <div className="space-y-4">
+        <AdminHeader title="Designations" breadcrumb="Admin / Designations" />
+
       <Card>
         <CardHeader>
           <CardTitle>Assign Designations</CardTitle>
@@ -108,7 +111,6 @@ export default function AdminDesignationsPage() {
                   <TableHead>Username</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Designation</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -139,16 +141,11 @@ export default function AdminDesignationsPage() {
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" onClick={() => fetchAdmins()} disabled={loading}>
-                        Refresh
-                      </Button>
-                    </TableCell>
                   </TableRow>
                 ))}
                 {admins.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8">
+                    <TableCell colSpan={4} className="text-center py-8">
                       {loading ? 'Loading...' : 'No admins found'}
                     </TableCell>
                   </TableRow>
