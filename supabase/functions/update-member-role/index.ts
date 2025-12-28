@@ -106,13 +106,58 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Cannot change role: would remove the last super_admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Prevent changing role of existing Honourable members away from honourable
+    if (newRole !== 'honourable') {
+      const honourableTargets = (targets || []).filter((t: any) => t.role === 'honourable');
+      if (honourableTargets.length > 0) {
+        return new Response(JSON.stringify({ error: 'Honourable role is immutable and cannot be changed' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
+    // Restrict promotions TO honourable: only targets that are currently 'admin' may be promoted
+    if (newRole === 'honourable') {
+      const nonAdminTargets = (targets || []).filter((t: any) => t.role !== 'admin');
+      if (nonAdminTargets.length > 0) {
+        return new Response(JSON.stringify({ error: 'Only members with role "admin" may be promoted to honourable' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
     // Perform update directly with service role (bypasses RLS)
     const { data: updated, error: updErr } = await adminClient
       .from('members')
       .update({ role: newRole })
       .in('mem_id', memIds)
-      .select('mem_id, role');
+      .select('mem_id, role, fullname, auth_user_id');
     if (updErr) throw updErr;
+
+    // If we just promoted members to honourable, notify all super admins
+    if (newRole === 'honourable') {
+      try {
+        const updatedRows = (updated || []) as any[];
+        const names = updatedRows.map((r) => `${r.fullname || r.mem_id}`).join(', ');
+
+        // Fetch super admins' auth_user_id values
+        const { data: superAdmins, error: saErr } = await adminClient
+          .from('members')
+          .select('auth_user_id')
+          .eq('role', 'super_admin');
+        if (!saErr && Array.isArray(superAdmins) && superAdmins.length > 0) {
+          const adminIds = superAdmins.map((s: any) => s.auth_user_id).filter(Boolean);
+          const message = `The following member(s) were set to Honourable: ${names}. This is a one-time transformation.`;
+          const notifications = adminIds.map((adminId: string) => ({
+            admin_id: adminId,
+            type: 'info',
+            title: 'Member promoted to Honourable',
+            message,
+          }));
+          if (notifications.length > 0) {
+            await adminClient.from('admin_notifications').insert(notifications);
+          }
+        }
+      } catch (notifyErr) {
+        console.error('Failed to create honourable notifications', notifyErr);
+      }
+    }
 
     return new Response(JSON.stringify({ updated: updated ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {

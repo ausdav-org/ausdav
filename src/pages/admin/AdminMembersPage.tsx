@@ -157,6 +157,24 @@ export default function AdminMembersPage() {
     try {
       const targetIds = selectedIds && selectedIds.length > 0 ? selectedIds : [member.mem_id];
 
+      // Client-side guard: Honourable role is immutable once assigned
+      if (newRole !== 'honourable') {
+        const honourableSelected = members.find((m) => targetIds.includes(m.mem_id) && m.role === 'honourable');
+        if (honourableSelected) {
+          toast.error('Honourable role is immutable and cannot be changed');
+          return;
+        }
+      }
+
+      // Client-side guard: only allow promoting to honourable if all targets are currently 'admin'
+      if (newRole === 'honourable') {
+        const nonAdmin = members.find((m) => targetIds.includes(m.mem_id) && m.role !== 'admin');
+        if (nonAdmin) {
+          toast.error('Only members with role "admin" may be promoted to Honourable');
+          return;
+        }
+      }
+
       const { data, error } = await invokeFunction('update-member-role', {
         mem_ids: targetIds,
         new_role: newRole,
@@ -178,6 +196,24 @@ export default function AdminMembersPage() {
   };
 
   const changeRoleBulk = async (newRole: string) => {
+    // If any selected are honourable and we're trying to change them, block early
+    if (newRole !== 'honourable') {
+      const honourableSelected = members.find((m) => selectedIds.includes(m.mem_id) && m.role === 'honourable');
+      if (honourableSelected) {
+        toast.error('Cannot change role of Honourable members');
+        return;
+      }
+    }
+
+    // For promoting to honourable, require all selected be 'admin'
+    if (newRole === 'honourable') {
+      const nonAdmin = members.find((m) => selectedIds.includes(m.mem_id) && m.role !== 'admin');
+      if (nonAdmin) {
+        toast.error('Only members with role "admin" may be promoted to Honourable');
+        return;
+      }
+    }
+
     // changeRole reads `selectedIds` when present, so a dummy member param is fine
     await changeRole({} as Member, newRole);
   };
@@ -523,24 +559,30 @@ export default function AdminMembersPage() {
                   <Button variant="outline">Change Role</Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => changeRoleBulk('member')}>Set as Member</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => changeRoleBulk('honourable')}>Set as Honourable</DropdownMenuItem>
-                  {isSuperAdmin && (
-                    <>
-                      <DropdownMenuItem onClick={() => changeRoleBulk('admin')}>Set as Admin</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => changeRoleBulk('super_admin')}>Set as Super Admin</DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
                   {(() => {
-                    const callerIsAdminOnly = isAdmin && !isSuperAdmin;
                     const selectedTargets = members.filter((m) => selectedIds.includes(m.mem_id));
+                    const hasHonourableSelected = selectedTargets.some((t) => t.role === 'honourable');
+                    const allAdminSelected = selectedTargets.length > 0 && selectedTargets.every((t) => t.role === 'admin');
+                    const callerIsAdminOnly = isAdmin && !isSuperAdmin;
                     const hasNonMember = selectedTargets.find((t) => t.role !== 'member');
+
                     if (callerIsAdminOnly && hasNonMember) {
                       return null;
                     }
+
                     return (
-                      <DropdownMenuItem className="text-red-600" onClick={async () => { await deleteMember({} as Member); }}>Remove selected</DropdownMenuItem>
+                      <>
+                        <DropdownMenuItem onClick={() => changeRoleBulk('member')} disabled={hasHonourableSelected}>Set as Member</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => changeRoleBulk('honourable')} disabled={!allAdminSelected}>Set as Honourable</DropdownMenuItem>
+                        {isSuperAdmin && (
+                          <>
+                            <DropdownMenuItem onClick={() => changeRoleBulk('admin')} disabled={hasHonourableSelected}>Set as Admin</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => changeRoleBulk('super_admin')} disabled={hasHonourableSelected}>Set as Super Admin</DropdownMenuItem>
+                          </>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-red-600" onClick={async () => { await deleteMember({} as Member); }}>Remove selected</DropdownMenuItem>
+                      </>
                     );
                   })()}
                 </DropdownMenuContent>
@@ -628,12 +670,25 @@ export default function AdminMembersPage() {
                             <DropdownMenuContent align="end">
                               {isSuperAdmin && (
                                 <>
-                                  <DropdownMenuItem onClick={() => changeRole(member, 'member')}>Set as Member</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => changeRole(member, 'honourable')}>Set as Honourable</DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => changeRole(member, 'admin')}>Set as Admin</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')}>Set as Super Admin</DropdownMenuItem>
-                                  <DropdownMenuSeparator />
+                                      {member.role === 'honourable' ? (
+                                        <>
+                                          <DropdownMenuItem disabled>Honourable (immutable)</DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                        </>
+                                      ) : (
+                                        <>
+                                          <DropdownMenuItem onClick={() => changeRole(member, 'member')}>Set as Member</DropdownMenuItem>
+                                          {member.role === 'admin' ? (
+                                            <DropdownMenuItem onClick={() => changeRole(member, 'honourable')}>Set as Honourable</DropdownMenuItem>
+                                          ) : (
+                                            <DropdownMenuItem disabled>Set as Honourable (admins only)</DropdownMenuItem>
+                                          )}
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem onClick={() => changeRole(member, 'admin')}>Set as Admin</DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')}>Set as Super Admin</DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                        </>
+                                      )}
                                 </>
                               )}
                               {isSuperAdmin || (isAdmin && member.role === 'member') ? (
