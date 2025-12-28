@@ -13,6 +13,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
 import emblemImg from '@/assets/Exam/AUSDAV logo.png';
+
+// ✅ NEW: images for the two newly added teaser cards
+// Change these paths to your actual image paths
+import applyCardImg from '@/assets/Exam/apply_portal_banner.png';
+import regCardImg from '@/assets/Exam/check_registration_banner.png';
+
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 
@@ -89,10 +95,14 @@ const schoolOptions = [
   'Puthukkulam Maha Vidiyalyam',
   'Vavuniya Nelukkulam Kalaimakal Maha Vidyalayam',
   'Cheddikulam Maha Vidyalayam',
+  'Saivapragasa Ladies College',
+  'Vipulanantha College Vavuniya',
+  'Puthukkulam Maha Vidiyalyam',
+  'Vavuniya Nelukkulam Kalaimakal Maha Vidyalayam',
+  'Cheddikulam Maha Vidyalayam',
 ];
 
 const resultsStreams = ['Maths', 'Biology'];
-const resultsYears = ['2025', '2024'];
 const idTypes = ['Index No', 'NIC No'];
 
 const collapseVariants = {
@@ -114,8 +124,15 @@ const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
 
 const ExamPage: React.FC = () => {
   const { t, language } = useLanguage();
+
   const [activeTab, setActiveTab] = useState('apply');
   const [submitting, setSubmitting] = useState(false);
+
+  // ✅ NEW: collapsible cards inside Apply tab
+  const [applyPortalOpen, setApplyPortalOpen] = useState(false);
+  const [regPortalOpen, setRegPortalOpen] = useState(false);
+  const applyPortalRef = useRef<HTMLDivElement | null>(null);
+  const regPortalRef = useRef<HTMLDivElement | null>(null);
 
   const initialApplyForm = {
     fullName: '',
@@ -145,12 +162,14 @@ const ExamPage: React.FC = () => {
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [generatedIndexNo, setGeneratedIndexNo] = useState<string>('');
   const [registeredFullName, setRegisteredFullName] = useState<string>('');
-  // Registration check states
+
+  // ✅ moved: Registration check states (now rendered inside Apply tab)
   const [regCheckIndex, setRegCheckIndex] = useState<string>('');
   const [regCheckIdType, setRegCheckIdType] = useState<string>('NIC No');
   const [regCheckResult, setRegCheckResult] = useState<{ found: boolean; applicant?: ApplicantRecord } | null>(null);
   const [regChecking, setRegChecking] = useState<boolean>(false);
 
+  // ✅ UPDATED: year is now a 4-digit input (string) instead of a Select
   const defaultResultsForm = { stream: '', idType: 'Index No', idValue: '', year: '' };
   const [resultsForm, setResultsForm] = useState(defaultResultsForm);
 
@@ -176,11 +195,7 @@ const ExamPage: React.FC = () => {
       setExamSettingLoading(true);
       setResultsSettingLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('app_settings' as any)
-          .select('*')
-          .eq('id', 1)
-          .maybeSingle();
+        const { data, error } = await supabase.from('app_settings' as any).select('*').eq('id', 1).maybeSingle();
 
         if (error) throw error;
 
@@ -200,6 +215,48 @@ const ExamPage: React.FC = () => {
 
     loadSetting();
   }, [language]);
+
+  // ✅ NEW: dynamic tab order based on open/closed states (no other code changes)
+  const tabOrder = useMemo(() => {
+    // when apply + results open OR apply open & results closed => normal order
+    if (examApplicationsOpen) return ['apply', 'papers', 'results'] as const;
+
+    // apply closed & results open => results, papers, apply
+    if (!examApplicationsOpen && resultsPublished) return ['results', 'papers', 'apply'] as const;
+
+    // apply closed & results closed => papers, apply, results
+    return ['papers', 'apply', 'results'] as const;
+  }, [examApplicationsOpen, resultsPublished]);
+
+  // ✅ NEW: set default active tab once after settings are loaded (keeps your requested order focus)
+  const didInitTabRef = useRef(false);
+  useEffect(() => {
+    if (didInitTabRef.current) return;
+    if (examSettingLoading || resultsSettingLoading) return;
+
+    setActiveTab(tabOrder[0]);
+    didInitTabRef.current = true;
+  }, [tabOrder, examSettingLoading, resultsSettingLoading]);
+
+  const tabMeta = useMemo(() => {
+    return {
+      apply: {
+        icon: ClipboardList,
+        full: t('exam.apply.title'),
+        short: language === 'en' ? 'Apply' : 'விண்ணப்பி',
+      },
+      papers: {
+        icon: FileText,
+        full: t('exam.papers.title'),
+        short: language === 'en' ? 'Papers' : 'தாள்கள்',
+      },
+      results: {
+        icon: Award,
+        full: t('exam.results.title'),
+        short: language === 'en' ? 'Results' : 'முடிவுகள்',
+      },
+    } as const;
+  }, [t, language]);
 
   // Fetch past papers from database
   const { data: pastPapers = [], isLoading: papersLoading } = useQuery({
@@ -267,6 +324,9 @@ const ExamPage: React.FC = () => {
     const nicRegex = /^\d{12}$/;
     return nicRegex.test(nic);
   };
+
+  // ✅ NEW: Year validation (4 digits)
+  const validateYear = (year: string) => /^\d{4}$/.test(year);
 
   // Check if NIC already exists
   const checkNicDuplicate = async (nic: string) => {
@@ -337,13 +397,10 @@ const ExamPage: React.FC = () => {
     }
   };
 
-  // ✅ UPDATED (same logic as before style): use DB to fetch last index_no and generate next
-  // Format: YY + 4 digits + StreamLetter
-  // Auto range enforced: 0000–5555 only (manual/CSV 5556–9999 ignored)
+  // ✅ UPDATED: use DB function to atomically generate index and insert
   const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Reset field errors
     setFieldErrors({
       fullName: false,
       email: false,
@@ -354,7 +411,6 @@ const ExamPage: React.FC = () => {
       gender: false,
     });
 
-    // Check for empty required fields
     const errors = {
       fullName: !applyForm.fullName.trim(),
       email: !applyForm.email.trim(),
@@ -367,7 +423,6 @@ const ExamPage: React.FC = () => {
 
     setFieldErrors(errors);
 
-    // Check if any field has error
     if (Object.values(errors).some((error) => error)) {
       toast.error(language === 'en' ? 'Please fill all required fields' : 'தயவுசெய்து அனைத்து தேவையான புலங்களையும் நிரப்பவும்');
       return;
@@ -387,10 +442,9 @@ const ExamPage: React.FC = () => {
     try {
       const year = new Date().getFullYear();
 
-      // Call the database function to atomically generate index and insert
       const { data: indexNo, error } = await supabase.rpc('insert_applicant', {
         p_fullname: applyForm.fullName.trim(),
-        p_gender: applyForm.gender === 'male', // true for male, false for female
+        p_gender: applyForm.gender === 'male',
         p_stream: applyForm.exam,
         p_nic: applyForm.nic.trim(),
         p_phone: applyForm.phone.trim(),
@@ -401,7 +455,6 @@ const ExamPage: React.FC = () => {
 
       if (error) throw error;
 
-      // Show success dialog with index number and greeting
       setRegisteredFullName(applyForm.fullName.trim());
       setGeneratedIndexNo(indexNo as string);
       setSuccessDialogOpen(true);
@@ -410,14 +463,10 @@ const ExamPage: React.FC = () => {
     } catch (error: any) {
       console.error('Error submitting application:', error);
       let errorMessage =
-        language === 'en'
-          ? 'Failed to submit application. Please try again.'
-          : 'விண்ணப்பத்தை சமர்ப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.';
+        language === 'en' ? 'Failed to submit application. Please try again.' : 'விண்ணப்பத்தை சமர்ப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.';
 
-      // Check for unique constraint violation on NIC
       if (error?.code === '23505' && error?.message?.includes('applicants_nic_unique')) {
-        errorMessage =
-          language === 'en' ? 'An application with this NIC already exists.' : 'இந்த NIC கொண்ட விண்ணப்பம் ஏற்கனவே உள்ளது.';
+        errorMessage = language === 'en' ? 'An application with this NIC already exists.' : 'இந்த NIC கொண்ட விண்ணப்பம் ஏற்கனவே உள்ளது.';
       }
 
       toast.error(errorMessage);
@@ -434,13 +483,14 @@ const ExamPage: React.FC = () => {
       return;
     }
 
+    // ✅ NEW: enforce 4-digit year
+    if (!validateYear(resultsForm.year)) {
+      toast.error(language === 'en' ? 'Year must be 4 digits (e.g. 2025)' : 'ஆண்டு 4 இலக்கமாக இருக்க வேண்டும் (எ.கா. 2025)');
+      return;
+    }
+
     try {
-      // First find the applicant by index_no or NIC
-      let applicantQuery = supabase
-        .from('applicants' as any)
-        .select('*')
-        .eq('stream', resultsForm.stream)
-        .eq('year', parseInt(resultsForm.year));
+      let applicantQuery = supabase.from('applicants' as any).select('*').eq('stream', resultsForm.stream).eq('year', parseInt(resultsForm.year));
 
       if (resultsForm.idType === 'Index No') {
         applicantQuery = applicantQuery.eq('index_no', resultsForm.idValue);
@@ -449,23 +499,19 @@ const ExamPage: React.FC = () => {
       }
 
       const { data: applicantData, error: applicantError } = await applicantQuery.maybeSingle();
-
       if (applicantError) throw applicantError;
 
       if (!applicantData) {
         toast.error(language === 'en' ? 'No applicant found' : 'விண்ணப்பதாரர் கிடைக்கவில்லை');
         setResultData(null);
         setShowResultSheet(false);
-        setFoundIndexNo(''); // ✅ clear
+        setFoundIndexNo('');
         return;
       }
 
       const applicant = applicantData as unknown as ApplicantRecord;
-
-      // ✅ NEW: keep the real index number for certificate display
       setFoundIndexNo(applicant.index_no);
 
-      // Now find the result for this applicant
       const { data: resultData, error: resultError } = await supabase
         .from('results' as any)
         .select('*')
@@ -479,7 +525,7 @@ const ExamPage: React.FC = () => {
         toast.error(language === 'en' ? 'No results found for this applicant' : 'இந்த விண்ணப்பதாரருக்கு முடிவுகள் கிடைக்கவில்லை');
         setResultData(null);
         setShowResultSheet(false);
-        setFoundIndexNo(''); // ✅ clear
+        setFoundIndexNo('');
         return;
       }
 
@@ -506,7 +552,7 @@ const ExamPage: React.FC = () => {
       toast.error(language === 'en' ? 'Failed to fetch results' : 'முடிவுகளைப் பெற முடியவில்லை');
       setResultData(null);
       setShowResultSheet(false);
-      setFoundIndexNo(''); // ✅ clear
+      setFoundIndexNo('');
     }
   };
 
@@ -514,7 +560,7 @@ const ExamPage: React.FC = () => {
     setResultsForm(defaultResultsForm);
     setResultData(null);
     setShowResultSheet(false);
-    setFoundIndexNo(''); // ✅ clear
+    setFoundIndexNo('');
   };
 
   // Check whether an index number is registered
@@ -522,15 +568,18 @@ const ExamPage: React.FC = () => {
     if (e) e.preventDefault();
     let idx = regCheckIndex.trim();
     if (!idx) {
-      if (regCheckIdType === 'Index No') {
-        toast.error(language === 'en' ? 'Please enter an index number' : 'ஒரு குறிப்பு எண்ணை உள்ளிடவும்');
-      } else {
-        toast.error(language === 'en' ? 'Please enter an NIC' : 'NIC ஒன்றை உள்ளிடவும்');
-      }
+      toast.error(
+        regCheckIdType === 'Index No'
+          ? language === 'en'
+            ? 'Please enter an index number'
+            : 'ஒரு குறிப்பு எண்ணை உள்ளிடவும்'
+          : language === 'en'
+            ? 'Please enter an NIC'
+            : 'NIC ஒன்றை உள்ளிடவும்'
+      );
       return;
     }
 
-    // Normalize NIC input: allow only digits
     if (regCheckIdType === 'NIC No') {
       idx = idx.replace(/\D/g, '');
     }
@@ -539,7 +588,6 @@ const ExamPage: React.FC = () => {
       setRegChecking(true);
       setRegCheckResult(null);
 
-      // Query by chosen identifier
       const query = supabase.from('applicants' as any).select('*');
       const res =
         regCheckIdType === 'Index No' ? await query.eq('index_no', idx).maybeSingle() : await query.eq('nic', idx).maybeSingle();
@@ -578,9 +626,7 @@ const ExamPage: React.FC = () => {
 
     if (!path) {
       toast.error(
-        language === 'en'
-          ? `${type === 'paper' ? 'Paper' : 'Scheme'} not available`
-          : `${type === 'paper' ? 'வினாத்தாள்' : 'திட்டம்'} கிடைக்கவில்லை`
+        language === 'en' ? `${type === 'paper' ? 'Paper' : 'Scheme'} not available` : `${type === 'paper' ? 'வினாத்தாள்' : 'திட்டம்'} கிடைக்கவில்லை`
       );
       return;
     }
@@ -643,6 +689,18 @@ const ExamPage: React.FC = () => {
     }
   };
 
+  // ✅ helper: open & scroll
+  const openApplyPortal = () => {
+    setApplyPortalOpen(true);
+    setRegPortalOpen(false);
+    window.setTimeout(() => applyPortalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+  const openRegPortal = () => {
+    setRegPortalOpen(true);
+    setApplyPortalOpen(false);
+    window.setTimeout(() => regPortalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+
   return (
     <div>
       <section className="py-16 md:py-24" style={{ backgroundImage: 'var(--gradient-hero)' }}>
@@ -660,292 +718,418 @@ const ExamPage: React.FC = () => {
 
       <section className="py-16 md:py-24 bg-background">
         <div className="container mx-auto px-4">
-          {/* Registration check card */}
-          <div className="max-w-2xl mx-auto mb-6">
-            <Card>
-              <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-3">
-                <div className="w-full sm:w-40">
-                  <Select value={regCheckIdType} onValueChange={(v) => setRegCheckIdType(v)}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Index No">{language === 'en' ? 'Index No' : 'குறிப்பு எண்'}</SelectItem>
-                      <SelectItem value="NIC No">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Input
-                  value={regCheckIndex}
-                  onChange={(e) => setRegCheckIndex(e.target.value)}
-                  placeholder={
-                    regCheckIdType === 'Index No'
-                      ? language === 'en'
-                        ? 'Enter Index Number (e.g. 250001M)'
-                        : 'குறிப்பு எண் உள்ளிடவும் (எ.கா. 250001M)'
-                      : language === 'en'
-                        ? 'Enter NIC (12 digits)'
-                        : 'NIC உள்ளிடவும் (12 இலக்கங்கள்)'
-                  }
-                  className="flex-1"
-                />
-
-                <div className="flex gap-2">
-                  <Button onClick={(e) => handleCheckIndex(e)} disabled={regChecking} className="whitespace-nowrap">
-                    {regChecking ? (language === 'en' ? 'Checking...' : 'சரிபாரித்தல்...') : language === 'en' ? 'Check Registration' : 'பதிவைச் சரிபார்'}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setRegCheckIndex('');
-                      setRegCheckResult(null);
-                    }}
-                  >
-                    {language === 'en' ? 'Clear' : 'அழி'}
-                  </Button>
-                </div>
-              </CardContent>
-
-              {regCheckResult && (
-                <CardContent className="border-t">
-                  {regCheckResult.found ? (
-                    <div>
-                      <div className="text-sm text-muted-foreground">{language === 'en' ? 'Registered' : 'பதிவுசெய்யப்பட்டுள்ளது'}</div>
-                      <div className="font-semibold mt-1">{regCheckResult.applicant?.fullname}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {regCheckResult.applicant?.index_no} • {regCheckResult.applicant?.school} • {regCheckResult.applicant?.nic}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-destructive">
-                      {regCheckIdType === 'Index No'
-                        ? language === 'en'
-                          ? 'No registration found for that index number.'
-                          : 'அந்த குறிப்பு எண்ணிற்கு பதிவு கிடைக்கவில்லை.'
-                        : language === 'en'
-                          ? 'No registration found for that NIC.'
-                          : 'அந்த NICக்கான பதிவு கிடைக்கவில்லை.'}
-                    </div>
-                  )}
-                </CardContent>
-              )}
-            </Card>
-          </div>
-
           <Tabs value={activeTab} onValueChange={setActiveTab} className="max-w-4xl mx-auto">
             <TabsList className="grid w-full grid-cols-3 mb-8">
-              <TabsTrigger value="apply" className="flex items-center gap-2">
-                <ClipboardList className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('exam.apply.title')}</span>
-                <span className="sm:hidden">{language === 'en' ? 'Apply' : 'விண்ணப்பி'}</span>
-              </TabsTrigger>
-
-              <TabsTrigger value="papers" className="flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('exam.papers.title')}</span>
-                <span className="sm:hidden">{language === 'en' ? 'Papers' : 'தாள்கள்'}</span>
-              </TabsTrigger>
-
-              <TabsTrigger value="results" className="flex items-center gap-2">
-                <Award className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('exam.results.title')}</span>
-                <span className="sm:hidden">{language === 'en' ? 'Results' : 'முடிவுகள்'}</span>
-              </TabsTrigger>
+              {tabOrder.map((key) => {
+                const Icon = tabMeta[key].icon;
+                return (
+                  <TabsTrigger key={key} value={key} className="flex items-center gap-2">
+                    <Icon className="w-4 h-4" />
+                    <span className="hidden sm:inline">{tabMeta[key].full}</span>
+                    <span className="sm:hidden">{tabMeta[key].short}</span>
+                  </TabsTrigger>
+                );
+              })}
             </TabsList>
 
             {/* APPLY TAB */}
             <TabsContent value="apply">
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card rounded-xl p-6 md:p-8 shadow-lg">
-                <div className="mx-auto w-full max-w-md md:max-w-lg">
-                  <div className="rounded-xl overflow-hidden border border-border">
-                    <div className="bg-primary/90 text-primary-foreground px-5 py-4 text-center">
-                      <h2 className="text-2xl md:text-3xl font-serif font-bold tracking-wide">
-                        {language === 'en' ? 'Apply for Your Exam' : 'உங்கள் தேர்விற்கு விண்ணப்பிக்கவும்'}
-                      </h2>
-                    </div>
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                {/* ✅ NEW: two clickable sub-cards */}
+                <div className="space-y-6">
+                  {/* Exam Application Portal teaser card */}
+                  <Card className="overflow-hidden border border-border">
+                    <CardContent className="p-0">
+                      <div className="grid grid-cols-1 md:grid-cols-[320px_1fr]">
+                        <div className="bg-gradient-to-br from-sky-200/40 via-sky-100/20 to-transparent p-6 flex items-center justify-center">
+                          {/* ✅ IMAGE HERE */}
+                          <div className="h-40 w-full rounded-2xl overflow-hidden border border-border bg-white/60">
+                            <img src={applyCardImg} alt="Exam Application" className="h-full w-full object-cover" />
+                          </div>
+                        </div>
 
-                    <div className="p-5 md:p-6 bg-card">
-                      {!examSettingLoading && !examApplicationsOpen ? (
-                        <Card className="border-destructive/30 bg-destructive/5">
-                          <CardContent className="p-6 space-y-2">
-                            <h3 className="text-xl font-semibold text-destructive">{language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது'}</h3>
-                            <p className="text-muted-foreground">
+                        <div className="p-6 md:p-8 flex flex-col justify-center gap-4">
+                          <div>
+                            <h2 className="text-2xl md:text-3xl font-serif font-bold text-foreground">
+                              {language === 'en' ? 'Exam Application Portal' : 'தேர்வு விண்ணப்ப தளம்'}
+                            </h2>
+                            <p className="text-muted-foreground mt-2">
                               {language === 'en'
-                                ? 'Exam applications are currently closed. Please check back later.'
-                                : 'தேர்வு விண்ணப்பங்கள் தற்போது மூடப்பட்டுள்ளது. தயவுசெய்து பின்னர் மீண்டும் பார்க்கவும்.'}
-                            </p>
-                          </CardContent>
-                        </Card>
-                      ) : (
-                        <form onSubmit={handleApplySubmit} className="space-y-5">
-                          <div>
-                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Full Name' : 'முழு பெயர்'}</label>
-                            <Input
-                              value={applyForm.fullName}
-                              onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })}
-                              required
-                              placeholder={language === 'en' ? 'Enter your full name' : 'உங்கள் முழு பெயரை உள்ளீடு செய்யவும்'}
-                              className={fieldErrors.fullName ? 'border-red-500' : ''}
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}</label>
-                            <div className="relative">
-                              <Input
-                                type="email"
-                                value={applyForm.email}
-                                onChange={(e) => handleEmailChange(e.target.value)}
-                                required
-                                placeholder={language === 'en' ? 'your.email@example.com' : 'your.email@example.com'}
-                                className={`${emailValid === false ? 'border-red-500 pr-10' : emailValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${
-                                  fieldErrors.email ? 'border-red-500' : ''
-                                }`}
-                              />
-                              {applyForm.email && (
-                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                                  {emailValid === true && <Check className="h-4 w-4 text-green-500" />}
-                                  {emailValid === false && <X className="h-4 w-4 text-red-500" />}
-                                </div>
-                              )}
-                            </div>
-                            {emailValid === false && (
-                              <p className="text-sm text-red-500 mt-1">
-                                {language === 'en' ? 'Please enter a valid email address' : 'சரியான மின்னஞ்சல் முகவரியை உள்ளீடு செய்யவும்'}
-                              </p>
-                            )}
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}</label>
-                            <div className="relative">
-                              <Input
-                                inputMode="numeric"
-                                value={applyForm.phone}
-                                onChange={(e) => handlePhoneChange(e.target.value)}
-                                required
-                                placeholder={language === 'en' ? '0757575757' : '0757575757'}
-                                className={`${phoneValid === false ? 'border-red-500 pr-10' : phoneValid === true ? 'border-green-500 pr-10' : 'pr-10'} ${
-                                  fieldErrors.phone ? 'border-red-500' : ''
-                                }`}
-                              />
-                              {applyForm.phone && (
-                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                                  {phoneValid === true && <Check className="h-4 w-4 text-green-500" />}
-                                  {phoneValid === false && <X className="h-4 w-4 text-red-500" />}
-                                </div>
-                              )}
-                            </div>
-                            {phoneValid === false && (
-                              <p className="text-sm text-red-500 mt-1">
-                                {language === 'en' ? 'Phone number must be exactly 10 digits' : 'தொலைபேசி எண் சரியாக 10 இலக்கங்கள் இருக்க வேண்டும்'}
-                              </p>
-                            )}
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {language === 'en' ? 'Format: 0757575757 (10 digits)' : 'வடிவம்: 0757575757 (10 இலக்கங்கள்)'}
+                                ? 'Sign up for the entrance examination by filling out the application form.'
+                                : 'விண்ணப்பப் படிவத்தை நிரப்பி நுழைவுத் தேர்விற்கு பதிவு செய்யுங்கள்.'}
                             </p>
                           </div>
 
                           <div>
-                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</label>
-                            <div className="relative">
-                              <Input
-                                value={applyForm.nic}
-                                onChange={(e) => handleNicChange(e.target.value)}
-                                required
-                                inputMode="numeric"
-                                placeholder={language === 'en' ? '123456789012' : '123456789012'}
-                                className={`${(nicValid === false || nicDuplicate === true) ? 'border-red-500 pr-10' : nicValid === true && nicDuplicate === false ? 'border-green-500 pr-10' : 'pr-10'} ${
-                                  fieldErrors.nic ? 'border-red-500' : ''
-                                }`}
-                              />
-                              {applyForm.nic && (
-                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                                  {nicValid === true && nicDuplicate === false && <Check className="h-4 w-4 text-green-500" />}
-                                  {(nicValid === false || nicDuplicate === true) && <X className="h-4 w-4 text-red-500" />}
-                                </div>
-                              )}
-                            </div>
-                            {nicValid === false && (
-                              <p className="text-sm text-red-500 mt-1">
-                                {language === 'en' ? 'NIC number must be exactly 12 digits' : 'தேசிய அடையாள எண் சரியாக 12 இலக்கங்கள் இருக்க வேண்டும்'}
-                              </p>
-                            )}
-                            {nicDuplicate === true && nicValid === true && (
-                              <p className="text-sm text-red-500 mt-1">
-                                {language === 'en' ? 'This NIC has already been used for an application' : 'இந்த தேசிய அடையாள எண் ஏற்கனவே விண்ணப்பத்திற்கு பயன்படுத்தப்பட்டுள்ளது'}
-                              </p>
-                            )}
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {language === 'en' ? 'Format: 123456789012 (12 digits)' : 'வடிவம்: 123456789012 (12 இலக்கங்கள்)'}
-                            </p>
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Select Stream' : 'தேர்வைத் தேர்ந்தெடுக்கவும்'}</label>
-                            <Select value={applyForm.exam} onValueChange={(v) => setApplyForm({ ...applyForm, exam: v })}>
-                              <SelectTrigger className={fieldErrors.exam ? 'border-red-500' : ''}>
-                                <SelectValue placeholder={language === 'en' ? '-- Select Your Stream --' : '-- தேர்வு --'} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {applyExams
-                                  .filter((x) => x !== '-- Select Your Stream --')
-                                  .map((exam) => (
-                                    <SelectItem key={exam} value={exam}>
-                                      {exam}
-                                    </SelectItem>
-                                  ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'School Name' : 'பள்ளி பெயர்'}</label>
-                            <Select value={applyForm.schoolName} onValueChange={(v) => setApplyForm({ ...applyForm, schoolName: v })}>
-                              <SelectTrigger className={fieldErrors.schoolName ? 'border-red-500' : ''}>
-                                <SelectValue placeholder={language === 'en' ? 'Select school' : 'பள்ளியை தேர்வு செய்க'} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {schoolOptions.map((s) => (
-                                  <SelectItem key={s} value={s}>
-                                    {s}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Gender' : 'பாலினம்'}</label>
-                            <RadioGroup
-                              value={applyForm.gender}
-                              onValueChange={(v) => setApplyForm({ ...applyForm, gender: v as 'male' | 'female' })}
-                              className={`flex flex-row space-x-6 ${fieldErrors.gender ? 'border border-red-500 rounded-md p-2' : ''}`}
+                            <Button
+                              type="button"
+                              variant="donate"
+                              onClick={() => {
+                                if (!applyPortalOpen) openApplyPortal();
+                                else setApplyPortalOpen(false);
+                              }}
+                              className="px-10"
                             >
-                              <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="male" id="male" />
-                                <Label htmlFor="male">{language === 'en' ? 'Male' : 'ஆண்'}</Label>
+                              {applyPortalOpen ? (language === 'en' ? 'Close' : 'மூடு') : language === 'en' ? 'Register Now' : 'இப்போது பதிவு செய்'}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Collapsible: Application form */}
+                  <AnimatePresence initial={false}>
+                    {applyPortalOpen && (
+                      <motion.div
+                        ref={applyPortalRef as any}
+                        variants={collapseVariants}
+                        initial="hidden"
+                        animate="visible"
+                        exit="exit"
+                        transition={{ duration: 0.25, ease: 'easeInOut' }}
+                        className="overflow-hidden"
+                      >
+                        <div className="bg-card rounded-xl p-6 md:p-8 shadow-lg">
+                          <div className="mx-auto w-full max-w-md md:max-w-lg">
+                            <div className="rounded-xl overflow-hidden border border-border">
+                              <div className="bg-primary/90 text-primary-foreground px-5 py-4 text-center">
+                                <h2 className="text-2xl md:text-3xl font-serif font-bold tracking-wide">
+                                  {language === 'en' ? 'Apply for Your Exam' : 'உங்கள் தேர்விற்கு விண்ணப்பிக்கவும்'}
+                                </h2>
                               </div>
-                              <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="female" id="female" />
-                                <Label htmlFor="female">{language === 'en' ? 'Female' : 'பெண்'}</Label>
+
+                              <div className="p-5 md:p-6 bg-card">
+                                {!examSettingLoading && !examApplicationsOpen ? (
+                                  <Card className="border-destructive/30 bg-destructive/5">
+                                    <CardContent className="p-6 space-y-2">
+                                      <h3 className="text-xl font-semibold text-destructive">
+                                        {language === 'en' ? 'Applications are closed' : 'விண்ணப்பங்கள் மூடப்பட்டுள்ளது'}
+                                      </h3>
+                                      <p className="text-muted-foreground">
+                                        {language === 'en'
+                                          ? 'Exam applications are currently closed. Please check back later.'
+                                          : 'தேர்வு விண்ணப்பங்கள் தற்போது மூடப்பட்டுள்ளது. தயவுசெய்து பின்னர் மீண்டும் பார்க்கவும்.'}
+                                      </p>
+                                    </CardContent>
+                                  </Card>
+                                ) : (
+                                  <form onSubmit={handleApplySubmit} className="space-y-5">
+                                    <div>
+                                      <label className="block text-sm font-semibold text-foreground mb-2">
+                                        {language === 'en' ? 'Full Name' : 'முழு பெயர்'}
+                                      </label>
+                                      <Input
+                                        value={applyForm.fullName}
+                                        onChange={(e) => setApplyForm({ ...applyForm, fullName: e.target.value })}
+                                        required
+                                        placeholder={language === 'en' ? 'Enter your full name' : 'உங்கள் முழு பெயரை உள்ளீடு செய்யவும்'}
+                                        className={fieldErrors.fullName ? 'border-red-500' : ''}
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-semibold text-foreground mb-2">
+                                        {language === 'en' ? 'Email Address' : 'மின்னஞ்சல் முகவரி'}
+                                      </label>
+                                      <div className="relative">
+                                        <Input
+                                          type="email"
+                                          value={applyForm.email}
+                                          onChange={(e) => handleEmailChange(e.target.value)}
+                                          required
+                                          placeholder={language === 'en' ? 'your.email@example.com' : 'your.email@example.com'}
+                                          className={`${
+                                            emailValid === false ? 'border-red-500 pr-10' : emailValid === true ? 'border-green-500 pr-10' : 'pr-10'
+                                          } ${fieldErrors.email ? 'border-red-500' : ''}`}
+                                        />
+                                        {applyForm.email && (
+                                          <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                            {emailValid === true && <Check className="h-4 w-4 text-green-500" />}
+                                            {emailValid === false && <X className="h-4 w-4 text-red-500" />}
+                                          </div>
+                                        )}
+                                      </div>
+                                      {emailValid === false && (
+                                        <p className="text-sm text-red-500 mt-1">
+                                          {language === 'en' ? 'Please enter a valid email address' : 'சரியான மின்னஞ்சல் முகவரியை உள்ளீடு செய்யவும்'}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-semibold text-foreground mb-2">
+                                        {language === 'en' ? 'Phone Number' : 'தொலைபேசி எண்'}
+                                      </label>
+                                      <div className="relative">
+                                        <Input
+                                          inputMode="numeric"
+                                          value={applyForm.phone}
+                                          onChange={(e) => handlePhoneChange(e.target.value)}
+                                          required
+                                          placeholder={language === 'en' ? '0757575757' : '0757575757'}
+                                          className={`${
+                                            phoneValid === false ? 'border-red-500 pr-10' : phoneValid === true ? 'border-green-500 pr-10' : 'pr-10'
+                                          } ${fieldErrors.phone ? 'border-red-500' : ''}`}
+                                        />
+                                        {applyForm.phone && (
+                                          <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                            {phoneValid === true && <Check className="h-4 w-4 text-green-500" />}
+                                            {phoneValid === false && <X className="h-4 w-4 text-red-500" />}
+                                          </div>
+                                        )}
+                                      </div>
+                                      {phoneValid === false && (
+                                        <p className="text-sm text-red-500 mt-1">
+                                          {language === 'en' ? 'Phone number must be exactly 10 digits' : 'தொலைபேசி எண் சரியாக 10 இலக்கங்கள் இருக்க வேண்டும்'}
+                                        </p>
+                                      )}
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        {language === 'en' ? 'Format: 0757575757 (10 digits)' : 'வடிவம்: 0757575757 (10 இலக்கங்கள்)'}
+                                      </p>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-semibold text-foreground mb-2">
+                                        {language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}
+                                      </label>
+                                      <div className="relative">
+                                        <Input
+                                          value={applyForm.nic}
+                                          onChange={(e) => handleNicChange(e.target.value)}
+                                          required
+                                          inputMode="numeric"
+                                          placeholder={language === 'en' ? '123456789012' : '123456789012'}
+                                          className={`${
+                                            nicValid === false || nicDuplicate === true
+                                              ? 'border-red-500 pr-10'
+                                              : nicValid === true && nicDuplicate === false
+                                                ? 'border-green-500 pr-10'
+                                                : 'pr-10'
+                                          } ${fieldErrors.nic ? 'border-red-500' : ''}`}
+                                        />
+                                        {applyForm.nic && (
+                                          <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                            {nicValid === true && nicDuplicate === false && <Check className="h-4 w-4 text-green-500" />}
+                                            {(nicValid === false || nicDuplicate === true) && <X className="h-4 w-4 text-red-500" />}
+                                          </div>
+                                        )}
+                                      </div>
+                                      {nicValid === false && (
+                                        <p className="text-sm text-red-500 mt-1">
+                                          {language === 'en' ? 'NIC number must be exactly 12 digits' : 'தேசிய அடையாள எண் சரியாக 12 இலக்கங்கள் இருக்க வேண்டும்'}
+                                        </p>
+                                      )}
+                                      {nicDuplicate === true && nicValid === true && (
+                                        <p className="text-sm text-red-500 mt-1">
+                                          {language === 'en' ? 'This NIC has already been used for an application' : 'இந்த தேசிய அடையாள எண் ஏற்கனவே விண்ணப்பத்திற்கு பயன்படுத்தப்பட்டுள்ளது'}
+                                        </p>
+                                      )}
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        {language === 'en' ? 'Format: 123456789012 (12 digits)' : 'வடிவம்: 123456789012 (12 இலக்கங்கள்)'}
+                                      </p>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-semibold text-foreground mb-2">
+                                        {language === 'en' ? 'Select Stream' : 'தேர்வைத் தேர்ந்தெடுக்கவும்'}
+                                      </label>
+                                      <Select value={applyForm.exam} onValueChange={(v) => setApplyForm({ ...applyForm, exam: v })}>
+                                        <SelectTrigger className={fieldErrors.exam ? 'border-red-500' : ''}>
+                                          <SelectValue placeholder={language === 'en' ? '-- Select Your Stream --' : '-- தேர்வு --'} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {applyExams
+                                            .filter((x) => x !== '-- Select Your Stream --')
+                                            .map((exam) => (
+                                              <SelectItem key={exam} value={exam}>
+                                                {exam}
+                                              </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-semibold text-foreground mb-2">
+                                        {language === 'en' ? 'School Name' : 'பள்ளி பெயர்'}
+                                      </label>
+                                      <Select value={applyForm.schoolName} onValueChange={(v) => setApplyForm({ ...applyForm, schoolName: v })}>
+                                        <SelectTrigger className={fieldErrors.schoolName ? 'border-red-500' : ''}>
+                                          <SelectValue placeholder={language === 'en' ? 'Select school' : 'பள்ளியை தேர்வு செய்க'} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {schoolOptions.map((s) => (
+                                            <SelectItem key={s} value={s}>
+                                              {s}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-semibold text-foreground mb-2">{language === 'en' ? 'Gender' : 'பாலினம்'}</label>
+                                      <RadioGroup
+                                        value={applyForm.gender}
+                                        onValueChange={(v) => setApplyForm({ ...applyForm, gender: v as 'male' | 'female' })}
+                                        className={`flex flex-row space-x-6 ${fieldErrors.gender ? 'border border-red-500 rounded-md p-2' : ''}`}
+                                      >
+                                        <div className="flex items-center space-x-2">
+                                          <RadioGroupItem value="male" id="male" />
+                                          <Label htmlFor="male">{language === 'en' ? 'Male' : 'ஆண்'}</Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <RadioGroupItem value="female" id="female" />
+                                          <Label htmlFor="female">{language === 'en' ? 'Female' : 'பெண்'}</Label>
+                                        </div>
+                                      </RadioGroup>
+                                    </div>
+
+                                    <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                      <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset} disabled={examSettingLoading || submitting}>
+                                        {language === 'en' ? 'Reset' : 'மீட்டமை'}
+                                      </Button>
+                                      <Button type="submit" variant="donate" className="w-full" disabled={!examApplicationsOpen || examSettingLoading || submitting}>
+                                        {submitting ? (language === 'en' ? 'Submitting...' : 'சமர்ப்பிக்கிறது...') : language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்'}
+                                      </Button>
+                                    </div>
+                                  </form>
+                                )}
                               </div>
-                            </RadioGroup>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Check Registration Status teaser card */}
+                  <Card className="overflow-hidden border border-border">
+                    <CardContent className="p-0">
+                      <div className="grid grid-cols-1 md:grid-cols-[320px_1fr]">
+                        <div className="bg-gradient-to-br from-sky-200/40 via-sky-100/20 to-transparent p-6 flex items-center justify-center">
+                          {/* ✅ IMAGE HERE */}
+                          <div className="h-40 w-full rounded-2xl overflow-hidden border border-border bg-white/60">
+                            <img src={regCardImg} alt="Check Registration" className="h-full w-full object-cover" />
+                          </div>
+                        </div>
+
+                        <div className="p-6 md:p-8 flex flex-col justify-center gap-4">
+                          <div>
+                            <h2 className="text-2xl md:text-3xl font-serif font-bold text-foreground">
+                              {language === 'en' ? 'Check Registration Status' : 'பதிவு நிலையைச் சரிபார்க்கவும்'}
+                            </h2>
+                            <p className="text-muted-foreground mt-2">
+                              {language === 'en'
+                                ? 'Find out if you are already registered using your Index No or NIC No.'
+                                : 'Index No அல்லது NIC No மூலம் நீங்கள் பதிவு செய்துள்ளீர்களா என்பதைச் சரிபார்க்கவும்.'}
+                            </p>
                           </div>
 
-                          <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <Button type="button" variant="outline" className="w-full" onClick={handleApplyReset} disabled={examSettingLoading || submitting}>
-                              {language === 'en' ? 'Reset' : 'மீட்டமை'}
-                            </Button>
-                            <Button type="submit" variant="donate" className="w-full" disabled={!examApplicationsOpen || examSettingLoading || submitting}>
-                              {submitting ? (language === 'en' ? 'Submitting...' : 'சமர்ப்பிக்கிறது...') : language === 'en' ? 'Submit Application' : 'சமர்ப்பிக்கவும்'}
+                          <div>
+                            <Button
+                              type="button"
+                              onClick={() => {
+                                if (!regPortalOpen) openRegPortal();
+                                else setRegPortalOpen(false);
+                              }}
+                              className="px-10"
+                            >
+                              {regPortalOpen ? (language === 'en' ? 'Close' : 'மூடு') : language === 'en' ? 'Check Registration' : 'பதிவைச் சரிபார்'}
                             </Button>
                           </div>
-                        </form>
-                      )}
-                    </div>
-                  </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Collapsible: Registration check */}
+                  <AnimatePresence initial={false}>
+                    {regPortalOpen && (
+                      <motion.div
+                        ref={regPortalRef as any}
+                        variants={collapseVariants}
+                        initial="hidden"
+                        animate="visible"
+                        exit="exit"
+                        transition={{ duration: 0.25, ease: 'easeInOut' }}
+                        className="overflow-hidden"
+                      >
+                        <div className="max-w-2xl mx-auto">
+                          <Card>
+                            <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-3">
+                              <div className="w-full sm:w-40">
+                                <Select value={regCheckIdType} onValueChange={(v) => setRegCheckIdType(v)}>
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Index No">{language === 'en' ? 'Index No' : 'குறிப்பு எண்'}</SelectItem>
+                                    <SelectItem value="NIC No">{language === 'en' ? 'NIC No' : 'தேசிய அடையாள எண்'}</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <Input
+                                value={regCheckIndex}
+                                onChange={(e) => setRegCheckIndex(e.target.value)}
+                                placeholder={
+                                  regCheckIdType === 'Index No'
+                                    ? language === 'en'
+                                      ? 'Enter Index Number (e.g. 250001M)'
+                                      : 'குறிப்பு எண் உள்ளிடவும் (எ.கா. 250001M)'
+                                    : language === 'en'
+                                      ? 'Enter NIC (12 digits)'
+                                      : 'NIC உள்ளிடவும் (12 இலக்கங்கள்)'
+                                }
+                                className="flex-1"
+                              />
+
+                              <div className="flex gap-2">
+                                <Button onClick={(e) => handleCheckIndex(e)} disabled={regChecking} className="whitespace-nowrap">
+                                  {regChecking ? (language === 'en' ? 'Checking...' : 'சரிபாரித்தல்...') : language === 'en' ? 'Check Registration' : 'பதிவைச் சரிபார்'}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setRegCheckIndex('');
+                                    setRegCheckResult(null);
+                                  }}
+                                >
+                                  {language === 'en' ? 'Clear' : 'அழி'}
+                                </Button>
+                              </div>
+                            </CardContent>
+
+                            {regCheckResult && (
+                              <CardContent className="border-t">
+                                {regCheckResult.found ? (
+                                  <div>
+                                    <div className="text-sm text-muted-foreground">{language === 'en' ? 'Registered' : 'பதிவுசெய்யப்பட்டுள்ளது'}</div>
+                                    <div className="font-semibold mt-1">{regCheckResult.applicant?.fullname}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {regCheckResult.applicant?.index_no} • {regCheckResult.applicant?.school} • {regCheckResult.applicant?.nic}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-sm text-destructive">
+                                    {regCheckIdType === 'Index No'
+                                      ? language === 'en'
+                                        ? 'No registration found for that index number.'
+                                        : 'அந்த குறிப்பு எண்ணிற்கு பதிவு கிடைக்கவில்லை.'
+                                      : language === 'en'
+                                        ? 'No registration found for that NIC.'
+                                        : 'அந்த NICக்கான பதிவு கிடைக்கவில்லை.'}
+                                  </div>
+                                )}
+                              </CardContent>
+                            )}
+                          </Card>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </motion.div>
             </TabsContent>
@@ -1067,6 +1251,7 @@ const ExamPage: React.FC = () => {
 
             {/* RESULTS TAB */}
             <TabsContent value="results">
+              {/* unchanged except year field */}
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card rounded-xl p-6 md:p-8 shadow-lg">
                 <div className="min-h-[40vh] flex items-center justify-center">
                   <div className="w-full max-w-3xl">
@@ -1084,7 +1269,13 @@ const ExamPage: React.FC = () => {
                     ) : (
                       <AnimatePresence mode="wait">
                         {!showResultSheet ? (
-                          <motion.div key="results-form" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.2 }}>
+                          <motion.div
+                            key="results-form"
+                            initial={{ opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -12 }}
+                            transition={{ duration: 0.2 }}
+                          >
                             <h2 className="text-2xl font-bold text-foreground mb-2">{language === 'en' ? 'View Results' : 'முடிவுகளை காண'}</h2>
                             <p className="text-muted-foreground mb-6">{language === 'en' ? 'Check your examination results' : 'உங்கள் தேர்வு முடிவுகளை சரிபார்க்கவும்'}</p>
 
@@ -1120,28 +1311,19 @@ const ExamPage: React.FC = () => {
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  <Input
-                                    value={resultsForm.idValue}
-                                    onChange={(e) => setResultsForm({ ...resultsForm, idValue: e.target.value })}
-                                    placeholder={language === 'en' ? 'Enter value' : 'உள்ளிடவும்'}
-                                  />
+                                  <Input value={resultsForm.idValue} onChange={(e) => setResultsForm({ ...resultsForm, idValue: e.target.value })} placeholder={language === 'en' ? 'Enter value' : 'உள்ளிடவும்'} />
                                 </div>
                               </div>
 
+                              {/* ✅ UPDATED: Year input (4 digits) */}
                               <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">{language === 'en' ? 'Select Year' : 'ஆண்டைத் தேர்ந்தெடுக்கவும்'}</label>
-                                <Select value={resultsForm.year} onValueChange={(v) => setResultsForm({ ...resultsForm, year: v })}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder={language === 'en' ? 'Choose year' : 'ஆண்டை தேர்வு செய்க'} />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {resultsYears.map((y) => (
-                                      <SelectItem key={y} value={y}>
-                                        {y}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <label className="block text-sm font-medium text-foreground mb-1">{language === 'en' ? 'Enter Year' : 'ஆண்டை உள்ளிடவும்'}</label>
+                                <Input
+                                  inputMode="numeric"
+                                  value={resultsForm.year}
+                                  onChange={(e) => setResultsForm({ ...resultsForm, year: onlyDigitsMax(e.target.value, 4) })}
+                                  placeholder={language === 'en' ? 'e.g. 2025' : 'எ.கா. 2025'}
+                                />
                               </div>
 
                               <div className="grid grid-cols-2 gap-3 pt-2">
@@ -1155,7 +1337,13 @@ const ExamPage: React.FC = () => {
                             </form>
                           </motion.div>
                         ) : (
-                          <motion.div key="results-sheet" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.25 }}>
+                          <motion.div
+                            key="results-sheet"
+                            initial={{ opacity: 0, scale: 0.98 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.98 }}
+                            transition={{ duration: 0.25 }}
+                          >
                             <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-sky-50 via-white to-sky-100 shadow-xl">
                               <div className="pointer-events-none absolute inset-0 opacity-40">
                                 <div className="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-sky-200 blur-3xl" />
