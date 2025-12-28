@@ -163,6 +163,7 @@ export default function AdminDashboardPage() {
 
     // Privileged / management actions
     { title: 'Manage Members', icon: Users, href: '/admin/members', permission: 'member' },
+    { title: 'Manage Patrons', icon: Users, href: '/admin/patrons', permission: 'patrons' },
     { title: 'Manage Permissions', icon: Key, href: '/admin/permissions', permission: 'permissions' },
     { title: 'Audit Log', icon: ShieldCheck, href: '/admin/audit', permission: 'audit' },
     { title: 'Settings', icon: Settings, href: '/admin/settings', permission: 'settings' },

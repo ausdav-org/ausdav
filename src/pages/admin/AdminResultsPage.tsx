@@ -29,7 +29,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartConfig } from '@/components/ui/chart';
+import { invokeFunction } from '@/integrations/supabase/functions';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartConfig,
+} from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, Legend } from 'recharts';
 
 type AppSettings = {
@@ -141,6 +147,24 @@ function toNumberOrNull(v: unknown): number | null {
 function fmt(v: unknown): string {
   if (v === null || v === undefined || String(v).trim() === '') return '-';
   return String(v);
+}
+
+function gradeBadgeClass(g: string | null | undefined): string {
+  const grade = (g || '').toString().toUpperCase();
+  switch (grade) {
+    case 'A':
+      return 'bg-emerald-600 text-white';
+    case 'B':
+      return 'bg-blue-600 text-white';
+    case 'C':
+      return 'bg-yellow-400 text-black';
+    case 'S':
+      return 'bg-orange-400 text-black';
+    case 'F':
+      return 'bg-red-600 text-white';
+    default:
+      return 'bg-muted text-muted-foreground';
+  }
 }
 
 function parseCsvLine(line: string): string[] {
@@ -260,6 +284,18 @@ export default function AdminResultsPage() {
 
   const [rangesSaving, setRangesSaving] = useState(false);
 
+  const rangesDifferent = useMemo(() => {
+    const subject = selectedSubjectForGrade;
+    const draft = gradeRangesDraftBySubject[subject];
+    const applied = gradeRangesAppliedBySubject[subject];
+    return (
+      draft.A_min !== applied.A_min ||
+      draft.B_min !== applied.B_min ||
+      draft.C_min !== applied.C_min ||
+      draft.S_min !== applied.S_min
+    );
+  }, [selectedSubjectForGrade, gradeRangesDraftBySubject, gradeRangesAppliedBySubject]);
+
   const [sortMode, setSortMode] = useState<SortMode>('default');
 
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -377,13 +413,19 @@ export default function AdminResultsPage() {
     setAllowResultsView(next);
 
     try {
-      const { error } = await supabase.from('app_settings' as any).update({ allow_results_view: next }).eq('id', 1);
+      const { data, error } = await invokeFunction('update-results-publish', { allow_results_view: next });
       if (error) throw error;
+
+      const updated = data?.updated ?? [];
+      if (!updated || (Array.isArray(updated) && updated.length === 0)) {
+        throw new Error('No rows updated — check permissions or server logs');
+      }
+
       toast.success(next ? 'Results published' : 'Results unpublished');
-    } catch (error) {
-      console.error('Error updating setting:', error);
+    } catch (error: any) {
+      console.error('Error updating setting via function:', error);
       setAllowResultsView(!next);
-      toast.error('Failed to update publish setting');
+      toast.error(error?.message || 'Failed to update publish setting');
     } finally {
       await loadResultsSetting();
       setResultsSaving(false);
@@ -1032,72 +1074,81 @@ export default function AdminResultsPage() {
       for (let i = 0; i < records.length; i += chunkSize) {
         const chunk = records.slice(i, i + chunkSize);
 
-        const upsertResults = await Promise.all(
+        const results = await Promise.all(
           chunk.map(async (r) => {
             const physics_grade = gradeFromMark(r.physics_marks, phyRanges);
             const chemistry_grade = gradeFromMark(r.chemistry_marks, cheRanges);
             const maths_grade = r.stream === 'Maths' ? gradeFromMark(r.maths_marks, mathsRanges) : null;
             const bio_grade = r.stream === 'Biology' ? gradeFromMark(r.bio_marks, bioRanges) : null;
 
+            // Upsert into results table
             const { error } = await supabase
               .from('results' as any)
-              .upsert(
-                {
-                  index_no: r.index_no,
-                  stream: r.stream,
-                  year: selectedYear,
-                  physics_marks: r.physics_marks,
-                  chemistry_marks: r.chemistry_marks,
-                  maths_marks: r.maths_marks,
-                  bio_marks: r.bio_marks,
-                  physics_grade,
-                  chemistry_grade,
-                  maths_grade,
-                  bio_grade,
-                  phy_a_min: phyRanges.A_min,
-                  phy_b_min: phyRanges.B_min,
-                  phy_c_min: phyRanges.C_min,
-                  phy_s_min: phyRanges.S_min,
-                  che_a_min: cheRanges.A_min,
-                  che_b_min: cheRanges.B_min,
-                  che_c_min: cheRanges.C_min,
-                  che_s_min: cheRanges.S_min,
-                  maths_a_min: mathsRanges.A_min,
-                  maths_b_min: mathsRanges.B_min,
-                  maths_c_min: mathsRanges.C_min,
-                  maths_s_min: mathsRanges.S_min,
-                  bio_a_min: bioRanges.A_min,
-                  bio_b_min: bioRanges.B_min,
-                  bio_c_min: bioRanges.C_min,
-                  bio_s_min: bioRanges.S_min,
-                },
-                { onConflict: 'index_no' }
-              );
+              .upsert({
+                index_no: r.index_no,
+                stream: r.stream,
+                year: selectedYear,
+                physics_marks: r.physics_marks,
+                chemistry_marks: r.chemistry_marks,
+                maths_marks: r.maths_marks,
+                bio_marks: r.bio_marks,
+                physics_grade,
+                chemistry_grade,
+                maths_grade,
+                bio_grade,
+                phy_a_min: phyRanges.A_min,
+                phy_b_min: phyRanges.B_min,
+                phy_c_min: phyRanges.C_min,
+                phy_s_min: phyRanges.S_min,
+                che_a_min: cheRanges.A_min,
+                che_b_min: cheRanges.B_min,
+                che_c_min: cheRanges.C_min,
+                che_s_min: cheRanges.S_min,
+                maths_a_min: mathsRanges.A_min,
+                maths_b_min: mathsRanges.B_min,
+                maths_c_min: mathsRanges.C_min,
+                maths_s_min: mathsRanges.S_min,
+                bio_a_min: bioRanges.A_min,
+                bio_b_min: bioRanges.B_min,
+                bio_c_min: bioRanges.C_min,
+                bio_s_min: bioRanges.S_min,
+              }, { onConflict: 'index_no' });
 
-            if (error) return { success: false, index_no: r.index_no, error: error.message };
+            if (error) {
+              console.error(`Error upserting ${r.index_no}:`, error);
+              return { success: false, index_no: r.index_no, error: error.message };
+            }
             return { success: true, index_no: r.index_no };
           })
         );
 
-        for (const res of upsertResults) {
-          if (res.success) successCount++;
-          else {
+        for (const result of results) {
+          if (result.success) {
+            successCount++;
+          } else {
             errorCount++;
-            if (errorMessages.length < 5) errorMessages.push(`${res.index_no}: ${res.error}`);
+            if (errorMessages.length < 5) {
+              errorMessages.push(`${result.index_no}: ${result.error}`);
+            }
           }
         }
       }
 
       await fetchApplicants();
-      await recalcZScoreAndRankForYear(selectedYear);
+      if (successCount > 0 && selectedYear) {
+        await recalcZScoreAndRankForYear(selectedYear);
+      }
 
       if (errorCount > 0) {
-        toast.error(`Failed to upload ${errorCount} records. First errors:\n${errorMessages.join('\n')}`);
-        if (successCount > 0) toast.success(`Successfully uploaded ${successCount} results`);
+        const errorSummary = errorMessages.join('\n');
+        toast.error(`Failed to upload ${errorCount} records. First errors:\n${errorSummary}`);
+        if (successCount > 0) {
+          toast.success(`Successfully uploaded ${successCount} results`);
+        }
       } else {
         toast.success(`Successfully uploaded ${successCount} results`);
       }
-
+      
       setUploadOpen(false);
       setCsvFile(null);
       await fetchApplicants();
@@ -1228,6 +1279,158 @@ export default function AdminResultsPage() {
     } catch (error) {
       console.error('Error updating marks:', error);
       toast.error('Failed to update marks');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const openDetails = (applicant: ApplicantWithResult) => {
+    setSelectedApplicant(applicant);
+    setDetailsOpen(true);
+  };
+
+  // Edit applicant handlers
+  const openEditDialog = (applicant: ApplicantWithResult) => {
+    setEditingApplicant(applicant);
+    setEditForm({
+      fullname: applicant.fullname,
+      gender: applicant.gender,
+      stream: applicant.stream,
+      nic: applicant.nic,
+      phone: applicant.phone || '',
+      email: applicant.email || '',
+      school: applicant.school,
+      physics_marks: applicant.result?.physics_marks?.toString() || '',
+      chemistry_marks: applicant.result?.chemistry_marks?.toString() || '',
+      maths_marks: applicant.result?.maths_marks?.toString() || '',
+      bio_marks: applicant.result?.bio_marks?.toString() || '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingApplicant) return;
+
+    if (!editForm.fullname.trim()) {
+      toast.error('Full name is required');
+      return;
+    }
+    if (!editForm.stream.trim()) {
+      toast.error('Stream is required');
+      return;
+    }
+    if (!editForm.nic.trim()) {
+      toast.error('NIC is required');
+      return;
+    }
+    if (!editForm.school.trim()) {
+      toast.error('School is required');
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      // Update applicant info
+      const { error: applicantError } = await supabase
+        .from('applicants' as any)
+        .update({
+          fullname: editForm.fullname.trim(),
+          gender: editForm.gender,
+          stream: editForm.stream.trim(),
+          nic: editForm.nic.trim(),
+          phone: editForm.phone.trim() || null,
+          email: editForm.email.trim() || null,
+          school: editForm.school.trim(),
+        })
+        .eq('applicant_id', editingApplicant.applicant_id);
+
+      if (applicantError) throw applicantError;
+
+      // Parse marks
+      const physicsMarks = editForm.physics_marks.trim() ? Number(editForm.physics_marks) : null;
+      const chemistryMarks = editForm.chemistry_marks.trim() ? Number(editForm.chemistry_marks) : null;
+      const mathsMarks = editForm.maths_marks.trim() ? Number(editForm.maths_marks) : null;
+      const bioMarks = editForm.bio_marks.trim() ? Number(editForm.bio_marks) : null;
+
+      // Compute grades based on current ranges
+      const phyRanges = gradeRangesAppliedBySubject.physics;
+      const cheRanges = gradeRangesAppliedBySubject.chemistry;
+      const mathsRanges = gradeRangesAppliedBySubject.maths;
+      const bioRanges = gradeRangesAppliedBySubject.bio;
+
+      const physics_grade = gradeFromMark(physicsMarks, phyRanges);
+      const chemistry_grade = gradeFromMark(chemistryMarks, cheRanges);
+      const maths_grade = editForm.stream === 'Maths' ? gradeFromMark(mathsMarks, mathsRanges) : null;
+      const bio_grade = editForm.stream === 'Biology' ? gradeFromMark(bioMarks, bioRanges) : null;
+
+      // Update or insert results
+      if (editingApplicant.result) {
+        // Update existing result
+        const { error: resultError } = await supabase
+          .from('results' as any)
+          .update({
+            stream: editForm.stream.trim(),
+            physics_marks: physicsMarks,
+            chemistry_marks: chemistryMarks,
+            maths_marks: mathsMarks,
+            bio_marks: bioMarks,
+            physics_grade,
+            chemistry_grade,
+            maths_grade,
+            bio_grade,
+          })
+          .eq('result_id', editingApplicant.result.result_id);
+
+        if (resultError) throw resultError;
+      } else if (physicsMarks !== null || chemistryMarks !== null || mathsMarks !== null || bioMarks !== null) {
+        // Insert new result if any marks are provided
+        const { error: resultError } = await supabase
+          .from('results' as any)
+          .insert({
+            index_no: editingApplicant.index_no,
+            stream: editForm.stream.trim(),
+            year: editingApplicant.year,
+            physics_marks: physicsMarks,
+            chemistry_marks: chemistryMarks,
+            maths_marks: mathsMarks,
+            bio_marks: bioMarks,
+            physics_grade,
+            chemistry_grade,
+            maths_grade,
+            bio_grade,
+            phy_a_min: phyRanges.A_min,
+            phy_b_min: phyRanges.B_min,
+            phy_c_min: phyRanges.C_min,
+            phy_s_min: phyRanges.S_min,
+            che_a_min: cheRanges.A_min,
+            che_b_min: cheRanges.B_min,
+            che_c_min: cheRanges.C_min,
+            che_s_min: cheRanges.S_min,
+            maths_a_min: mathsRanges.A_min,
+            maths_b_min: mathsRanges.B_min,
+            maths_c_min: mathsRanges.C_min,
+            maths_s_min: mathsRanges.S_min,
+            bio_a_min: bioRanges.A_min,
+            bio_b_min: bioRanges.B_min,
+            bio_c_min: bioRanges.C_min,
+            bio_s_min: bioRanges.S_min,
+          });
+
+        if (resultError) throw resultError;
+      }
+
+      // Recalculate z-scores and ranks for the year
+      if (selectedYear) {
+        await recalcZScoreAndRankForYear(selectedYear);
+      }
+
+      toast.success('Applicant updated successfully');
+      setEditOpen(false);
+      setEditingApplicant(null);
+      await fetchApplicants();
+    } catch (error) {
+      console.error('Error updating applicant:', error);
+      toast.error('Failed to update applicant');
     } finally {
       setEditSaving(false);
     }
@@ -1586,7 +1789,7 @@ export default function AdminResultsPage() {
               </div>
 
               <div className="flex flex-wrap gap-2 items-center">
-                <Button onClick={saveGradeRanges} disabled={!canManageSettings || rangesSaving}>
+                <Button onClick={saveGradeRanges} disabled={!canManageSettings || rangesSaving || !rangesDifferent}>
                   {rangesSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                   Save Changes
                 </Button>
@@ -1665,17 +1868,17 @@ export default function AdminResultsPage() {
 
                           <TableCell className="font-mono text-sm">{fmt(mathsOrBioMarks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{mathsOrBioGrade ?? '-'}</Badge>
+                            <Badge className={gradeBadgeClass(mathsOrBioGrade)}>{mathsOrBioGrade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{fmt(result?.physics_marks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{result?.physics_grade ?? '-'}</Badge>
+                            <Badge className={gradeBadgeClass(result?.physics_grade)}>{result?.physics_grade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{fmt(result?.chemistry_marks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{result?.chemistry_grade ?? '-'}</Badge>
+                            <Badge className={gradeBadgeClass(result?.chemistry_grade)}>{result?.chemistry_grade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{z}</TableCell>
@@ -1812,7 +2015,7 @@ export default function AdminResultsPage() {
                     <div className="text-muted-foreground">{selectedApplicant.stream === 'Maths' ? 'Maths' : 'Biology'}</div>
                     <div className="font-mono">
                       {fmt(selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_marks : selectedApplicant.result?.bio_marks)}{' '}
-                      <Badge variant="secondary">
+                      <Badge className={gradeBadgeClass(selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_grade : selectedApplicant.result?.bio_grade)}>
                         {selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_grade : selectedApplicant.result?.bio_grade}
                       </Badge>
                     </div>
@@ -1820,14 +2023,13 @@ export default function AdminResultsPage() {
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Physics</div>
                     <div className="font-mono">
-                      {fmt(selectedApplicant.result?.physics_marks)} <Badge variant="secondary">{selectedApplicant.result?.physics_grade ?? '-'}</Badge>
+                      {fmt(selectedApplicant.result?.physics_marks)} <Badge className={gradeBadgeClass(selectedApplicant.result?.physics_grade)}>{selectedApplicant.result?.physics_grade ?? '-'}</Badge>
                     </div>
                   </div>
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Chemistry</div>
                     <div className="font-mono">
-                      {fmt(selectedApplicant.result?.chemistry_marks)}{' '}
-                      <Badge variant="secondary">{selectedApplicant.result?.chemistry_grade ?? '-'}</Badge>
+                      {fmt(selectedApplicant.result?.chemistry_marks)} <Badge className={gradeBadgeClass(selectedApplicant.result?.chemistry_grade)}>{selectedApplicant.result?.chemistry_grade ?? '-'}</Badge>
                     </div>
                   </div>
                   <div className="p-3 rounded-lg border">
@@ -1890,8 +2092,10 @@ export default function AdminResultsPage() {
       >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Marks</DialogTitle>
-            <DialogDescription>Update marks only. Personal details are read-only. Index number cannot be changed.</DialogDescription>
+            <DialogTitle>Edit Applicant</DialogTitle>
+            <DialogDescription>
+              Update applicant details and marks. Index number cannot be changed.
+            </DialogDescription>
           </DialogHeader>
 
           {editingApplicant && (
@@ -1901,50 +2105,100 @@ export default function AdminResultsPage() {
                 <span className="font-mono font-medium">{editingApplicant.index_no}</span>
               </div>
 
+              {/* Personal Information */}
               <div className="space-y-4">
                 <h4 className="font-medium text-sm text-muted-foreground">Personal Information</h4>
-
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Full Name</Label>
-                    <div className="p-2 bg-background rounded">{editingApplicant.fullname}</div>
+                    <Label htmlFor="edit-fullname">Full Name *</Label>
+                    <Input
+                      id="edit-fullname"
+                      value={editForm.fullname}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, fullname: e.target.value }))}
+                      placeholder="Enter full name"
+                    />
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Gender</Label>
-                    <div className="p-2 bg-background rounded">{editingApplicant.gender ? 'Male' : 'Female'}</div>
+                    <Label>Gender *</Label>
+                    <Select
+                      value={editForm.gender ? 'male' : 'female'}
+                      onValueChange={(v) => setEditForm((prev) => ({ ...prev, gender: v === 'male' }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select gender" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="male">Male</SelectItem>
+                        <SelectItem value="female">Female</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Stream</Label>
-                    <div className="p-2 bg-background rounded">{editingApplicant.stream}</div>
+                    <Label htmlFor="edit-stream">Stream *</Label>
+                    <Select
+                      value={editForm.stream}
+                      onValueChange={(v) => setEditForm((prev) => ({ ...prev, stream: v }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select stream" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Maths">Maths</SelectItem>
+                        <SelectItem value="Biology">Biology</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>NIC</Label>
-                    <div className="p-2 bg-background rounded font-mono">{editingApplicant.nic}</div>
+                    <Label htmlFor="edit-nic">NIC *</Label>
+                    <Input
+                      id="edit-nic"
+                      value={editForm.nic}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, nic: e.target.value }))}
+                      placeholder="Enter NIC"
+                    />
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Phone</Label>
-                    <div className="p-2 bg-background rounded">{editingApplicant.phone || '-'}</div>
+                    <Label htmlFor="edit-phone">Phone</Label>
+                    <Input
+                      id="edit-phone"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                      placeholder="Enter phone number"
+                    />
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Email</Label>
-                    <div className="p-2 bg-background rounded">{editingApplicant.email || '-'}</div>
+                    <Label htmlFor="edit-email">Email</Label>
+                    <Input
+                      id="edit-email"
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                      placeholder="Enter email"
+                    />
                   </div>
 
                   <div className="space-y-2 md:col-span-2">
-                    <Label>School</Label>
-                    <div className="p-2 bg-background rounded">{editingApplicant.school}</div>
+                    <Label htmlFor="edit-school">School *</Label>
+                    <Input
+                      id="edit-school"
+                      value={editForm.school}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, school: e.target.value }))}
+                      placeholder="Enter school name"
+                    />
                   </div>
                 </div>
               </div>
 
+              {/* Marks */}
               <div className="space-y-4">
                 <h4 className="font-medium text-sm text-muted-foreground">Marks (leave empty if not available)</h4>
-
+                
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-physics">Physics</Label>
@@ -1974,7 +2228,7 @@ export default function AdminResultsPage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-maths">
-                      Maths {editingApplicant.stream === 'Biology' && <span className="text-muted-foreground">(N/A)</span>}
+                      Maths {editForm.stream === 'Biology' && <span className="text-muted-foreground">(N/A)</span>}
                     </Label>
                     <Input
                       id="edit-maths"
@@ -1984,13 +2238,13 @@ export default function AdminResultsPage() {
                       value={editForm.maths_marks}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, maths_marks: e.target.value }))}
                       placeholder="0-100"
-                      disabled={editingApplicant.stream === 'Biology'}
+                      disabled={editForm.stream === 'Biology'}
                     />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-bio">
-                      Biology {editingApplicant.stream === 'Maths' && <span className="text-muted-foreground">(N/A)</span>}
+                      Biology {editForm.stream === 'Maths' && <span className="text-muted-foreground">(N/A)</span>}
                     </Label>
                     <Input
                       id="edit-bio"
@@ -2000,7 +2254,7 @@ export default function AdminResultsPage() {
                       value={editForm.bio_marks}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, bio_marks: e.target.value }))}
                       placeholder="0-100"
-                      disabled={editingApplicant.stream === 'Maths'}
+                      disabled={editForm.stream === 'Maths'}
                     />
                   </div>
                 </div>

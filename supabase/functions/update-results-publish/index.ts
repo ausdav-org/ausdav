@@ -1,0 +1,89 @@
+// @ts-ignore - Deno remote imports
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// @ts-ignore
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+declare const Deno: { env: { get(key: string): string | undefined } };
+
+serve(async (req: Request) => {
+  const origin = req.headers.get('origin') || '*';
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return new Response(JSON.stringify({ error: 'Service misconfigured' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  let payload: { allow_results_view?: boolean };
+  try {
+    payload = await req.json();
+  } catch (_err) {
+    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  if (typeof payload?.allow_results_view !== 'boolean') {
+    return new Response(JSON.stringify({ error: 'Missing allow_results_view boolean' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  // Authenticate caller
+  const authHeader = req.headers.get('authorization') || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  try {
+    const { data: userData, error: userErr } = await adminClient.auth.getUser(token as string) as any;
+    if (userErr) throw userErr;
+    const userId = userData?.user?.id;
+    if (!userId) return new Response(JSON.stringify({ error: 'Cannot identify user' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    const { data: memberRow, error: memberErr } = await adminClient
+      .from('members')
+      .select('mem_id, role')
+      .eq('auth_user_id', userId)
+      .maybeSingle();
+
+    if (memberErr) throw memberErr;
+    if (!memberRow) return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    const callerRole = memberRow.role;
+
+    // Allow both 'admin' and 'super_admin'
+    if (callerRole !== 'admin' && callerRole !== 'super_admin') {
+      return new Response(JSON.stringify({ error: 'Only admins or super admins can change this setting' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Perform update with service role (bypass RLS)
+    const { data: updated, error: updErr } = await adminClient
+      .from('app_settings')
+      .update({ allow_results_view: payload.allow_results_view })
+      .eq('id', 1)
+      .select('id, allow_results_view, updated_at');
+    if (updErr) throw updErr;
+
+    return new Response(JSON.stringify({ updated: updated ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  } catch (e) {
+    console.error('update-results-publish failed', e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Update failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+});
