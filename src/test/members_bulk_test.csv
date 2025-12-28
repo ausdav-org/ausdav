@@ -1,0 +1,17 @@
+mem_id,fullname,email,role,auth_user_id,phone
+1,John Doe,john.doe+1@example.com,super_admin,auth_1,0400000001
+2,Jane Smith,jane.smith+2@example.com,super_admin,auth_2,0400000002
+3,Alan Turing,alan.turing+3@example.com,admin,auth_3,0400000003
+4,Ada Lovelace,ada.lovelace+4@example.com,admin,auth_4,0400000004
+5,Grace Hopper,grace.hopper+5@example.com,honourable,auth_5,0400000005
+6,Linus Torvalds,linus.torvalds+6@example.com,member,auth_6,0400000006
+7,Elena Gilbert,elena.gilbert+7@example.com,member,auth_7,0400000007
+8,Noah Centineo,noah.centineo+8@example.com,admin,auth_8,0400000008
+9,Olivia Wilde,olivia.wilde+9@example.com,honourable,auth_9,0400000009
+10,Liam Neeson,liam.neeson+10@example.com,member,auth_10,0400000010
+11,Isabella Rossellini,isabella.rossellini+11@example.com,member,auth_11,0400000011
+12,Michael Jordan,michael.jordan+12@example.com,admin,auth_12,0400000012
+13,Sarah Connor,sarah.connor+13@example.com,member,auth_13,0400000013
+14,Tony Stark,tony.stark+14@example.com,member,auth_14,0400000014
+15,Bruce Wayne,bruce.wayne+15@example.com,admin,auth_15,0400000015
+16,Clark Kent,clark.kent+16@example.com,member,,0400000016
