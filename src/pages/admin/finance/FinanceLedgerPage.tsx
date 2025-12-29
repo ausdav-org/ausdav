@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   DollarSign,
   Download,
@@ -84,12 +86,12 @@ interface Transaction {
 
 const categories = [
   'Membership Fee',
-  'Donation',
-  'Event Income',
-  'Sponsorship',
-  'Rent',
+  'Fund Collection',
+  'Monthly Exams',
+  'Ausdav Exams',
+  'Practical Seminar',
   'Utilities',
-  'Transport',
+  'Blood Camp',
   'Printing',
   'Catering',
   'Other',
@@ -116,7 +118,7 @@ const emptyFormData: TransactionFormData = {
 };
 
 // ✅ Receipt bucket (change if your storage bucket name is different)
-const RECEIPT_BUCKET = 'receipts';
+const RECEIPT_BUCKET = 'finance-photos';
 
 export default function FinanceLedgerPage() {
   const { user, isSuperAdmin, isAdmin } = useAdminAuth();
@@ -127,6 +129,7 @@ export default function FinanceLedgerPage() {
   const [filterType, setFilterType] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Stats
   const [totalIncome, setTotalIncome] = useState(0);
@@ -141,6 +144,8 @@ export default function FinanceLedgerPage() {
   // ✅ NEW: Receipt upload state
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const [existingReceiptUrl, setExistingReceiptUrl] = useState<string | null>(null);
+  const [existingReceiptLoading, setExistingReceiptLoading] = useState(false);
   const [receiptUploading, setReceiptUploading] = useState(false);
 
   // Delete confirmation
@@ -230,31 +235,153 @@ export default function FinanceLedgerPage() {
     .filter((t) => t.exp_type === 'expense')
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
-  const exportCSV = () => {
-    const headers = ['Date', 'Type', 'Category', 'Amount', 'Description'];
-    const rows = filteredTransactions.map((txn) => [
-      txn.txn_date || '',
-      txn.exp_type,
-      txn.category,
-      txn.amount,
-      txn.description || '',
-    ]);
+  const getReceiptDataUrl = async (photoPath: string): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase.storage
+        .from(RECEIPT_BUCKET)
+        .createSignedUrl(photoPath, 300);
 
-    const csvContent = [headers, ...rows].map((row) => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `finance-ledger-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success('CSV exported successfully');
+      if (error) throw error;
+      const response = await fetch(data.signedUrl);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read receipt image'));
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error('Failed to load receipt image:', error);
+      return null;
+    }
+  };
+
+  const exportPDF = async () => {
+    if (filteredTransactions.length === 0) {
+      toast.error('No transactions to export');
+      return;
+    }
+
+    setExportingPdf(true);
+    try {
+      const sorted = [...filteredTransactions].sort((a, b) =>
+        (a.txn_date || '').localeCompare(b.txn_date || '')
+      );
+
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const title = 'Finance Ledger';
+      doc.setFontSize(16);
+      doc.text(title, 40, 40);
+      doc.setFontSize(10);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 40, 58);
+
+      const summaryHead = [['Date', 'Type', 'Category', 'Amount', 'Description']];
+      const summaryBody = sorted.map((txn) => [
+        txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-',
+        txn.exp_type,
+        txn.category,
+        `Rs. ${txn.amount.toLocaleString()}`,
+        txn.description || '-',
+      ]);
+
+      autoTable(doc, {
+        head: summaryHead,
+        body: summaryBody,
+        startY: 74,
+        styles: { fontSize: 9, cellPadding: 4, overflow: 'linebreak' },
+        headStyles: { fillColor: [33, 150, 243] },
+        columnStyles: {
+          0: { cellWidth: 70 },
+          1: { cellWidth: 55 },
+          2: { cellWidth: 80 },
+          3: { cellWidth: 70 },
+          4: { cellWidth: 220 },
+        },
+      });
+
+      const imageRows = sorted.filter((txn) => txn.photo_path);
+      if (imageRows.length > 0) {
+        const imageDataList = await Promise.all(
+          imageRows.map((txn) => getReceiptDataUrl(txn.photo_path!))
+        );
+
+        for (let i = 0; i < imageRows.length; i += 4) {
+          doc.addPage();
+          const pageImages = imageDataList.slice(i, i + 4);
+          const margin = 40;
+          const gap = 12;
+          const pageWidth = doc.internal.pageSize.getWidth();
+          const pageHeight = doc.internal.pageSize.getHeight();
+          const cellWidth = (pageWidth - margin * 2 - gap) / 2;
+          const cellHeight = (pageHeight - margin * 2 - gap) / 2;
+
+          pageImages.forEach((imageData, index) => {
+            const row = Math.floor(index / 2);
+            const col = index % 2;
+            const cellX = margin + col * (cellWidth + gap);
+            const cellY = margin + row * (cellHeight + gap);
+
+            if (!imageData) {
+              doc.setFontSize(10);
+              doc.text('No receipt', cellX + 4, cellY + 14);
+              return;
+            }
+
+            const format = imageData.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+            const padding = 8;
+            const imgProps = doc.getImageProperties(imageData);
+            const maxWidth = cellWidth - padding * 2;
+            const maxHeight = cellHeight - padding * 2;
+            const ratio = Math.min(maxWidth / imgProps.width, maxHeight / imgProps.height);
+            const imgWidth = imgProps.width * ratio;
+            const imgHeight = imgProps.height * ratio;
+            const x = cellX + padding + (maxWidth - imgWidth) / 2;
+            const y = cellY + padding + (maxHeight - imgHeight) / 2;
+
+            doc.addImage(imageData, format, x, y, imgWidth, imgHeight);
+          });
+        }
+      }
+
+      doc.save(`finance-ledger-${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success('PDF exported successfully');
+    } catch (error) {
+      console.error('Failed to export PDF:', error);
+      toast.error('Failed to export PDF');
+    } finally {
+      setExportingPdf(false);
+    }
   };
 
   const resetReceiptState = () => {
     setReceiptFile(null);
     if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
     setReceiptPreviewUrl(null);
+    setExistingReceiptUrl(null);
+  };
+
+  const loadExistingReceipt = async (photoPath: string | null) => {
+    if (!photoPath) {
+      setExistingReceiptUrl(null);
+      return;
+    }
+
+    setExistingReceiptLoading(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from(RECEIPT_BUCKET)
+        .createSignedUrl(photoPath, 300);
+
+      if (error) throw error;
+      setExistingReceiptUrl(data.signedUrl);
+    } catch (error) {
+      console.error('Error loading receipt:', error);
+      setExistingReceiptUrl(null);
+    } finally {
+      setExistingReceiptLoading(false);
+    }
   };
 
   const handleOpenAddDialog = () => {
@@ -275,6 +402,7 @@ export default function FinanceLedgerPage() {
       description: txn.description || '',
     });
     resetReceiptState();
+    loadExistingReceipt(txn.photo_path);
     setDialogOpen(true);
   };
 
@@ -289,6 +417,7 @@ export default function FinanceLedgerPage() {
     setReceiptFile(file);
     if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
     setReceiptPreviewUrl(file ? URL.createObjectURL(file) : null);
+    if (file) setExistingReceiptUrl(null);
   };
 
   const uploadReceiptIfAny = async (): Promise<string | null> => {
@@ -298,7 +427,7 @@ export default function FinanceLedgerPage() {
       setReceiptUploading(true);
 
       const safeName = receiptFile.name.replace(/[^\w.\-]+/g, '_');
-      const path = `receipts/${Date.now()}-${user?.id || 'admin'}-${safeName}`;
+      const path = `${user?.id || 'admin'}/${Date.now()}-${safeName}`;
 
       const { error } = await supabase.storage
         .from(RECEIPT_BUCKET)
@@ -313,6 +442,33 @@ export default function FinanceLedgerPage() {
       return path;
     } finally {
       setReceiptUploading(false);
+    }
+  };
+
+  const deleteOldReceiptIfNeeded = async (newPath: string | null) => {
+    if (!editingTransaction?.photo_path) return;
+    if (!newPath || newPath === editingTransaction.photo_path) return;
+
+    const { error } = await supabase.storage
+      .from(RECEIPT_BUCKET)
+      .remove([editingTransaction.photo_path]);
+
+    if (error) {
+      console.error('Failed to delete old receipt:', error);
+      toast.warning('New receipt saved, but failed to delete the old receipt');
+    }
+  };
+
+  const deleteReceiptForTransaction = async (txn: Transaction) => {
+    if (!txn.photo_path) return;
+
+    const { error } = await supabase.storage
+      .from(RECEIPT_BUCKET)
+      .remove([txn.photo_path]);
+
+    if (error) {
+      console.error('Failed to delete receipt:', error);
+      toast.warning('Transaction deleted, but failed to delete the receipt');
     }
   };
 
@@ -347,6 +503,7 @@ export default function FinanceLedgerPage() {
           .eq('fin_id', editingTransaction.fin_id);
 
         if (error) throw error;
+        await deleteOldReceiptIfNeeded(uploadedPhotoPath);
         toast.success('Transaction updated successfully');
       } else {
         // Create new transaction (admin direct entry - already approved)
@@ -397,6 +554,7 @@ export default function FinanceLedgerPage() {
 
       if (error) throw error;
 
+      await deleteReceiptForTransaction(transactionToDelete);
       toast.success('Transaction deleted successfully');
       setDeleteDialogOpen(false);
       setTransactionToDelete(null);
@@ -524,9 +682,9 @@ export default function FinanceLedgerPage() {
                   />
                 </div>
 
-                <Button variant="outline" onClick={exportCSV}>
+                <Button variant="outline" onClick={exportPDF} disabled={exportingPdf}>
                   <Download className="h-4 w-4 mr-2" />
-                  Export CSV
+                  {exportingPdf ? 'Exporting...' : 'Export PDF'}
                 </Button>
 
                 {canEdit && (
@@ -750,6 +908,16 @@ export default function FinanceLedgerPage() {
                   <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/40">
                     <img src={receiptPreviewUrl} alt="Receipt preview" className="w-full h-48 object-contain" />
                   </div>
+                )}
+
+                {!receiptPreviewUrl && existingReceiptUrl && (
+                  <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/40">
+                    <img src={existingReceiptUrl} alt="Existing receipt" className="w-full h-48 object-contain" />
+                  </div>
+                )}
+
+                {!receiptPreviewUrl && existingReceiptLoading && (
+                  <div className="mt-2 text-xs text-muted-foreground">Loading receipt...</div>
                 )}
               </div>
             </div>
