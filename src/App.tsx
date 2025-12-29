@@ -34,6 +34,7 @@ import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
 import AdminPermissionsPage from "@/pages/admin/AdminPermissionsPage";
 import AdminEventsPage from "@/pages/admin/AdminEventsPage";
 import AdminFeedbackPage from "@/pages/admin/AdminFeedbackPage";
+import ContactSettingsPage from "@/pages/admin/ContactSettingsPage";
 import FinanceSubmitPage from "@/pages/admin/finance/FinanceSubmitPage";
 import FinanceVerifyPage from "@/pages/admin/finance/FinanceVerifyPage";
 import FinanceLedgerPage from "@/pages/admin/finance/FinanceLedgerPage";
@@ -132,6 +133,7 @@ const App = () => {
                     <Route path="feedback" element={<AdminFeedbackPage />} />
                     <Route path="claim-permission" element={<ClaimPermissionPage />} />
                     <Route path="permissions" element={<AdminPermissionsPage />} />
+                    <Route path="contact" element={<ContactSettingsPage />} />
                     <Route path="audit" element={<AdminAuditPage />} />
                     <Route path="settings" element={<AdminSettingsPage />} />
                     <Route path="finance/submit" element={<FinanceSubmitPage />} />

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Facebook, Instagram, Youtube, Phone, Mail, MapPin, Heart, LogIn, ArrowUpRight, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useQuery } from '@tanstack/react-query';
+import { fetchOrgContact, OrgContact } from '@/lib/contact';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { toast } from '@/hooks/use-toast';
@@ -11,6 +13,11 @@ import { supabase } from '@/integrations/supabase/client';
 const Footer: React.FC = () => {
   const { t } = useLanguage();
   const [footerMessage, setFooterMessage] = useState('');
+  const { data: orgContact } = useQuery<OrgContact | null, Error>({
+    queryKey: ['org_contact'],
+    queryFn: fetchOrgContact,
+    staleTime: 1000 * 60 * 5,
+  });
 
   const quickLinks = [
     { href: '/', label: t('nav.home') },
@@ -102,26 +109,35 @@ const Footer: React.FC = () => {
             transition={{ delay: 0.2 }}
           >
             <h4 className="font-bold text-lg mb-6">{t('footer.contact')}</h4>
-            <ul className="space-y-4">
-              <li className="flex items-start gap-3 text-sm text-muted-foreground group">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <MapPin className="w-4 h-4 text-primary" />
-                </div>
-                <span className="pt-1">Vavuniya, Northern Province, Sri Lanka</span>
-              </li>
-              <li className="flex items-center gap-3 text-sm text-muted-foreground group">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <Phone className="w-4 h-4 text-primary" />
-                </div>
-                <span>+94 XX XXX XXXX</span>
-              </li>
-              <li className="flex items-center gap-3 text-sm text-muted-foreground group">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <Mail className="w-4 h-4 text-primary" />
-                </div>
-                <span>info@ausdav.org</span>
-              </li>
-            </ul>
+            {/** Fetch contact settings from DB; fallback to static text if missing */}
+            {(() => {
+              const address = orgContact?.address ?? 'Vavuniya, Northern Province, Sri Lanka';
+              const phoneStr = orgContact?.phone ?? '+94 XX XXX XXXX';
+              const emailStr = orgContact?.email ?? 'info@ausdav.org';
+
+              return (
+                <ul className="space-y-4">
+                  <li className="flex items-start gap-3 text-sm text-muted-foreground group">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                      <MapPin className="w-4 h-4 text-primary" />
+                    </div>
+                    <span className="pt-1">{address}</span>
+                  </li>
+                  <li className="flex items-center gap-3 text-sm text-muted-foreground group">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                      <Phone className="w-4 h-4 text-primary" />
+                    </div>
+                    <span>{phoneStr}</span>
+                  </li>
+                  <li className="flex items-center gap-3 text-sm text-muted-foreground group">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                      <Mail className="w-4 h-4 text-primary" />
+                    </div>
+                    <span>{emailStr}</span>
+                  </li>
+                </ul>
+              );
+            })()}
           </motion.div>
 
           {/* Social */}
@@ -207,7 +223,7 @@ const Footer: React.FC = () => {
                           return;
                         }
                         // fallback to direct insert
-                        const { error } = await supabase.from('feedback').insert([{ message, type: null, is_read: false }]);
+                        const { error } = await (supabase as any).from('feedback').insert([{ message, type: null, is_read: false }]);
                         if (error) throw error;
                         toast({ title: 'Thanks', description: 'Feedback submitted' });
                         setFooterMessage('');

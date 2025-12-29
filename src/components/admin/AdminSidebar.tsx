@@ -15,6 +15,7 @@ import {
   DollarSign,
   Megaphone,
   Shield,
+  Phone,
   GraduationCap,
   BookOpen,
   UserPlus,
@@ -63,6 +64,7 @@ const navItems: NavItem[] = [
 
   { title: 'Claim Permission', href: '/admin/claim-permission', icon: HandHelping, roles: ['admin'] },
   { title: 'Permissions', href: '/admin/permissions', icon: Shield, roles: ['super_admin'] },
+  { title: 'Contact', href: '/admin/contact', icon: Phone, roles: ['admin', 'super_admin'] },
   { title: 'Audit Log', href: '/admin/audit', icon: FileText, roles: ['super_admin'] },
   { title: 'Settings', href: '/admin/settings', icon: Settings, roles: ['super_admin'] },
 ];
