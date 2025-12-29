@@ -20,10 +20,53 @@ export async function invokeFunction(name: string, body: any): Promise<InvokeRes
     let authHeader: Record<string, string> = {};
     try {
       const s = await supabase.auth.getSession();
-      const token = s?.data?.session?.access_token;
+      let token = s?.data?.session?.access_token;
+      // Fallback: some environments may not have an initialized session yet.
+      // Try reading the persisted session from localStorage using the same
+      // storage key configured in the client (`ausdav.supabase.auth`).
+      if (!token && typeof window !== 'undefined' && window.localStorage) {
+        try {
+          const raw = window.localStorage.getItem('ausdav.supabase.auth');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            // supabase stores session under 'currentSession' or 'session'
+            token = parsed?.currentSession?.access_token || parsed?.session?.access_token || parsed?.access_token || token;
+          }
+        } catch (_e) {
+          // ignore parsing errors
+        }
+      }
       if (token) authHeader = { Authorization: `Bearer ${token}` };
     } catch (_e) {
       // ignore
+    }
+
+    // Debugging: log a masked token sample and expiry (if present) so we can
+    // confirm what the client will send to Edge Functions without printing
+    // the full secret to the console.
+    try {
+      const sample = authHeader.Authorization ? authHeader.Authorization.replace(/Bearer\s+/i, '') : '';
+      if (sample) {
+        const parts = sample.split('.');
+        let expInfo = '';
+        if (parts.length === 3) {
+          try {
+            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+            if (payload?.exp) {
+              const exp = Number(payload.exp) * 1000;
+              const now = Date.now();
+              expInfo = `exp=${new Date(exp).toISOString()}(${exp <= now ? 'expired' : 'valid'})`;
+            }
+          } catch (_e) {
+            // ignore
+          }
+        }
+        console.debug('invokeFunction will send Authorization sample=', `${sample.slice(0,8)}...`, expInfo);
+      } else {
+        console.debug('invokeFunction: no Authorization header will be sent');
+      }
+    } catch (_e) {
+      // ignore logging errors
     }
 
     const url = `${base.replace(/\/$/, '')}/functions/v1/${name}`;

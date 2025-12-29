@@ -81,7 +81,10 @@ serve(async (req: Request) => {
   try {
     // getUser may accept the access token; supabase-js should return user info
     const { data: userData, error: userErr } = await adminClient.auth.getUser({ access_token: token as string }) as any;
-    if (userErr) throw userErr;
+    if (userErr) {
+      console.error('auth.getUser failed', userErr);
+      return new Response(JSON.stringify({ error: 'Invalid or expired token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     const userId = userData?.user?.id;
     if (!userId) {
       return new Response(JSON.stringify({ error: 'Cannot identify user' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
