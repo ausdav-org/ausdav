@@ -15,6 +15,7 @@ import {
   Key,
 } from 'lucide-react';
 import { useAdminGrantedPermissions } from '@/hooks/useAdminGrantedPermissions';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -154,6 +155,7 @@ export default function AdminDashboardPage() {
   ];
 
   const { hasPermission, loading: permissionsLoading } = useAdminGrantedPermissions();
+  const { isAdmin, isSuperAdmin } = useAdminAuth();
 
   const actions = [
     { title: 'Create Announcement', icon: Megaphone, href: '/admin/announcements', permission: 'announcement' },
@@ -165,13 +167,20 @@ export default function AdminDashboardPage() {
     { title: 'Manage Members', icon: Users, href: '/admin/members', permission: 'member' },
     { title: 'Manage Patrons', icon: Users, href: '/admin/patrons', permission: 'patrons' },
     { title: 'Manage Permissions', icon: Key, href: '/admin/permissions', permission: 'permissions' },
+    { title: 'Feedback', icon: Megaphone, href: '/admin/feedback', permission: 'feedback' },
     { title: 'Audit Log', icon: ShieldCheck, href: '/admin/audit', permission: 'audit' },
     { title: 'Settings', icon: Settings, href: '/admin/settings', permission: 'settings' },
   ];
 
   // While permissions are loading, show the existing actions (fallback). Once loaded,
   // only show actions for which the admin has the required permission.
-  const visibleActions = permissionsLoading ? actions : actions.filter((a) => hasPermission(a.permission));
+  const visibleActions = permissionsLoading
+    ? actions
+    : actions.filter((a) => {
+        // Feedback portal should be visible to Admins and Super Admins.
+        if (a.permission === 'feedback') return isAdmin || isSuperAdmin || hasPermission(a.permission);
+        return hasPermission(a.permission);
+      });
 
   return (
     <div className="min-h-screen">

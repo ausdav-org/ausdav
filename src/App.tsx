@@ -22,6 +22,7 @@ import LoginPage from "@/pages/LoginPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import SignupPortalPage from "@/pages/SignupPortalPage";
 import ProfilePage from "@/pages/ProfilePage";
+import FeedbackPage from "@/pages/FeedbackPage";
 
 // Admin imports
 import { AdminLayout } from "@/components/admin/AdminLayout";
@@ -33,6 +34,7 @@ import AdminAuditPage from "@/pages/admin/AdminAuditPage";
 import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
 import AdminPermissionsPage from "@/pages/admin/AdminPermissionsPage";
 import AdminEventsPage from "@/pages/admin/AdminEventsPage";
+import AdminFeedbackPage from "@/pages/admin/AdminFeedbackPage";
 import FinanceSubmitPage from "@/pages/admin/finance/FinanceSubmitPage";
 import FinanceVerifyPage from "@/pages/admin/finance/FinanceVerifyPage";
 import FinanceLedgerPage from "@/pages/admin/finance/FinanceLedgerPage";
@@ -92,7 +94,9 @@ const App = () => {
                   <Route path="/register" element={<Navigate to="/signup" replace />} />
 
                   {/* ✅ Recommended clean profile route */}
+
                   <Route path="/profile" element={<Layout><ProfilePage /></Layout>} />
+                  <Route path="/feedback" element={<Layout><FeedbackPage /></Layout>} />
 
                   {/* ✅ Backward-compat: old (file-like) path redirects to /profile */}
                   <Route
@@ -126,6 +130,7 @@ const App = () => {
                     <Route path="exam" element={<AdminExamPage />} />
                     <Route path="seminar" element={<AdminSeminarPage />} />
                     <Route path="announcements" element={<AdminAnnouncementsPage />} />
+                    <Route path="feedback" element={<AdminFeedbackPage />} />
                     <Route path="claim-permission" element={<ClaimPermissionPage />} />
                     <Route path="permissions" element={<AdminPermissionsPage />} />
                     <Route path="audit" element={<AdminAuditPage />} />
