@@ -7,7 +7,6 @@ import {
   Download,
   Loader2,
   FileText,
-  Trash2,
   Users,
   TrendingUp,
   ArrowUpDown,
@@ -23,49 +22,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeFunction } from '@/integrations/supabase/functions';
 import {
   ChartContainer,
   ChartTooltip,
@@ -77,7 +41,7 @@ import { BarChart, Bar, XAxis, YAxis, Legend } from 'recharts';
 type AppSettings = {
   allow_results_view: boolean;
 
-  // ✅ subject-specific ranges saved as default
+  // subject-specific ranges saved as default
   phy_grade_a_min?: number | null;
   phy_grade_b_min?: number | null;
   phy_grade_c_min?: number | null;
@@ -121,29 +85,36 @@ interface Result {
   chemistry_marks: number | null;
   maths_marks: number | null;
   bio_marks: number | null;
+
   phy_a_min: number;
   phy_b_min: number;
   phy_c_min: number;
   phy_s_min: number;
+
   che_a_min: number;
   che_b_min: number;
   che_c_min: number;
   che_s_min: number;
+
   bio_a_min: number;
   bio_b_min: number;
   bio_c_min: number;
   bio_s_min: number;
+
   maths_a_min: number;
   maths_b_min: number;
   maths_c_min: number;
   maths_s_min: number;
+
   physics_grade: string | null;
   chemistry_grade: string | null;
   maths_grade: string | null;
   bio_grade: string | null;
+
   zscore: number | null;
   rank: number | null;
   year: number;
+
   created_at: string;
   updated_at: string;
 }
@@ -159,7 +130,8 @@ type GradeRanges = {
   S_min: number;
 };
 
-type SubjectKey = 'physics' | 'chemistry' | 'bio' | 'maths';
+// ✅ UPDATED: add 'all'
+type SubjectKey = 'all' | 'physics' | 'chemistry' | 'bio' | 'maths';
 
 const DEFAULT_SL_RANGES: GradeRanges = { A_min: 75, B_min: 65, C_min: 55, S_min: 35 };
 
@@ -175,6 +147,24 @@ function toNumberOrNull(v: unknown): number | null {
 function fmt(v: unknown): string {
   if (v === null || v === undefined || String(v).trim() === '') return '-';
   return String(v);
+}
+
+function gradeBadgeClass(g: string | null | undefined): string {
+  const grade = (g || '').toString().toUpperCase();
+  switch (grade) {
+    case 'A':
+      return 'bg-emerald-600 text-white';
+    case 'B':
+      return 'bg-blue-600 text-white';
+    case 'C':
+      return 'bg-yellow-400 text-black';
+    case 'S':
+      return 'bg-orange-400 text-black';
+    case 'F':
+      return 'bg-red-600 text-white';
+    default:
+      return 'bg-muted text-muted-foreground';
+  }
 }
 
 function parseCsvLine(line: string): string[] {
@@ -272,21 +262,39 @@ export default function AdminResultsPage() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [resultsSaving, setResultsSaving] = useState(false);
 
-  const [selectedSubjectForGrade, setSelectedSubjectForGrade] = useState<SubjectKey>('physics');
+  // ✅ UPDATED: default to 'all'
+  const [selectedSubjectForGrade, setSelectedSubjectForGrade] = useState<SubjectKey>('all');
 
+  // ✅ UPDATED: include 'all'
   const [gradeRangesDraftBySubject, setGradeRangesDraftBySubject] = useState<Record<SubjectKey, GradeRanges>>({
+    all: DEFAULT_SL_RANGES,
     physics: DEFAULT_SL_RANGES,
     chemistry: DEFAULT_SL_RANGES,
     bio: DEFAULT_SL_RANGES,
     maths: DEFAULT_SL_RANGES,
   });
+
   const [gradeRangesAppliedBySubject, setGradeRangesAppliedBySubject] = useState<Record<SubjectKey, GradeRanges>>({
+    all: DEFAULT_SL_RANGES,
     physics: DEFAULT_SL_RANGES,
     chemistry: DEFAULT_SL_RANGES,
     bio: DEFAULT_SL_RANGES,
     maths: DEFAULT_SL_RANGES,
   });
+
   const [rangesSaving, setRangesSaving] = useState(false);
+
+  const rangesDifferent = useMemo(() => {
+    const subject = selectedSubjectForGrade;
+    const draft = gradeRangesDraftBySubject[subject];
+    const applied = gradeRangesAppliedBySubject[subject];
+    return (
+      draft.A_min !== applied.A_min ||
+      draft.B_min !== applied.B_min ||
+      draft.C_min !== applied.C_min ||
+      draft.S_min !== applied.S_min
+    );
+  }, [selectedSubjectForGrade, gradeRangesDraftBySubject, gradeRangesAppliedBySubject]);
 
   const [sortMode, setSortMode] = useState<SortMode>('default');
 
@@ -334,18 +342,20 @@ export default function AdminResultsPage() {
   const loadResultsSetting = async () => {
     setSettingsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('app_settings' as any)
-        .select('*')
-        .eq('id', 1)
-        .maybeSingle();
-
+      const { data, error } = await supabase.from('app_settings' as any).select('*').eq('id', 1).maybeSingle();
       if (error) throw error;
 
       const settings = data as unknown as AppSettings | null;
       setAllowResultsView(settings?.allow_results_view ?? false);
 
+      // ✅ UPDATED: include 'all'
       const loadedBySubject: Record<SubjectKey, GradeRanges> = {
+        all: {
+          A_min: Number(settings?.phy_grade_a_min ?? DEFAULT_SL_RANGES.A_min),
+          B_min: Number(settings?.phy_grade_b_min ?? DEFAULT_SL_RANGES.B_min),
+          C_min: Number(settings?.phy_grade_c_min ?? DEFAULT_SL_RANGES.C_min),
+          S_min: Number(settings?.phy_grade_s_min ?? DEFAULT_SL_RANGES.S_min),
+        },
         physics: {
           A_min: Number(settings?.phy_grade_a_min ?? DEFAULT_SL_RANGES.A_min),
           B_min: Number(settings?.phy_grade_b_min ?? DEFAULT_SL_RANGES.B_min),
@@ -378,24 +388,22 @@ export default function AdminResultsPage() {
       console.error('Error loading setting:', error);
       toast.error('Failed to load publish setting');
       setAllowResultsView(false);
-      setGradeRangesDraftBySubject({
+
+      const fallback: Record<SubjectKey, GradeRanges> = {
+        all: DEFAULT_SL_RANGES,
         physics: DEFAULT_SL_RANGES,
         chemistry: DEFAULT_SL_RANGES,
         bio: DEFAULT_SL_RANGES,
         maths: DEFAULT_SL_RANGES,
-      });
-      setGradeRangesAppliedBySubject({
-        physics: DEFAULT_SL_RANGES,
-        chemistry: DEFAULT_SL_RANGES,
-        bio: DEFAULT_SL_RANGES,
-        maths: DEFAULT_SL_RANGES,
-      });
+      };
+
+      setGradeRangesDraftBySubject(fallback);
+      setGradeRangesAppliedBySubject(fallback);
     } finally {
       setSettingsLoading(false);
     }
   };
 
-  // ✅ publish button behavior same for admin + super admin (no “stuck”)
   const toggleResultsSetting = async () => {
     if (allowResultsView === null || resultsSaving) return;
     if (!canManageSettings) return;
@@ -405,18 +413,19 @@ export default function AdminResultsPage() {
     setAllowResultsView(next);
 
     try {
-      const { error } = await supabase
-        .from('app_settings' as any)
-        .update({ allow_results_view: next })
-        .eq('id', 1);
-
+      const { data, error } = await invokeFunction('update-results-publish', { allow_results_view: next });
       if (error) throw error;
 
+      const updated = data?.updated ?? [];
+      if (!updated || (Array.isArray(updated) && updated.length === 0)) {
+        throw new Error('No rows updated — check permissions or server logs');
+      }
+
       toast.success(next ? 'Results published' : 'Results unpublished');
-    } catch (error) {
-      console.error('Error updating setting:', error);
+    } catch (error: any) {
+      console.error('Error updating setting via function:', error);
       setAllowResultsView(!next);
-      toast.error('Failed to update publish setting');
+      toast.error(error?.message || 'Failed to update publish setting');
     } finally {
       await loadResultsSetting();
       setResultsSaving(false);
@@ -425,23 +434,27 @@ export default function AdminResultsPage() {
 
   const fetchApplicants = async () => {
     try {
-      // Fetch applicants
-      const { data: applicantsData, error: applicantsError } = await supabase
-        .from('applicants' as any)
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Use edge function with service role for admins so RLS does not hide rows
+      if (isAdmin || isSuperAdmin) {
+        const { data, error } = await invokeFunction('fetch-applicants', {});
+        if (error) throw error;
+        setApplicants((data?.applicants as Applicant[]) || []);
+        setResults((data?.results as Result[]) || []);
+      } else {
+        const { data: applicantsData, error: applicantsError } = await supabase
+          .from('applicants' as any)
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (applicantsError) throw applicantsError;
+        setApplicants((applicantsData as unknown as Applicant[]) || []);
 
-      if (applicantsError) throw applicantsError;
-      setApplicants((applicantsData as unknown as Applicant[]) || []);
-
-      // Fetch results
-      const { data: resultsData, error: resultsError } = await supabase
-        .from('results' as any)
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (resultsError) throw resultsError;
-      setResults((resultsData as unknown as Result[]) || []);
+        const { data: resultsData, error: resultsError } = await supabase
+          .from('results' as any)
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (resultsError) throw resultsError;
+        setResults((resultsData as unknown as Result[]) || []);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to fetch data');
@@ -450,20 +463,17 @@ export default function AdminResultsPage() {
     }
   };
 
-  // Create a map of results by index_no for quick lookup
+  // include year in key to avoid collisions
   const resultsMap = useMemo(() => {
     const map = new Map<string, Result>();
-    for (const r of results) {
-      map.set(r.index_no, r);
-    }
+    for (const r of results) map.set(`${r.index_no}__${r.year}`, r);
     return map;
   }, [results]);
 
-  // Combine applicants with their results
   const applicantsWithResults = useMemo(() => {
-    return applicants.map(a => ({
+    return applicants.map((a) => ({
       ...a,
-      result: resultsMap.get(a.index_no) || null,
+      result: resultsMap.get(`${a.index_no}__${a.year}`) || null,
     })) as ApplicantWithResult[];
   }, [applicants, resultsMap]);
 
@@ -474,20 +484,22 @@ export default function AdminResultsPage() {
 
   const zScoreMap = useMemo(() => {
     const totals: Array<{ id: number; total: number; stream: string }> = [];
+
     for (const a of yearApplicants) {
       const result = a.result;
       if (!result) continue;
-      
+
       const p = toNumberOrNull(result.physics_marks);
       const c = toNumberOrNull(result.chemistry_marks);
-      const m = a.stream === 'Maths' ? toNumberOrNull(result.maths_marks) : toNumberOrNull(result.bio_marks);
-      
+      const m =
+        a.stream === 'Maths' ? toNumberOrNull(result.maths_marks) : toNumberOrNull(result.bio_marks);
+
       if (m === null || p === null || c === null) continue;
       totals.push({ id: a.applicant_id, total: m + p + c, stream: a.stream });
     }
-    if (totals.length === 0) return new Map<number, string>();
 
-    // Calculate z-score per stream
+    if (totals.length === 0) return new Map<number, number | null>();
+
     const streamTotals = new Map<string, number[]>();
     for (const t of totals) {
       if (!streamTotals.has(t.stream)) streamTotals.set(t.stream, []);
@@ -498,17 +510,22 @@ export default function AdminResultsPage() {
     for (const [stream, vals] of streamTotals) {
       const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
       const variance = vals.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / vals.length;
-      const std = Math.sqrt(variance) || 1;
+      const std = Math.sqrt(variance);
       streamStats.set(stream, { mean, std });
     }
 
-    const map = new Map<number, string>();
+    const map = new Map<number, number | null>();
     for (const t of totals) {
       const stats = streamStats.get(t.stream);
       if (!stats) continue;
+      if (!stats.std || stats.std === 0) {
+        map.set(t.id, 0);
+        continue;
+      }
       const z = (t.total - stats.mean) / stats.std;
-      map.set(t.id, Number.isFinite(z) ? z.toFixed(4) : '-');
+      map.set(t.id, Number.isFinite(z) ? Number(z.toFixed(4)) : null);
     }
+
     return map;
   }, [yearApplicants]);
 
@@ -563,19 +580,15 @@ export default function AdminResultsPage() {
     buckets.forEach((b) => (zBucketCounts[b.name] = 0));
 
     filteredApplicants.forEach((a) => {
-      const zString = zScoreMap.get(a.applicant_id);
-      const z = zString ? Number(zString) : (a.result?.zscore ?? null);
+      let z: number | null = null;
+      if (zScoreMap.has(a.applicant_id)) z = zScoreMap.get(a.applicant_id) ?? null;
+      else z = a.result?.zscore ?? null;
 
       if (z === null || Number.isNaN(z)) {
         zBucketCounts['Not Available'] += 1;
         return;
       }
-      const b =
-        z < 0 ? '< 0.00' :
-        z < 1 ? '0.00–0.99' :
-        z < 2 ? '1.00–1.99' :
-        z < 3 ? '2.00–2.99' : '≥ 3.00';
-
+      const b = z < 0 ? '< 0.00' : z < 1 ? '0.00–0.99' : z < 2 ? '1.00–1.99' : z < 3 ? '2.00–2.99' : '≥ 3.00';
       zBucketCounts[b] += 1;
     });
 
@@ -591,7 +604,6 @@ export default function AdminResultsPage() {
     return { maleCount, femaleCount, zScoreData };
   }, [filteredApplicants, zScoreMap]);
 
-  // Bell curve data: Bio and Maths SEPARATE series
   const bellCurveData = useMemo(() => {
     const mathsValues: number[] = [];
     const bioValues: number[] = [];
@@ -613,7 +625,6 @@ export default function AdminResultsPage() {
         if (isMathStream) mathsValues.push(m);
         else if (isBioStream) bioValues.push(m);
       }
-
       if (p !== null) physicsValues.push(p);
       if (c !== null) chemistryValues.push(c);
     }
@@ -625,9 +636,7 @@ export default function AdminResultsPage() {
 
     const map = new Map<string, any>();
 
-    for (const b of mathsBuckets) {
-      map.set(b.name, { name: b.name, maths: b.count, bio: 0, physics: 0, chemistry: 0 });
-    }
+    for (const b of mathsBuckets) map.set(b.name, { name: b.name, maths: b.count, bio: 0, physics: 0, chemistry: 0 });
     for (const b of bioBuckets) {
       const row = map.get(b.name) ?? { name: b.name, maths: 0, bio: 0, physics: 0, chemistry: 0 };
       row.bio = b.count;
@@ -644,7 +653,10 @@ export default function AdminResultsPage() {
       map.set(b.name, row);
     }
 
-    return Array.from(map.values());
+    const order = [];
+    for (let i = 0; i <= 90; i += 10) order.push(`${i}-${i + 9}`);
+    order.push('100');
+    return order.map((k) => map.get(k) ?? { name: k, maths: 0, bio: 0, physics: 0, chemistry: 0 });
   }, [filteredApplicants]);
 
   const bellCurveChartConfig: ChartConfig = {
@@ -703,7 +715,8 @@ export default function AdminResultsPage() {
       headers.join(','),
       ...filteredApplicants.map((a) => {
         const result = a.result;
-        const z = zScoreMap.get(a.applicant_id) ?? (result?.zscore?.toFixed(4) ?? '-');
+        const zVal = zScoreMap.has(a.applicant_id) ? zScoreMap.get(a.applicant_id) ?? null : result?.zscore ?? null;
+        const z = zVal !== null && zVal !== undefined ? String((zVal as number).toFixed(4)) : '-';
 
         return [
           `"${a.index_no}"`,
@@ -742,13 +755,10 @@ export default function AdminResultsPage() {
   };
 
   const recalcZScoreAndRankForYear = async (year: number) => {
-    // Call the database function to compute z-scores and ranks
     try {
-      // Compute for Maths stream
       await supabase.rpc('compute_results_rankings' as any, { p_year: year, p_stream: 'Maths' });
-      // Compute for Biology stream
       await supabase.rpc('compute_results_rankings' as any, { p_year: year, p_stream: 'Biology' });
-      
+
       toast.success('Z-scores and ranks recalculated');
       await fetchApplicants();
     } catch (error) {
@@ -757,54 +767,63 @@ export default function AdminResultsPage() {
     }
   };
 
-  const regradeForYearBySubject = async (subject: SubjectKey, ranges: GradeRanges) => {
-    if (selectedYear === null) return;
-    
-    // Get results for this year
-    const yearResults = results.filter(r => r.year === selectedYear);
-    
-    const chunkSize = 120;
-    for (let i = 0; i < yearResults.length; i += chunkSize) {
-      const chunk = yearResults.slice(i, i + chunkSize);
+  // ✅ UPDATED: support subject === 'all'
+  const regradeForYearBySubject = async (subject: SubjectKey, ranges: GradeRanges, yearParam?: number) => {
+    const year = yearParam ?? selectedYear;
+    if (year === null) return;
 
-      await Promise.all(
-        chunk.map((r) => {
-          const updates: any = {};
-          
-          if (subject === 'physics') {
-            updates.physics_grade = gradeFromMark(r.physics_marks, ranges);
-            updates.phy_a_min = ranges.A_min;
-            updates.phy_b_min = ranges.B_min;
-            updates.phy_c_min = ranges.C_min;
-            updates.phy_s_min = ranges.S_min;
-          } else if (subject === 'chemistry') {
-            updates.chemistry_grade = gradeFromMark(r.chemistry_marks, ranges);
-            updates.che_a_min = ranges.A_min;
-            updates.che_b_min = ranges.B_min;
-            updates.che_c_min = ranges.C_min;
-            updates.che_s_min = ranges.S_min;
-          } else if (subject === 'maths') {
-            updates.maths_grade = gradeFromMark(r.maths_marks, ranges);
-            updates.maths_a_min = ranges.A_min;
-            updates.maths_b_min = ranges.B_min;
-            updates.maths_c_min = ranges.C_min;
-            updates.maths_s_min = ranges.S_min;
-          } else if (subject === 'bio') {
-            updates.bio_grade = gradeFromMark(r.bio_marks, ranges);
-            updates.bio_a_min = ranges.A_min;
-            updates.bio_b_min = ranges.B_min;
-            updates.bio_c_min = ranges.C_min;
-            updates.bio_s_min = ranges.S_min;
-          }
-          
-          return supabase.from('results' as any).update(updates).eq('result_id', r.result_id);
-        })
-      );
+    const yearResults = results.filter((r) => r.year === year);
+
+    const subjectsToApply: Array<Exclude<SubjectKey, 'all'>> =
+      subject === 'all' ? ['physics', 'chemistry', 'maths', 'bio'] : [subject];
+
+    const chunkSize = 120;
+
+    for (const sub of subjectsToApply) {
+      for (let i = 0; i < yearResults.length; i += chunkSize) {
+        const chunk = yearResults.slice(i, i + chunkSize);
+
+        await Promise.all(
+          chunk.map((r) => {
+            const updates: any = {};
+
+            if (sub === 'physics') {
+              updates.physics_grade = gradeFromMark(r.physics_marks, ranges);
+              updates.phy_a_min = ranges.A_min;
+              updates.phy_b_min = ranges.B_min;
+              updates.phy_c_min = ranges.C_min;
+              updates.phy_s_min = ranges.S_min;
+            } else if (sub === 'chemistry') {
+              updates.chemistry_grade = gradeFromMark(r.chemistry_marks, ranges);
+              updates.che_a_min = ranges.A_min;
+              updates.che_b_min = ranges.B_min;
+              updates.che_c_min = ranges.C_min;
+              updates.che_s_min = ranges.S_min;
+            } else if (sub === 'maths') {
+              updates.maths_grade = gradeFromMark(r.maths_marks, ranges);
+              updates.maths_a_min = ranges.A_min;
+              updates.maths_b_min = ranges.B_min;
+              updates.maths_c_min = ranges.C_min;
+              updates.maths_s_min = ranges.S_min;
+            } else if (sub === 'bio') {
+              updates.bio_grade = gradeFromMark(r.bio_marks, ranges);
+              updates.bio_a_min = ranges.A_min;
+              updates.bio_b_min = ranges.B_min;
+              updates.bio_c_min = ranges.C_min;
+              updates.bio_s_min = ranges.S_min;
+            }
+
+            return supabase.from('results' as any).update(updates).eq('result_id', r.result_id);
+          })
+        );
+      }
     }
   };
 
+  // ✅ UPDATED: All => updates all subject columns + regrades all
   const saveGradeRanges = async () => {
     if (!canManageSettings) return toast.error('Only admins can change grade ranges');
+    if (selectedYear === null) return toast.error('Please select a year');
 
     const subject = selectedSubjectForGrade;
     const draft = gradeRangesDraftBySubject[subject];
@@ -812,103 +831,190 @@ export default function AdminResultsPage() {
     if (msg) return toast.error(msg);
 
     setRangesSaving(true);
+
     try {
+      const subjectsToApply: Array<Exclude<SubjectKey, 'all'>> =
+        subject === 'all' ? ['physics', 'chemistry', 'maths', 'bio'] : [subject];
+
+      // update applied local state
+      setGradeRangesAppliedBySubject((prev) => {
+        const next = { ...prev };
+        if (subject === 'all') {
+          next.all = draft;
+          for (const s of subjectsToApply) next[s] = draft;
+        } else {
+          next[subject] = draft;
+        }
+        return next;
+      });
+
+      // Build payload to persist into app_settings (only if those columns exist)
       const payload: any = {};
-      if (subject === 'physics') {
-        payload.phy_grade_a_min = draft.A_min;
-        payload.phy_grade_b_min = draft.B_min;
-        payload.phy_grade_c_min = draft.C_min;
-        payload.phy_grade_s_min = draft.S_min;
-      } else if (subject === 'chemistry') {
-        payload.che_grade_a_min = draft.A_min;
-        payload.che_grade_b_min = draft.B_min;
-        payload.che_grade_c_min = draft.C_min;
-        payload.che_grade_s_min = draft.S_min;
-      } else if (subject === 'bio') {
-        payload.bio_grade_a_min = draft.A_min;
-        payload.bio_grade_b_min = draft.B_min;
-        payload.bio_grade_c_min = draft.C_min;
-        payload.bio_grade_s_min = draft.S_min;
-      } else if (subject === 'maths') {
-        payload.maths_grade_a_min = draft.A_min;
-        payload.maths_grade_b_min = draft.B_min;
-        payload.maths_grade_c_min = draft.C_min;
-        payload.maths_grade_s_min = draft.S_min;
+      const applyPayloadFor = (s: Exclude<SubjectKey, 'all'>) => {
+        if (s === 'physics') {
+          payload.phy_grade_a_min = draft.A_min;
+          payload.phy_grade_b_min = draft.B_min;
+          payload.phy_grade_c_min = draft.C_min;
+          payload.phy_grade_s_min = draft.S_min;
+        } else if (s === 'chemistry') {
+          payload.che_grade_a_min = draft.A_min;
+          payload.che_grade_b_min = draft.B_min;
+          payload.che_grade_c_min = draft.C_min;
+          payload.che_grade_s_min = draft.S_min;
+        } else if (s === 'bio') {
+          payload.bio_grade_a_min = draft.A_min;
+          payload.bio_grade_b_min = draft.B_min;
+          payload.bio_grade_c_min = draft.C_min;
+          payload.bio_grade_s_min = draft.S_min;
+        } else if (s === 'maths') {
+          payload.maths_grade_a_min = draft.A_min;
+          payload.maths_grade_b_min = draft.B_min;
+          payload.maths_grade_c_min = draft.C_min;
+          payload.maths_grade_s_min = draft.S_min;
+        }
+      };
+      for (const s of subjectsToApply) applyPayloadFor(s);
+
+      const { data: existingSettings, error: readErr } = await supabase
+        .from('app_settings' as any)
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+      if (readErr) throw new Error(readErr.message || 'Failed to read settings');
+
+      const existingKeys = existingSettings ? Object.keys(existingSettings) : [];
+      const allowedPayload: Record<string, any> = {};
+      for (const [k, v] of Object.entries(payload)) {
+        if (existingKeys.includes(k)) allowedPayload[k] = v;
       }
 
-      const { error } = await supabase.from('app_settings' as any).update(payload).eq('id', 1);
-      if (error) throw error;
+      if (Object.keys(allowedPayload).length > 0) {
+        const { error } = await supabase.from('app_settings' as any).update(allowedPayload).eq('id', 1);
+        if (error) throw new Error(error.message || 'Failed to update settings');
+      } else {
+        // If DB columns missing, still proceed with DB regrade using results-table columns
+        console.warn('Grade range columns missing in app_settings; skipping global persistence.');
+      }
 
-      setGradeRangesAppliedBySubject((p) => ({ ...p, [subject]: draft }));
+      await regradeForYearBySubject(subject, draft, selectedYear);
+      await recalcZScoreAndRankForYear(selectedYear);
 
-      await regradeForYearBySubject(subject, draft);
-      toast.success('Saved ranges & regraded for selected subject');
+      toast.success(
+        subject === 'all'
+          ? `Saved ranges & regraded ALL subjects for ${selectedYear}`
+          : `Saved ranges & regraded ${subject} for ${selectedYear}`
+      );
 
       await fetchApplicants();
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to save ranges');
+    } catch (e: any) {
+      console.error('saveGradeRanges error:', e);
+      toast.error(e?.message || 'Failed to save ranges');
     } finally {
       setRangesSaving(false);
     }
   };
 
+  // ✅ UPDATED: All => reset all + regrade all
   const resetGradeRanges = async () => {
     if (!canManageSettings) return toast.error('Only admins can reset grade ranges');
+    if (selectedYear === null) return toast.error('Please select a year');
 
     const subject = selectedSubjectForGrade;
+
     setRangesSaving(true);
     try {
-      setGradeRangesDraftBySubject((p) => ({ ...p, [subject]: DEFAULT_SL_RANGES }));
-      setGradeRangesAppliedBySubject((p) => ({ ...p, [subject]: DEFAULT_SL_RANGES }));
+      const subjectsToApply: Array<Exclude<SubjectKey, 'all'>> =
+        subject === 'all' ? ['physics', 'chemistry', 'maths', 'bio'] : [subject];
+
+      setGradeRangesDraftBySubject((prev) => {
+        const next = { ...prev };
+        if (subject === 'all') {
+          next.all = DEFAULT_SL_RANGES;
+          for (const s of subjectsToApply) next[s] = DEFAULT_SL_RANGES;
+        } else {
+          next[subject] = DEFAULT_SL_RANGES;
+        }
+        return next;
+      });
+
+      setGradeRangesAppliedBySubject((prev) => {
+        const next = { ...prev };
+        if (subject === 'all') {
+          next.all = DEFAULT_SL_RANGES;
+          for (const s of subjectsToApply) next[s] = DEFAULT_SL_RANGES;
+        } else {
+          next[subject] = DEFAULT_SL_RANGES;
+        }
+        return next;
+      });
 
       const payload: any = {};
-      if (subject === 'physics') {
-        payload.phy_grade_a_min = DEFAULT_SL_RANGES.A_min;
-        payload.phy_grade_b_min = DEFAULT_SL_RANGES.B_min;
-        payload.phy_grade_c_min = DEFAULT_SL_RANGES.C_min;
-        payload.phy_grade_s_min = DEFAULT_SL_RANGES.S_min;
-      } else if (subject === 'chemistry') {
-        payload.che_grade_a_min = DEFAULT_SL_RANGES.A_min;
-        payload.che_grade_b_min = DEFAULT_SL_RANGES.B_min;
-        payload.che_grade_c_min = DEFAULT_SL_RANGES.C_min;
-        payload.che_grade_s_min = DEFAULT_SL_RANGES.S_min;
-      } else if (subject === 'bio') {
-        payload.bio_grade_a_min = DEFAULT_SL_RANGES.A_min;
-        payload.bio_grade_b_min = DEFAULT_SL_RANGES.B_min;
-        payload.bio_grade_c_min = DEFAULT_SL_RANGES.C_min;
-        payload.bio_grade_s_min = DEFAULT_SL_RANGES.S_min;
-      } else if (subject === 'maths') {
-        payload.maths_grade_a_min = DEFAULT_SL_RANGES.A_min;
-        payload.maths_grade_b_min = DEFAULT_SL_RANGES.B_min;
-        payload.maths_grade_c_min = DEFAULT_SL_RANGES.C_min;
-        payload.maths_grade_s_min = DEFAULT_SL_RANGES.S_min;
+      const applyPayloadFor = (s: Exclude<SubjectKey, 'all'>) => {
+        if (s === 'physics') {
+          payload.phy_grade_a_min = DEFAULT_SL_RANGES.A_min;
+          payload.phy_grade_b_min = DEFAULT_SL_RANGES.B_min;
+          payload.phy_grade_c_min = DEFAULT_SL_RANGES.C_min;
+          payload.phy_grade_s_min = DEFAULT_SL_RANGES.S_min;
+        } else if (s === 'chemistry') {
+          payload.che_grade_a_min = DEFAULT_SL_RANGES.A_min;
+          payload.che_grade_b_min = DEFAULT_SL_RANGES.B_min;
+          payload.che_grade_c_min = DEFAULT_SL_RANGES.C_min;
+          payload.che_grade_s_min = DEFAULT_SL_RANGES.S_min;
+        } else if (s === 'bio') {
+          payload.bio_grade_a_min = DEFAULT_SL_RANGES.A_min;
+          payload.bio_grade_b_min = DEFAULT_SL_RANGES.B_min;
+          payload.bio_grade_c_min = DEFAULT_SL_RANGES.C_min;
+          payload.bio_grade_s_min = DEFAULT_SL_RANGES.S_min;
+        } else if (s === 'maths') {
+          payload.maths_grade_a_min = DEFAULT_SL_RANGES.A_min;
+          payload.maths_grade_b_min = DEFAULT_SL_RANGES.B_min;
+          payload.maths_grade_c_min = DEFAULT_SL_RANGES.C_min;
+          payload.maths_grade_s_min = DEFAULT_SL_RANGES.S_min;
+        }
+      };
+      for (const s of subjectsToApply) applyPayloadFor(s);
+
+      const { data: existingSettings, error: readErr } = await supabase
+        .from('app_settings' as any)
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+      if (readErr) throw new Error(readErr.message || 'Failed to read settings');
+
+      const existingKeys = existingSettings ? Object.keys(existingSettings) : [];
+      const allowedPayload: Record<string, any> = {};
+      for (const [k, v] of Object.entries(payload)) {
+        if (existingKeys.includes(k)) allowedPayload[k] = v;
       }
 
-      const { error } = await supabase.from('app_settings' as any).update(payload).eq('id', 1);
-      if (error) throw error;
+      if (Object.keys(allowedPayload).length > 0) {
+        const { error } = await supabase.from('app_settings' as any).update(allowedPayload).eq('id', 1);
+        if (error) throw new Error(error.message || 'Failed to update settings');
+      } else {
+        console.warn('Grade range columns missing in app_settings; skipping global persistence.');
+      }
 
-      await regradeForYearBySubject(subject, DEFAULT_SL_RANGES);
-      toast.success('Reset to Sri Lankan standard & regraded selected subject');
+      await regradeForYearBySubject(subject, DEFAULT_SL_RANGES, selectedYear);
+      await recalcZScoreAndRankForYear(selectedYear);
+
+      toast.success(
+        subject === 'all'
+          ? `Reset & regraded ALL subjects for ${selectedYear}`
+          : `Reset & regraded ${subject} for ${selectedYear}`
+      );
 
       await fetchApplicants();
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to reset ranges');
+    } catch (e: any) {
+      console.error('resetGradeRanges error:', e);
+      toast.error(e?.message || 'Failed to reset ranges');
     } finally {
       setRangesSaving(false);
     }
   };
 
   const handleCsvUpload = async () => {
-    if (!csvFile) {
-      toast.error('Please select a CSV file');
-      return;
-    }
-    if (selectedYear === null) {
-      toast.error('Please select a year');
-      return;
-    }
+    if (!csvFile) return toast.error('Please select a CSV file');
+    if (selectedYear === null) return toast.error('Please select a year');
 
     setUploading(true);
     try {
@@ -962,7 +1068,7 @@ export default function AdminResultsPage() {
 
       if (records.length === 0) throw new Error('No valid records found in CSV');
 
-      // Get grade ranges
+      // ✅ Use applied ranges for each subject
       const phyRanges = gradeRangesAppliedBySubject.physics;
       const cheRanges = gradeRangesAppliedBySubject.chemistry;
       const mathsRanges = gradeRangesAppliedBySubject.maths;
@@ -978,7 +1084,6 @@ export default function AdminResultsPage() {
 
         const results = await Promise.all(
           chunk.map(async (r) => {
-            // Compute grades
             const physics_grade = gradeFromMark(r.physics_marks, phyRanges);
             const chemistry_grade = gradeFromMark(r.chemistry_marks, cheRanges);
             const maths_grade = r.stream === 'Maths' ? gradeFromMark(r.maths_marks, mathsRanges) : null;
@@ -1054,7 +1159,6 @@ export default function AdminResultsPage() {
       
       setUploadOpen(false);
       setCsvFile(null);
-
       await fetchApplicants();
     } catch (error: any) {
       console.error('Error uploading CSV:', error);
@@ -1064,29 +1168,7 @@ export default function AdminResultsPage() {
     }
   };
 
-  const handleBulkDeleteByYear = async () => {
-    if (selectedYear === null) {
-      toast.error('Please select a year');
-      return;
-    }
 
-    const resultsToDelete = results.filter((r) => r.year === selectedYear);
-    if (resultsToDelete.length === 0) {
-      toast.error('No results to delete for this year');
-      return;
-    }
-
-    try {
-      const { error } = await supabase.from('results' as any).delete().eq('year', selectedYear);
-      if (error) throw error;
-
-      toast.success(`Successfully deleted ${resultsToDelete.length} results from ${selectedYear}`);
-      await fetchApplicants();
-    } catch (error) {
-      console.error('Error deleting results:', error);
-      toast.error('Failed to delete results');
-    }
-  };
 
   const openDetails = (applicant: ApplicantWithResult) => {
     setSelectedApplicant(applicant);
@@ -1248,8 +1330,6 @@ export default function AdminResultsPage() {
     );
   }
 
-  const yearApplicantsCount = yearApplicants.length;
-
   const PageContent = (
     <div className="space-y-6">
       <AdminHeader title="Applicants Management" />
@@ -1268,12 +1348,7 @@ export default function AdminResultsPage() {
 
             <div className="flex gap-2">
               <Button
-                // ✅ UPDATED: action-based color
-                className={
-                  allowResultsView
-                    ? 'bg-red-600 hover:bg-red-700 text-white'   // Unpublish action = red
-                    : 'bg-blue-600 hover:bg-blue-700 text-white' // Publish action = blue
-                }
+                className={allowResultsView ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}
                 size="sm"
                 onClick={toggleResultsSetting}
                 disabled={!canManageSettings || settingsLoading || resultsSaving || allowResultsView === null}
@@ -1380,12 +1455,7 @@ export default function AdminResultsPage() {
                     <Download className="h-4 w-4 mr-1" />
                     Template
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={downloadFilteredApplicantsCsv}
-                    disabled={filteredApplicants.length === 0}
-                  >
+                  <Button variant="outline" size="sm" onClick={downloadFilteredApplicantsCsv} disabled={filteredApplicants.length === 0}>
                     <Download className="h-4 w-4 mr-1" />
                     Export CSV
                   </Button>
@@ -1465,7 +1535,6 @@ export default function AdminResultsPage() {
                     <YAxis tick={{ fill: 'hsl(var(--foreground))' }} />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Legend />
-                    {/* ✅ explicit fills so it always shows */}
                     <Bar dataKey="maths" fill="#60A5FA" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="bio" fill="#A78BFA" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="physics" fill="#34D399" radius={[4, 4, 0, 0]} />
@@ -1485,20 +1554,13 @@ export default function AdminResultsPage() {
                   <ChartContainer config={zScoreChartConfig} className="h-[300px]">
                     <BarChart data={stats.zScoreData} layout="vertical">
                       <XAxis type="number" tick={{ fill: 'hsl(var(--foreground))' }} />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        width={120}
-                        tick={{ fontSize: 12, fill: 'hsl(var(--foreground))' }}
-                      />
+                      <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 12, fill: 'hsl(var(--foreground))' }} />
                       <ChartTooltip content={<ChartTooltipContent />} />
                       <Bar dataKey="count" fill="#60A5FA" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ChartContainer>
                 ) : (
-                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                    No data available
-                  </div>
+                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">No data available</div>
                 )}
               </CardContent>
             </Card>
@@ -1513,6 +1575,7 @@ export default function AdminResultsPage() {
               </CardTitle>
               <CardDescription>
                 Select a subject and set grade boundaries. Maths applies for Maths stream, Bio applies for Bio stream.
+                Select <b>All</b> to apply same ranges to all subjects.
               </CardDescription>
             </CardHeader>
 
@@ -1525,6 +1588,9 @@ export default function AdminResultsPage() {
                       <SelectValue placeholder="Select Subject" />
                     </SelectTrigger>
                     <SelectContent>
+                      {/* ✅ NEW */}
+                      <SelectItem value="all">All (All Subjects)</SelectItem>
+
                       <SelectItem value="physics">Physics</SelectItem>
                       <SelectItem value="chemistry">Chemistry</SelectItem>
                       <SelectItem value="maths">Maths (Maths Stream)</SelectItem>
@@ -1534,7 +1600,10 @@ export default function AdminResultsPage() {
                 </div>
 
                 <Badge variant="secondary" className="h-9 flex items-center">
-                  Applied: A≥{gradeRangesAppliedBySubject[selectedSubjectForGrade].A_min} | B≥{gradeRangesAppliedBySubject[selectedSubjectForGrade].B_min} | C≥{gradeRangesAppliedBySubject[selectedSubjectForGrade].C_min} | S≥{gradeRangesAppliedBySubject[selectedSubjectForGrade].S_min}
+                  Applied: A≥{gradeRangesAppliedBySubject[selectedSubjectForGrade].A_min} | B≥
+                  {gradeRangesAppliedBySubject[selectedSubjectForGrade].B_min} | C≥
+                  {gradeRangesAppliedBySubject[selectedSubjectForGrade].C_min} | S≥
+                  {gradeRangesAppliedBySubject[selectedSubjectForGrade].S_min}
                 </Badge>
               </div>
 
@@ -1547,7 +1616,10 @@ export default function AdminResultsPage() {
                     onChange={(e) =>
                       setGradeRangesDraftBySubject((p) => ({
                         ...p,
-                        [selectedSubjectForGrade]: { ...p[selectedSubjectForGrade], A_min: Number(e.target.value) },
+                        [selectedSubjectForGrade]: {
+                          ...p[selectedSubjectForGrade],
+                          A_min: Number(e.target.value),
+                        },
                       }))
                     }
                   />
@@ -1560,7 +1632,10 @@ export default function AdminResultsPage() {
                     onChange={(e) =>
                       setGradeRangesDraftBySubject((p) => ({
                         ...p,
-                        [selectedSubjectForGrade]: { ...p[selectedSubjectForGrade], B_min: Number(e.target.value) },
+                        [selectedSubjectForGrade]: {
+                          ...p[selectedSubjectForGrade],
+                          B_min: Number(e.target.value),
+                        },
                       }))
                     }
                   />
@@ -1573,7 +1648,10 @@ export default function AdminResultsPage() {
                     onChange={(e) =>
                       setGradeRangesDraftBySubject((p) => ({
                         ...p,
-                        [selectedSubjectForGrade]: { ...p[selectedSubjectForGrade], C_min: Number(e.target.value) },
+                        [selectedSubjectForGrade]: {
+                          ...p[selectedSubjectForGrade],
+                          C_min: Number(e.target.value),
+                        },
                       }))
                     }
                   />
@@ -1586,7 +1664,10 @@ export default function AdminResultsPage() {
                     onChange={(e) =>
                       setGradeRangesDraftBySubject((p) => ({
                         ...p,
-                        [selectedSubjectForGrade]: { ...p[selectedSubjectForGrade], S_min: Number(e.target.value) },
+                        [selectedSubjectForGrade]: {
+                          ...p[selectedSubjectForGrade],
+                          S_min: Number(e.target.value),
+                        },
                       }))
                     }
                   />
@@ -1594,7 +1675,7 @@ export default function AdminResultsPage() {
               </div>
 
               <div className="flex flex-wrap gap-2 items-center">
-                <Button onClick={saveGradeRanges} disabled={!canManageSettings || rangesSaving}>
+                <Button onClick={saveGradeRanges} disabled={!canManageSettings || rangesSaving || !rangesDifferent}>
                   {rangesSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                   Save Changes
                 </Button>
@@ -1616,27 +1697,15 @@ export default function AdminResultsPage() {
               </CardTitle>
 
               <div className="flex gap-2">
-                <Button
-                  variant={sortMode === 'default' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setSortMode('default')}
-                >
+                <Button variant={sortMode === 'default' ? 'default' : 'outline'} size="sm" onClick={() => setSortMode('default')}>
                   <ArrowUpDown className="h-4 w-4 mr-1" />
                   Default
                 </Button>
-                <Button
-                  variant={sortMode === 'rank_asc' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setSortMode('rank_asc')}
-                >
+                <Button variant={sortMode === 'rank_asc' ? 'default' : 'outline'} size="sm" onClick={() => setSortMode('rank_asc')}>
                   <ArrowUpDown className="h-4 w-4 mr-1" />
                   Rank ↑
                 </Button>
-                <Button
-                  variant={sortMode === 'rank_desc' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setSortMode('rank_desc')}
-                >
+                <Button variant={sortMode === 'rank_desc' ? 'default' : 'outline'} size="sm" onClick={() => setSortMode('rank_desc')}>
                   <ArrowUpDown className="h-4 w-4 mr-1" />
                   Rank ↓
                 </Button>
@@ -1669,7 +1738,8 @@ export default function AdminResultsPage() {
                   <TableBody>
                     {filteredApplicants.map((a) => {
                       const result = a.result;
-                      const z = zScoreMap.get(a.applicant_id) ?? (result?.zscore?.toFixed(4) ?? '-');
+                      const zVal = zScoreMap.has(a.applicant_id) ? zScoreMap.get(a.applicant_id) ?? null : result?.zscore ?? null;
+                      const z = zVal !== null && zVal !== undefined ? String((zVal as number).toFixed(4)) : '-';
 
                       const isMathStream = a.stream === 'Maths';
                       const mathsOrBioMarks = isMathStream ? result?.maths_marks : result?.bio_marks;
@@ -1684,17 +1754,17 @@ export default function AdminResultsPage() {
 
                           <TableCell className="font-mono text-sm">{fmt(mathsOrBioMarks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{mathsOrBioGrade ?? '-'}</Badge>
+                            <Badge className={gradeBadgeClass(mathsOrBioGrade)}>{mathsOrBioGrade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{fmt(result?.physics_marks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{result?.physics_grade ?? '-'}</Badge>
+                            <Badge className={gradeBadgeClass(result?.physics_grade)}>{result?.physics_grade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{fmt(result?.chemistry_marks)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{result?.chemistry_grade ?? '-'}</Badge>
+                            <Badge className={gradeBadgeClass(result?.chemistry_grade)}>{result?.chemistry_grade ?? '-'}</Badge>
                           </TableCell>
 
                           <TableCell className="font-mono text-sm">{z}</TableCell>
@@ -1727,55 +1797,10 @@ export default function AdminResultsPage() {
               </div>
 
               {filteredApplicants.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No applicants found for the selected filters
-                </div>
+                <div className="text-center py-8 text-muted-foreground">No applicants found for the selected filters</div>
               )}
             </CardContent>
           </Card>
-
-          {/* Danger Zone - ONLY SUPER ADMIN can see */}
-          {isSuperAdmin && (
-            <Card className="border-destructive/50">
-              <CardHeader>
-                <CardTitle className="text-lg text-destructive flex items-center gap-2">
-                  <Trash2 className="h-5 w-5" />
-                  Danger Zone
-                </CardTitle>
-                <CardDescription>
-                  Permanently delete all applicants for {selectedYear}. This action cannot be undone.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="w-full sm:w-auto">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete All {selectedYear} Applicants ({yearApplicantsCount})
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete all <strong>{yearApplicantsCount}</strong> applicants from year{' '}
-                        <strong>{selectedYear}</strong>. This action cannot be undone and the data cannot be recovered.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleBulkDeleteByYear}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        Delete All
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </CardContent>
-            </Card>
-          )}
         </>
       )}
 
@@ -1786,18 +1811,13 @@ export default function AdminResultsPage() {
             <DialogTitle>Upload Applicants CSV</DialogTitle>
             <DialogDescription>
               Upload a CSV file with applicant marks data.
-              Columns required: index_no, maths_or_bio, physics, chemistry.
+              Columns required: index_no, stream, physics_marks, chemistry_marks, maths_marks, bio_marks.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label htmlFor="csv-file">CSV File</Label>
-              <Input
-                id="csv-file"
-                type="file"
-                accept=".csv"
-                onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
-              />
+              <Input id="csv-file" type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
             </div>
           </div>
           <DialogFooter>
@@ -1880,9 +1900,8 @@ export default function AdminResultsPage() {
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">{selectedApplicant.stream === 'Maths' ? 'Maths' : 'Biology'}</div>
                     <div className="font-mono">
-                      {fmt(selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_marks : selectedApplicant.result?.bio_marks)}
-                      {' '}
-                      <Badge variant="secondary">
+                      {fmt(selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_marks : selectedApplicant.result?.bio_marks)}{' '}
+                      <Badge className={gradeBadgeClass(selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_grade : selectedApplicant.result?.bio_grade)}>
                         {selectedApplicant.stream === 'Maths' ? selectedApplicant.result?.maths_grade : selectedApplicant.result?.bio_grade}
                       </Badge>
                     </div>
@@ -1890,18 +1909,25 @@ export default function AdminResultsPage() {
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Physics</div>
                     <div className="font-mono">
-                      {fmt(selectedApplicant.result?.physics_marks)} <Badge variant="secondary">{selectedApplicant.result?.physics_grade ?? '-'}</Badge>
+                      {fmt(selectedApplicant.result?.physics_marks)} <Badge className={gradeBadgeClass(selectedApplicant.result?.physics_grade)}>{selectedApplicant.result?.physics_grade ?? '-'}</Badge>
                     </div>
                   </div>
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Chemistry</div>
                     <div className="font-mono">
-                      {fmt(selectedApplicant.result?.chemistry_marks)} <Badge variant="secondary">{selectedApplicant.result?.chemistry_grade ?? '-'}</Badge>
+                      {fmt(selectedApplicant.result?.chemistry_marks)} <Badge className={gradeBadgeClass(selectedApplicant.result?.chemistry_grade)}>{selectedApplicant.result?.chemistry_grade ?? '-'}</Badge>
                     </div>
                   </div>
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Z-Score</div>
-                    <div className="font-mono">{selectedApplicant.result?.zscore?.toFixed(4) ?? '-'}</div>
+                    <div className="font-mono">
+                      {(() => {
+                        const zVal = zScoreMap.has(selectedApplicant.applicant_id)
+                          ? zScoreMap.get(selectedApplicant.applicant_id) ?? null
+                          : selectedApplicant.result?.zscore ?? null;
+                        return zVal !== null && zVal !== undefined ? (zVal as number).toFixed(4) : '-';
+                      })()}
+                    </div>
                   </div>
                   <div className="p-3 rounded-lg border">
                     <div className="text-muted-foreground">Rank</div>
@@ -1925,9 +1951,7 @@ export default function AdminResultsPage() {
                   </div>
                   <div className="flex justify-between gap-4">
                     <span className="text-muted-foreground">Created</span>
-                    <span className="text-right">
-                      {new Date(selectedApplicant.created_at).toLocaleString()}
-                    </span>
+                    <span className="text-right">{new Date(selectedApplicant.created_at).toLocaleString()}</span>
                   </div>
                 </CardContent>
               </Card>

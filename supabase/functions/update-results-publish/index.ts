@@ -29,16 +29,15 @@ serve(async (req: Request) => {
     });
   }
 
-  let payload: { mem_ids?: number[] };
+  let payload: { allow_results_view?: boolean };
   try {
     payload = await req.json();
   } catch (_err) {
     return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
-  const memIds = payload?.mem_ids;
-  if (!Array.isArray(memIds) || memIds.length === 0) {
-    return new Response(JSON.stringify({ error: 'Missing mem_ids array' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  if (typeof payload?.allow_results_view !== 'boolean') {
+    return new Response(JSON.stringify({ error: 'Missing allow_results_view boolean' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -73,7 +72,7 @@ serve(async (req: Request) => {
           const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
           userId = payload?.sub ?? null;
           userMeta = payload?.user_metadata ?? payload?.app_user_metadata ?? null;
-          console.log('delete-members decoded JWT sub=', userId, 'payload_keys=', Object.keys(payload || {}));
+          console.log('update-results-publish decoded JWT sub=', userId, 'payload_keys=', Object.keys(payload || {}));
         }
       } catch (decErr) {
         console.error('JWT decode fallback failed', decErr);
@@ -87,7 +86,7 @@ serve(async (req: Request) => {
     try {
       const { data: memberRow, error: memberErr } = await adminClient
         .from('members')
-        .select('role')
+        .select('mem_id, role')
         .eq('auth_user_id', userId)
         .maybeSingle();
       if (memberErr) throw memberErr;
@@ -103,61 +102,21 @@ serve(async (req: Request) => {
       else if (Array.isArray(meta?.roles) && meta.roles.includes('admin')) callerRole = 'admin';
     }
 
-    if (!callerRole) return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    // If caller is admin (not super_admin), ensure targets are only role='member'
-    if (callerRole !== 'super_admin') {
-      if (callerRole !== 'admin') {
-        return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
-      const { data: targets, error: tErr } = await adminClient
-        .from('members')
-        .select('mem_id,role')
-        .in('mem_id', memIds as number[]);
-      if (tErr) throw tErr;
-      const invalid = (targets || []).find((t: any) => t.role !== 'member');
-      if (invalid) {
-        return new Response(JSON.stringify({ error: 'Admins may only delete members with role=member' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
+    if (!callerRole || (callerRole !== 'admin' && callerRole !== 'super_admin')) {
+      return new Response(JSON.stringify({ error: 'Only admins or super admins can change this setting' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Fetch affected members to collect `auth_user_id`s before deleting rows
-    const { data: targets, error: fetchErr } = await adminClient
-      .from('members')
-      .select('mem_id, auth_user_id')
-      .in('mem_id', memIds as number[]);
-    if (fetchErr) throw fetchErr;
+    // Perform update with service role (bypass RLS)
+    const { data: updated, error: updErr } = await adminClient
+      .from('app_settings')
+      .update({ allow_results_view: payload.allow_results_view })
+      .eq('id', 1)
+      .select('id, allow_results_view, updated_at');
+    if (updErr) throw updErr;
 
-    const authIds = (targets || []).map((t: any) => t.auth_user_id).filter(Boolean) as string[];
-
-    // Perform deletion using service role
-    const { data: deleted, error: delErr } = await adminClient.from('members').delete().in('mem_id', memIds).select('mem_id');
-    if (delErr) throw delErr;
-
-    // Delete corresponding auth users (best-effort). log but don't fail overall if some deletions fail.
-    const deletedAuth: string[] = [];
-    for (const aid of authIds) {
-      try {
-        // supabase-js admin API: auth.admin.deleteUser
-        // @ts-ignore - runtime provides admin API
-        const { error: authErr } = await (adminClient as any).auth.admin.deleteUser(aid);
-        if (authErr) {
-          console.error('Failed to delete auth user', aid, authErr.message || authErr);
-        } else {
-          deletedAuth.push(aid);
-        }
-      } catch (e) {
-        console.error('Exception deleting auth user', aid, e);
-      }
-    }
-
-    return new Response(
-      JSON.stringify({ deleted: deleted ?? [], deleted_auth_ids: deletedAuth }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+    return new Response(JSON.stringify({ updated: updated ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
-    console.error('Delete-members failed', e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Delete failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    console.error('update-results-publish failed', e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Update failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
