@@ -86,7 +86,7 @@ export default function AdminAccountsPage() {
 
   // ✅ Fetch records
   const { data: records, isLoading } = useQuery({
-    queryKey: ['accounts-summaries'],
+    queryKey: ['audit-reports'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('past_papers')
@@ -223,7 +223,7 @@ export default function AdminAccountsPage() {
         const fileName = `${data.yrs}_${safeEvent}_accounts_summary.${fileExt}`;
 
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('accounts-summaries')
+          .from('audit-reports')
           .upload(fileName, data.summaryFile);
 
         if (uploadError) throw uploadError;
@@ -245,7 +245,7 @@ export default function AdminAccountsPage() {
       return result;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts-summaries'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
       toast.success('Account summary created successfully');
       setIsCreateDialogOpen(false);
       resetForm();
@@ -266,7 +266,7 @@ export default function AdminAccountsPage() {
         const fileName = `${data.yrs}_${safeEvent}_accounts_summary.${fileExt}`;
 
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('accounts-summaries')
+          .from('audit-reports')
           .upload(fileName, data.summaryFile, { upsert: true });
 
         if (uploadError) throw uploadError;
@@ -289,7 +289,7 @@ export default function AdminAccountsPage() {
       return result;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts-summaries'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
       toast.success('Account summary updated successfully');
       setEditingRecord(null);
       resetForm();
@@ -303,13 +303,13 @@ export default function AdminAccountsPage() {
   const deleteMutation = useMutation({
     mutationFn: async (record: AccountSummary) => {
       if (record.exam_paper_path) {
-        await supabase.storage.from('accounts-summaries').remove([record.exam_paper_path]);
+        await supabase.storage.from('audit-reports').remove([record.exam_paper_path]);
       }
       const { error } = await supabase.from('past_papers').delete().eq('pp_id', record.pp_id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts-summaries'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
       toast.success('Account summary deleted successfully');
     },
     onError: (error: any) => {
