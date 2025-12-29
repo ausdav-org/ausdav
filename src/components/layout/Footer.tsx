@@ -4,9 +4,13 @@ import { motion } from 'framer-motion';
 import { Facebook, Instagram, Youtube, Phone, Mail, MapPin, Heart, LogIn, ArrowUpRight, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
+import { useState } from 'react';
+import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 const Footer: React.FC = () => {
   const { t } = useLanguage();
+  const [footerMessage, setFooterMessage] = useState('');
 
   const quickLinks = [
     { href: '/', label: t('nav.home') },
@@ -157,17 +161,66 @@ const Footer: React.FC = () => {
               </motion.a>
             </div>
             
-            {/* Newsletter hint */}
+            {/* Feedback box */}
             <div className="mt-8 p-4 glass-card rounded-xl">
-              <p className="text-xs text-muted-foreground mb-2">Stay updated with our events</p>
-              <div className="flex gap-2">
-                <div className="flex-1 h-9 rounded-lg bg-muted/50 px-3 flex items-center">
-                  <span className="text-xs text-muted-foreground">your@email.com</span>
+              <p className="text-xs text-muted-foreground mb-2">Send us feedback</p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                }}
+                className="space-y-2"
+              >
+                <div>
+                  <textarea
+                    id="footer-feedback"
+                    name="message"
+                    placeholder="Share a thought, suggestion or report an issue..."
+                    className="w-full rounded-lg p-2 bg-muted/50 text-sm text-foreground"
+                    rows={3}
+                    value={footerMessage}
+                    onChange={(e) => setFooterMessage(e.target.value)}
+                  />
                 </div>
-                <Button size="sm" className="h-9 px-4">
-                  Join
-                </Button>
-              </div>
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    className="h-9 px-4"
+                    onClick={async () => {
+                      const message = footerMessage.trim();
+                      if (!message) {
+                        toast({ title: 'Empty', description: 'Please enter feedback before sending' });
+                        return;
+                      }
+                      try {
+                        const resp = await fetch('/functions/v1/submit-feedback', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ message }),
+                        });
+                        if (resp.ok) {
+                          toast({ title: 'Thanks', description: 'Feedback submitted' });
+                          setFooterMessage('');
+                          return;
+                        }
+                        if (resp.status === 429) {
+                          toast({ title: 'Rate limited', description: 'Too many submissions, try later' });
+                          return;
+                        }
+                        // fallback to direct insert
+                        const { error } = await supabase.from('feedback').insert([{ message, type: null, is_read: false }]);
+                        if (error) throw error;
+                        toast({ title: 'Thanks', description: 'Feedback submitted' });
+                        setFooterMessage('');
+                      } catch (err) {
+                        console.error('Footer feedback failed', err);
+                        toast({ title: 'Error', description: 'Could not submit feedback' });
+                      }
+                    }}
+                  >
+                    Send
+                  </Button>
+                </div>
+              </form>
             </div>
           </motion.div>
         </div>

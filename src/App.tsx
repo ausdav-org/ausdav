@@ -22,7 +22,6 @@ import LoginPage from "@/pages/LoginPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import SignupPortalPage from "@/pages/SignupPortalPage";
 import ProfilePage from "@/pages/ProfilePage";
-import FeedbackPage from "@/pages/FeedbackPage";
 
 // Admin imports
 import { AdminLayout } from "@/components/admin/AdminLayout";
@@ -96,7 +95,7 @@ const App = () => {
                   {/* ✅ Recommended clean profile route */}
 
                   <Route path="/profile" element={<Layout><ProfilePage /></Layout>} />
-                  <Route path="/feedback" element={<Layout><FeedbackPage /></Layout>} />
+                  {/* Feedback form moved to footer; no dedicated page */}
 
                   {/* ✅ Backward-compat: old (file-like) path redirects to /profile */}
                   <Route
