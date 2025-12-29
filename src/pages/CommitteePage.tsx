@@ -88,6 +88,7 @@ const Card = ({
   lang: Lang;
   isDark: boolean;
 }) => {
+  const [imgOk, setImgOk] = useState<boolean>(!!m.photo);
   const name = lang === 'en' ? m.name : m.nameTA;
   const role = lang === 'en' ? m.role : m.roleTA;
   const work = (lang === 'en' ? m.Work : m.WorkTA ?? m.Work).split(',');
@@ -121,9 +122,15 @@ const Card = ({
         </a>
       )}
 
-      {m.photo ? (
+      {imgOk && m.photo ? (
         <div className="w-24 h-24 mx-auto mb-4 rounded-full p-[2px] bg-gradient-to-br from-cyan-400/70 via-sky-500/70 to-indigo-500/70 shadow">
-          <img src={m.photo} alt={m.role === 'Patron' ? '' : name} className="w-full h-full rounded-full object-cover" loading="lazy" />
+          <img
+            src={m.photo}
+            alt={m.role === 'Patron' ? '' : name}
+            className="w-full h-full rounded-full object-cover"
+            loading="lazy"
+            onError={() => setImgOk(false)}
+          />
         </div>
       ) : (
         <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-to-br from-cyan-400/70 to-indigo-500/70 flex items-center justify-center shadow">
