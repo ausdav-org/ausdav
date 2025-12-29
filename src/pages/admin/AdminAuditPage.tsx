@@ -1,12 +1,19 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { FileText, Search, Loader2, Calendar, User } from 'lucide-react';
-import { AdminHeader } from '@/components/admin/AdminHeader';
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -15,223 +22,385 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Plus, Pencil, Trash2, FileText, Loader2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 
-interface AuditLog {
-  id: string;
-  actor_id: string;
-  action: string;
-  entity_type: string;
-  entity_id: string | null;
-  details: any;
+interface AccountSummary {
+  pp_id: number; // (kept same column name as your old table)
+  yrs: number; // (kept same column name; hidden in UI)
+  subject: string; // will store Event Name
+  exam_paper_path: string | null; // will store Accounts Summary PDF path
   created_at: string;
-  actor_name?: string;
+  updated_at: string;
 }
 
-export default function AdminAuditPage() {
+export default function AdminAccountsPage() {
   const { isSuperAdmin } = useAdminAuth();
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
 
-  useEffect(() => {
-    if (isSuperAdmin) {
-      fetchLogs();
-    }
-  }, [isSuperAdmin]);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<AccountSummary | null>(null);
 
-  const fetchLogs = async () => {
-    try {
-      let query = supabase
-        .from('audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(500);
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      // Fetch actor names
-      const actorIds = [...new Set(data?.map((l) => l.actor_id).filter(Boolean))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, full_name')
-        .in('user_id', actorIds);
-
-      const logsWithNames = (data || []).map((log) => ({
-        ...log,
-        actor_name: profiles?.find((p) => p.user_id === log.actor_id)?.full_name || 'System',
-      }));
-
-      setLogs(logsWithNames);
-    } catch (error) {
-      console.error('Error fetching audit logs:', error);
-      toast.error('Failed to fetch audit logs');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredLogs = logs.filter((log) => {
-    const matchesSearch =
-      log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.entity_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.actor_name?.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const logDate = new Date(log.created_at).toISOString().split('T')[0];
-    const matchesDateFrom = !dateFrom || logDate >= dateFrom;
-    const matchesDateTo = !dateTo || logDate <= dateTo;
-
-    return matchesSearch && matchesDateFrom && matchesDateTo;
+  // year is kept internally (not shown in UI). Default = current year
+  const [formData, setFormData] = useState({
+    yrs: new Date().getFullYear(),
+    eventName: '',
   });
 
-  const getActionBadgeColor = (action: string) => {
-    if (action.includes('create') || action.includes('add')) {
-      return 'bg-green-500/20 text-green-400';
-    }
-    if (action.includes('delete') || action.includes('remove')) {
-      return 'bg-red-500/20 text-red-400';
-    }
-    if (action.includes('update') || action.includes('change')) {
-      return 'bg-yellow-500/20 text-yellow-400';
-    }
-    return 'bg-muted text-muted-foreground';
+  const [summaryFile, setSummaryFile] = useState<File | null>(null);
+
+  const queryClient = useQueryClient();
+
+  // ✅ Fetch records (same table: past_papers)
+  const { data: records, isLoading } = useQuery({
+    queryKey: ['accounts-summaries'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('past_papers')
+        .select('*')
+        .order('yrs', { ascending: false });
+
+      if (error) throw error;
+      return data as AccountSummary[];
+    },
+  });
+
+  // ✅ Create mutation
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof formData & { summaryFile?: File }) => {
+      let summaryPath: string | null = null;
+
+      // Upload summary PDF if provided
+      if (data.summaryFile) {
+        const fileExt = data.summaryFile.name.split('.').pop() || 'pdf';
+        const safeEvent = data.eventName.trim().replace(/\s+/g, '_');
+        const fileName = `${data.yrs}_${safeEvent}_accounts_summary.${fileExt}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('accounts-summaries')
+          .upload(fileName, data.summaryFile);
+
+        if (uploadError) throw uploadError;
+        summaryPath = uploadData.path;
+      }
+
+      // Create DB record (same table/columns)
+      const { data: result, error } = await supabase
+        .from('past_papers')
+        .insert({
+          yrs: data.yrs,
+          subject: data.eventName, // store event name into subject
+          exam_paper_path: summaryPath, // store summary path into exam_paper_path
+          scheme_path: null, // scheme removed
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts-summaries'] });
+      toast.success('Account summary created successfully');
+      setIsCreateDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast.error('Failed to create account summary: ' + (error?.message || 'Unknown error'));
+    },
+  });
+
+  // ✅ Update mutation
+  const updateMutation = useMutation({
+    mutationFn: async (data: { id: number } & typeof formData & { summaryFile?: File }) => {
+      let summaryPath = editingRecord?.exam_paper_path ?? null;
+
+      // Upload new summary if provided
+      if (data.summaryFile) {
+        const fileExt = data.summaryFile.name.split('.').pop() || 'pdf';
+        const safeEvent = data.eventName.trim().replace(/\s+/g, '_');
+        const fileName = `${data.yrs}_${safeEvent}_accounts_summary.${fileExt}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('accounts-summaries')
+          .upload(fileName, data.summaryFile, { upsert: true });
+
+        if (uploadError) throw uploadError;
+        summaryPath = uploadData.path;
+      }
+
+      const { data: result, error } = await supabase
+        .from('past_papers')
+        .update({
+          yrs: data.yrs,
+          subject: data.eventName,
+          exam_paper_path: summaryPath,
+          scheme_path: null,
+        })
+        .eq('pp_id', data.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts-summaries'] });
+      toast.success('Account summary updated successfully');
+      setEditingRecord(null);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast.error('Failed to update account summary: ' + (error?.message || 'Unknown error'));
+    },
+  });
+
+  // ✅ Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (record: AccountSummary) => {
+      // remove file from storage
+      if (record.exam_paper_path) {
+        await supabase.storage.from('accounts-summaries').remove([record.exam_paper_path]);
+      }
+
+      const { error } = await supabase.from('past_papers').delete().eq('pp_id', record.pp_id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts-summaries'] });
+      toast.success('Account summary deleted successfully');
+    },
+    onError: (error: any) => {
+      toast.error('Failed to delete account summary: ' + (error?.message || 'Unknown error'));
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      yrs: new Date().getFullYear(),
+      eventName: '',
+    });
+    setSummaryFile(null);
   };
 
-  if (!isSuperAdmin) {
+  const handleCreate = () => {
+    if (!formData.eventName.trim()) {
+      toast.error('Please enter an event name');
+      return;
+    }
+    createMutation.mutate({ ...formData, summaryFile });
+  };
+
+  const handleUpdate = () => {
+    if (!editingRecord || !formData.eventName.trim()) {
+      toast.error('Please enter an event name');
+      return;
+    }
+    updateMutation.mutate({ id: editingRecord.pp_id, ...formData, summaryFile });
+  };
+
+  const handleEdit = (record: AccountSummary) => {
+    setEditingRecord(record);
+    setFormData({
+      yrs: record.yrs,
+      eventName: record.subject, // event name stored in subject
+    });
+    setIsCreateDialogOpen(false);
+  };
+
+  const handleDelete = (record: AccountSummary) => {
+    if (confirm('Are you sure you want to delete this account summary? This action cannot be undone.')) {
+      deleteMutation.mutate(record);
+    }
+  };
+
+  // ✅ Super Admin only: set form year to next year
+  const setNextYearForNewEntries = () => {
+    setFormData((prev) => ({
+      ...prev,
+      yrs: (prev.yrs || new Date().getFullYear()) + 1,
+    }));
+    toast.success('Year set to next year for new entries');
+  };
+
+  if (isLoading) {
     return (
-      <div className="min-h-screen">
-        <AdminHeader title="Audit Log" breadcrumb="Security" />
-        <div className="p-6 flex items-center justify-center min-h-[60vh]">
-          <Card className="max-w-md w-full bg-card/50 backdrop-blur-sm border-border">
-            <CardContent className="p-8 text-center">
-              <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Access Restricted</h2>
-              <p className="text-muted-foreground">
-                Audit logs are only accessible to super administrators.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen">
-      <AdminHeader title="Audit Log" breadcrumb="Security" />
-
+    <PermissionGate permissionKey="exam" permissionName="Exam Handling">
       <div className="p-6 space-y-6">
-        {/* Filters */}
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap gap-4 items-end">
-              <div className="flex-1 min-w-[200px]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Accounts</h1>
+            <p className="text-muted-foreground">Manage accounts summaries by event</p>
+          </div>
+
+          <Dialog
+            open={isCreateDialogOpen || !!editingRecord}
+            onOpenChange={(open) => {
+              if (!open) {
+                setIsCreateDialogOpen(false);
+                setEditingRecord(null);
+                resetForm();
+              }
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button onClick={() => setIsCreateDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Accounts
+              </Button>
+            </DialogTrigger>
+
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{editingRecord ? 'Edit Accounts' : 'Add Accounts'}</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                {/* ✅ Year removed from UI */}
+
+                <div>
+                  <Label htmlFor="event-name">Event Name</Label>
                   <Input
-                    placeholder="Search logs..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 bg-background/50"
+                    id="event-name"
+                    value={formData.eventName}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, eventName: e.target.value }))}
+                    placeholder="Enter event name"
                   />
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2">
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-[140px] bg-background/50"
-                />
-                <span className="text-muted-foreground">to</span>
-                <Input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-[140px] bg-background/50"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                <div>
+                  <Label htmlFor="summary-pdf">Accounts Summary (PDF)</Label>
+                  <Input
+                    id="summary-pdf"
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => setSummaryFile(e.target.files?.[0] || null)}
+                  />
+                </div>
 
-        {/* Logs Table */}
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    onClick={editingRecord ? handleUpdate : handleCreate}
+                    disabled={createMutation.isPending || updateMutation.isPending}
+                    className="flex-1"
+                  >
+                    {createMutation.isPending || updateMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : null}
+                    {editingRecord ? 'Update' : 'Create'}
+                  </Button>
+                </div>
+
+                {/* show which year is currently set (read-only hint) */}
+                <div className="text-xs text-muted-foreground">
+                  Saving under year: <span className="font-mono">{formData.yrs}</span>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* ✅ Super Admin “Danger” style card to set next year */}
+        {isSuperAdmin && (
+          <Card className="border-destructive/50">
+            <CardHeader>
+              <CardTitle className="text-lg text-destructive flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                Admin Control
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                This will set the internal year used for new account summary uploads to the <strong>next year</strong>.
+                (No data is deleted.)
+              </p>
+              <Button variant="destructive" onClick={setNextYearForNewEntries}>
+                Set Next Year for New Entries
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ✅ Table card header renamed */}
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              Activity Log
-              <Badge className="ml-2">{filteredLogs.length} records</Badge>
-            </CardTitle>
+            <CardTitle>Accounts Summary</CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : filteredLogs.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No audit logs found</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Timestamp</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Details</TableHead>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Year</TableHead>
+                  <TableHead>Event Name</TableHead>
+                  <TableHead>Summary</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {records?.map((record) => (
+                  <TableRow key={record.pp_id}>
+                    <TableCell>{record.yrs}</TableCell>
+                    <TableCell>{record.subject}</TableCell>
+
+                    <TableCell>
+                      {record.exam_paper_path ? (
+                        <Button variant="outline" size="sm" asChild>
+                          <a
+                            href={
+                              supabase.storage
+                                .from('accounts-summaries')
+                                .getPublicUrl(record.exam_paper_path).data.publicUrl
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <FileText className="h-4 w-4 mr-2" />
+                            View
+                          </a>
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground">No file</span>
+                      )}
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleEdit(record)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(record)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredLogs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="text-sm">
-                        {new Date(log.created_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          {log.actor_name}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getActionBadgeColor(log.action)}>
-                          {log.action}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-muted-foreground">{log.entity_type}</span>
-                        {log.entity_id && (
-                          <span className="text-xs text-muted-foreground ml-1">
-                            ({log.entity_id.slice(0, 8)}...)
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-[200px]">
-                        {log.details ? (
-                          <pre className="text-xs text-muted-foreground truncate">
-                            {JSON.stringify(log.details)}
-                          </pre>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+                ))}
+
+                {(!records || records.length === 0) && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      No records found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PermissionGate>
   );
 }
