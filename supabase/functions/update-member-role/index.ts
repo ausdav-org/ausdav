@@ -59,17 +59,30 @@ serve(async (req: Request) => {
     const userId = userData?.user?.id;
     if (!userId) return new Response(JSON.stringify({ error: 'Cannot identify user' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const { data: memberRow, error: memberErr } = await adminClient
-      .from('members')
-      .select('mem_id, role')
-      .eq('auth_user_id', userId)
-      .maybeSingle();
+    // Prefer member lookup, fallback to user metadata roles
+    let callerRole: string | null = null;
+    let callerMemId: number | null = null;
+    try {
+      const { data: memberRow, error: memberErr } = await adminClient
+        .from('members')
+        .select('mem_id, role')
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+      if (memberErr) throw memberErr;
+      if (memberRow) {
+        callerRole = memberRow.role;
+        callerMemId = memberRow.mem_id;
+      }
+    } catch (e) {
+      console.error('members lookup failed', e);
+    }
 
-    if (memberErr) throw memberErr;
-    if (!memberRow) return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    const callerRole = memberRow.role;
-    const callerMemId = memberRow.mem_id;
+    if (!callerRole) {
+      const meta = userData?.user?.user_metadata;
+      if (meta?.is_super_admin === true) callerRole = 'super_admin';
+      else if (Array.isArray(meta?.roles) && meta.roles.includes('super_admin')) callerRole = 'super_admin';
+      else if (Array.isArray(meta?.roles) && meta.roles.includes('admin')) callerRole = 'admin';
+    }
 
     // Fetch target rows early for subsequent checks
     const { data: targets, error: targetsErr } = await adminClient
@@ -102,7 +115,7 @@ serve(async (req: Request) => {
     }
 
     // Prevent the last remaining super_admin from downgrading themselves
-    if (memIds.includes(callerMemId) && newRole !== 'super_admin' && totalSuper <= 1) {
+    if (callerMemId !== null && memIds.includes(callerMemId) && newRole !== 'super_admin' && totalSuper <= 1) {
       return new Response(JSON.stringify({ error: 'Cannot change role: would remove the last super_admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 

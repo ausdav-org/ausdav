@@ -87,14 +87,27 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Cannot identify user' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { data: memberRow, error: memberErr } = await adminClient
-      .from('members')
-      .select('role')
-      .eq('auth_user_id', userId)
-      .maybeSingle();
+    // Prefer member lookup, fallback to user metadata for super_admin
+    let callerRole: string | null = null;
+    try {
+      const { data: memberRow, error: memberErr } = await adminClient
+        .from('members')
+        .select('role')
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+      if (memberErr) throw memberErr;
+      if (memberRow) callerRole = memberRow.role;
+    } catch (e) {
+      console.error('members lookup failed', e);
+    }
 
-    if (memberErr) throw memberErr;
-    if (!memberRow || memberRow.role !== 'super_admin') {
+    if (!callerRole) {
+      const meta = userData?.user?.user_metadata;
+      if (meta?.is_super_admin === true) callerRole = 'super_admin';
+      else if (Array.isArray(meta?.roles) && meta.roles.includes('super_admin')) callerRole = 'super_admin';
+    }
+
+    if (!callerRole || callerRole !== 'super_admin') {
       return new Response(JSON.stringify({ error: 'Forbidden: super admin only' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
   } catch (e) {

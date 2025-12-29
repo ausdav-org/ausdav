@@ -64,6 +64,24 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         setRole(memberData.role as AppRole);
         setNeedsProfileSetup(false);
       } else {
+        // No members row found, check user metadata for role fallback
+        // Use current session to read user metadata as a fallback (no token required)
+        const { data: userData, error: userErr } = await supabase.auth.getUser();
+        if (!userErr && userData?.user) {
+          const meta = userData.user.user_metadata;
+          let fallbackRole: AppRole | null = null;
+          if (meta?.is_super_admin === true) fallbackRole = 'super_admin';
+          else if (Array.isArray(meta?.roles) && meta.roles.includes('super_admin')) fallbackRole = 'super_admin';
+          else if (Array.isArray(meta?.roles) && meta.roles.includes('admin')) fallbackRole = 'admin';
+
+          if (fallbackRole) {
+            setProfile(null);
+            setRole(fallbackRole);
+            setNeedsProfileSetup(false);
+            return;
+          }
+        }
+        // No role found anywhere
         setProfile(null);
         setRole(null);
         setNeedsProfileSetup(true);
