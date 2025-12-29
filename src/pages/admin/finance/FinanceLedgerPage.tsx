@@ -119,6 +119,7 @@ const emptyFormData: TransactionFormData = {
 
 // ✅ Receipt bucket (change if your storage bucket name is different)
 const RECEIPT_BUCKET = 'finance-photos';
+const MAX_RECEIPT_SIZE_BYTES = 5 * 1024 * 1024;
 
 export default function FinanceLedgerPage() {
   const { user, isSuperAdmin, isAdmin } = useAdminAuth();
@@ -414,6 +415,11 @@ export default function FinanceLedgerPage() {
   };
 
   const handleReceiptChange = (file: File | null) => {
+    if (file && file.size > MAX_RECEIPT_SIZE_BYTES) {
+      toast.error('Receipt image must be 5 MB or smaller');
+      return;
+    }
+
     setReceiptFile(file);
     if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
     setReceiptPreviewUrl(file ? URL.createObjectURL(file) : null);
@@ -422,6 +428,10 @@ export default function FinanceLedgerPage() {
 
   const uploadReceiptIfAny = async (): Promise<string | null> => {
     if (!receiptFile) return null;
+    if (receiptFile.size > MAX_RECEIPT_SIZE_BYTES) {
+      toast.error('Receipt image must be 5 MB or smaller');
+      return null;
+    }
 
     try {
       setReceiptUploading(true);
