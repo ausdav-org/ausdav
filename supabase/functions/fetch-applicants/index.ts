@@ -79,39 +79,7 @@ serve(async (req: Request) => {
     if (applicantsErr) throw applicantsErr;
     if (resultsErr) throw resultsErr;
 
-    // Add debug info to logs to help diagnose missing applicants
-    try {
-      console.log('fetch-applicants: applicantsCount=', (applicantsData || []).length, 'resultsCount=', (resultsData || []).length);
-      if (Array.isArray(applicantsData) && applicantsData.length > 0) {
-        console.log('sample applicant:', JSON.stringify(applicantsData[0]));
-      }
-      if (Array.isArray(resultsData) && resultsData.length > 0) {
-        console.log('sample result:', JSON.stringify(resultsData[0]));
-      }
-
-      // Additional server-side counts using head/count to ensure DB sees rows
-      const { count: applicantsCountExact, error: countErr } = await adminClient.from('applicants').select('applicant_id', { count: 'exact', head: true }) as any;
-      if (countErr) console.warn('Count query failed', countErr);
-      else console.log('fetch-applicants: applicants count (exact) =', applicantsCountExact);
-
-      // Fetch a small sample with explicit columns to verify select works
-      try {
-        const { data: sampleApplicants, error: sampleErr } = await adminClient
-          .from('applicants')
-          .select('applicant_id, index_no, fullname, year, created_at')
-          .limit(5)
-          .order('created_at', { ascending: false }) as any;
-        if (sampleErr) console.warn('sample applicants fetch failed', sampleErr);
-        else console.log('sample applicants rows:', JSON.stringify(sampleApplicants || []));
-      } catch (sampleErr) {
-        console.warn('sample applicants fetch exception', sampleErr);
-      }
-
-    } catch (_e) {
-      // ignore logging errors
-    }
-
-    return new Response(JSON.stringify({ applicants: applicantsData ?? [], results: resultsData ?? [], debug: { applicantsCount: (applicantsData || []).length, resultsCount: (resultsData || []).length } }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ applicants: applicantsData ?? [], results: resultsData ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
     console.error('fetch-applicants failed', e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Fetch failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

@@ -324,20 +324,14 @@ export default function AdminResultsPage() {
   const [editSaving, setEditSaving] = useState(false);
 
   const uniqueYears = useMemo(() => {
-    // Exclude null/undefined years for the year selector; we'll handle null-year applicants separately.
-    const years = [...new Set(applicants.map((a) => a.year).filter((y) => y !== null && y !== undefined))] as number[];
-    years.sort((a, b) => b - a);
-    return years;
+    return [...new Set(applicants.map((a) => a.year))].sort((a, b) => b - a);
   }, [applicants]);
 
   useEffect(() => {
     if (uniqueYears.length > 0 && selectedYear === null) {
       setSelectedYear(uniqueYears[0]);
-    } else if (uniqueYears.length === 0 && applicants.length > 0 && selectedYear === null) {
-      // No explicit year values present in the dataset; pick the first applicant's year (may be null)
-      setSelectedYear(applicants[0].year ?? null);
     }
-  }, [uniqueYears, selectedYear, applicants]);
+  }, [uniqueYears, selectedYear]);
 
   useEffect(() => {
     fetchApplicants();
@@ -444,46 +438,8 @@ export default function AdminResultsPage() {
       if (isAdmin || isSuperAdmin) {
         const { data, error } = await invokeFunction('fetch-applicants', {});
         if (error) throw error;
-
-        console.log('invoke fetch-applicants returned', data);
-
-        const fetchedApplicants = (data?.applicants as Applicant[]) || [];
-        const fetchedResults = (data?.results as Result[]) || [];
-
-        // If edge function returned results but no applicants, attempt a client-side fallback
-        if (Array.isArray(fetchedResults) && fetchedResults.length > 0 && (!Array.isArray(fetchedApplicants) || fetchedApplicants.length === 0)) {
-          console.warn('fetch-applicants returned results but no applicants; trying client-side fallback');
-          try {
-            const { data: applicantsData, error: applicantsError } = await supabase
-              .from('applicants' as any)
-              .select('*')
-              .order('created_at', { ascending: false });
-            if (!applicantsError && Array.isArray(applicantsData) && applicantsData.length > 0) {
-              console.log('Client fallback got applicants count', applicantsData.length);
-              const normalized = (applicantsData as any[]).map((a) => ({
-                ...a,
-                index_no: String(a.index_no ?? a.index_no ?? ''),
-                year: a.year !== undefined && a.year !== null ? Number(a.year) : null,
-              }));
-              setApplicants(normalized as Applicant[]);
-            } else {
-              console.log('Client fallback returned no applicants', { applicantsError, applicantsData });
-              setApplicants([]);
-            }
-          } catch (e) {
-            console.error('Client-side applicants fallback failed', e);
-            setApplicants([]);
-          }
-        } else {
-          const normalized = (fetchedApplicants || []).map((a: any) => ({
-            ...a,
-            index_no: String(a.index_no ?? ''),
-            year: a.year !== undefined && a.year !== null ? Number(a.year) : null,
-          }));
-          setApplicants(normalized as Applicant[]);
-        }
-
-        setResults(fetchedResults);
+        setApplicants((data?.applicants as Applicant[]) || []);
+        setResults((data?.results as Result[]) || []);
       } else {
         const { data: applicantsData, error: applicantsError } = await supabase
           .from('applicants' as any)
