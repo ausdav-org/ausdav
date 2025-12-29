@@ -50,32 +50,70 @@ serve(async (req: Request) => {
         .eq('auth_user_id', userId)
         .maybeSingle();
       if (callerErr) throw callerErr;
-      if (callerRow && callerRow.role) callerRole = callerRow.role;
+      if (callerRow && callerRow.role) {
+        callerRole = callerRow.role;
+      }
     } catch (e) {
+      // ignore and try metadata fallback below
       console.error('members lookup failed', e);
     }
 
     if (!callerRole) {
+      // Check user metadata for explicit role markers (e.g. user_metadata.roles or is_super_admin)
       const meta = userData?.user?.user_metadata;
       if (meta?.is_super_admin === true) callerRole = 'super_admin';
       else if (Array.isArray(meta?.roles) && meta.roles.includes('super_admin')) callerRole = 'super_admin';
       else if (Array.isArray(meta?.roles) && meta.roles.includes('admin')) callerRole = 'admin';
     }
 
-    if (!callerRole || !['admin','super_admin'].includes(callerRole)) {
+    if (!callerRole || !['admin', 'super_admin'].includes(callerRole)) {
       return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Fetch all members using service role (bypasses RLS) and return
-    const { data: membersData, error: membersErr } = await adminClient
-      .from('members')
-      .select('mem_id, auth_user_id, fullname, username, phone, batch, created_at, role, designation')
-      .order('created_at', { ascending: false });
-    if (membersErr) throw membersErr;
+    // Fetch applicants and results using service role (bypasses RLS)
+    const [{ data: applicantsData, error: applicantsErr }, { data: resultsData, error: resultsErr }] = await Promise.all([
+      adminClient.from('applicants').select('*').order('created_at', { ascending: false }),
+      adminClient.from('results').select('*').order('created_at', { ascending: false }),
+    ] as any[]);
 
-    return new Response(JSON.stringify({ members: membersData ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (applicantsErr) throw applicantsErr;
+    if (resultsErr) throw resultsErr;
+
+    // Add debug info to logs to help diagnose missing applicants
+    try {
+      console.log('fetch-applicants: applicantsCount=', (applicantsData || []).length, 'resultsCount=', (resultsData || []).length);
+      if (Array.isArray(applicantsData) && applicantsData.length > 0) {
+        console.log('sample applicant:', JSON.stringify(applicantsData[0]));
+      }
+      if (Array.isArray(resultsData) && resultsData.length > 0) {
+        console.log('sample result:', JSON.stringify(resultsData[0]));
+      }
+
+      // Additional server-side counts using head/count to ensure DB sees rows
+      const { count: applicantsCountExact, error: countErr } = await adminClient.from('applicants').select('applicant_id', { count: 'exact', head: true }) as any;
+      if (countErr) console.warn('Count query failed', countErr);
+      else console.log('fetch-applicants: applicants count (exact) =', applicantsCountExact);
+
+      // Fetch a small sample with explicit columns to verify select works
+      try {
+        const { data: sampleApplicants, error: sampleErr } = await adminClient
+          .from('applicants')
+          .select('applicant_id, index_no, fullname, year, created_at')
+          .limit(5)
+          .order('created_at', { ascending: false }) as any;
+        if (sampleErr) console.warn('sample applicants fetch failed', sampleErr);
+        else console.log('sample applicants rows:', JSON.stringify(sampleApplicants || []));
+      } catch (sampleErr) {
+        console.warn('sample applicants fetch exception', sampleErr);
+      }
+
+    } catch (_e) {
+      // ignore logging errors
+    }
+
+    return new Response(JSON.stringify({ applicants: applicantsData ?? [], results: resultsData ?? [], debug: { applicantsCount: (applicantsData || []).length, resultsCount: (resultsData || []).length } }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
-    console.error('fetch-members failed', e);
+    console.error('fetch-applicants failed', e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Fetch failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

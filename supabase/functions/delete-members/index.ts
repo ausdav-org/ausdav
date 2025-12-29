@@ -58,16 +58,28 @@ serve(async (req: Request) => {
     const userId = userData?.user?.id;
     if (!userId) return new Response(JSON.stringify({ error: 'Cannot identify user' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const { data: memberRow, error: memberErr } = await adminClient
-      .from('members')
-      .select('role')
-      .eq('auth_user_id', userId)
-      .maybeSingle();
+    // Prefer member lookup, fallback to user metadata
+    let callerRole: string | null = null;
+    try {
+      const { data: memberRow, error: memberErr } = await adminClient
+        .from('members')
+        .select('role')
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+      if (memberErr) throw memberErr;
+      if (memberRow) callerRole = memberRow.role;
+    } catch (e) {
+      console.error('members lookup failed', e);
+    }
 
-    if (memberErr) throw memberErr;
-    if (!memberRow) return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!callerRole) {
+      const meta = userData?.user?.user_metadata;
+      if (meta?.is_super_admin === true) callerRole = 'super_admin';
+      else if (Array.isArray(meta?.roles) && meta.roles.includes('super_admin')) callerRole = 'super_admin';
+      else if (Array.isArray(meta?.roles) && meta.roles.includes('admin')) callerRole = 'admin';
+    }
 
-    const callerRole = memberRow.role;
+    if (!callerRole) return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     // If caller is admin (not super_admin), ensure targets are only role='member'
     if (callerRole !== 'super_admin') {
