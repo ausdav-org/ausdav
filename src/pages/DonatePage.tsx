@@ -4,17 +4,24 @@ import { Heart, Building2, Phone, Mail, Copy, Check } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
+import { fetchOrgContact, OrgContact } from '@/lib/contact';
 
 const DonatePage: React.FC = () => {
   const { t, language } = useLanguage();
   const [copied, setCopied] = React.useState<string | null>(null);
 
+  const { data: orgContact } = useQuery<OrgContact | null, Error>({
+    queryKey: ['org_contact'],
+    queryFn: fetchOrgContact,
+    staleTime: 1000 * 60 * 5,
+  });
+
   const bankDetails = {
-    bankName: 'Bank of Ceylon',
-    accountName: 'AUSDAV',
-    accountNumber: '12345678901234',
-    branch: 'Vavuniya Branch',
-    swiftCode: 'BABORLK',
+    bankName: orgContact?.bank_name ?? 'Bank of Ceylon',
+    accountName: orgContact?.account_name ?? 'AUSDAV',
+    accountNumber: orgContact?.account_number ?? '12345678901234',
+    branch: orgContact?.branch ?? 'Vavuniya Branch',
   };
 
   const copyToClipboard = (text: string, field: string) => {
@@ -76,7 +83,6 @@ const DonatePage: React.FC = () => {
                   { label: language === 'en' ? 'Account Name' : 'கணக்கு பெயர்', value: bankDetails.accountName, key: 'name' },
                   { label: language === 'en' ? 'Account Number' : 'கணக்கு எண்', value: bankDetails.accountNumber, key: 'number' },
                   { label: language === 'en' ? 'Branch' : 'கிளை', value: bankDetails.branch, key: 'branch' },
-                  { label: language === 'en' ? 'SWIFT Code' : 'SWIFT குறியீடு', value: bankDetails.swiftCode, key: 'swift' },
                 ].map((item) => (
                   <div key={item.key} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <div>
@@ -86,7 +92,7 @@ const DonatePage: React.FC = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => copyToClipboard(item.value, item.key)}
+                      onClick={() => copyToClipboard(String(item.value ?? ''), item.key)}
                       className="flex-shrink-0"
                     >
                       {copied === item.key ? (
@@ -114,7 +120,7 @@ const DonatePage: React.FC = () => {
 
                 <div className="space-y-4">
                   <a
-                    href="tel:+94XXXXXXXX"
+                    href={`tel:${orgContact?.phone ?? '+94XXXXXXXX'}`}
                     className="flex items-center gap-3 p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
                   >
                     <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center">
@@ -124,12 +130,12 @@ const DonatePage: React.FC = () => {
                       <p className="text-sm text-muted-foreground">
                         {language === 'en' ? 'Call us' : 'எங்களை அழைக்கவும்'}
                       </p>
-                      <p className="font-medium text-foreground">+94 XX XXX XXXX</p>
+                      <p className="font-medium text-foreground">{orgContact?.phone ?? '+94 XX XXX XXXX'}</p>
                     </div>
                   </a>
 
                   <a
-                    href="mailto:donate@ausdav.org"
+                    href={`mailto:${orgContact?.email ?? 'donate@ausdav.org'}`}
                     className="flex items-center gap-3 p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
                   >
                     <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center">
@@ -139,25 +145,12 @@ const DonatePage: React.FC = () => {
                       <p className="text-sm text-muted-foreground">
                         {language === 'en' ? 'Email us' : 'மின்னஞ்சல் அனுப்பவும்'}
                       </p>
-                      <p className="font-medium text-foreground">donate@ausdav.org</p>
+                      <p className="font-medium text-foreground">{orgContact?.email ?? 'donate@ausdav.org'}</p>
                     </div>
                   </a>
                 </div>
               </div>
-
-              {/* QR Code Placeholder */}
-              <div className="bg-card rounded-xl p-6 md:p-8 shadow-lg text-center">
-                <div className="w-32 h-32 mx-auto mb-4 bg-muted rounded-xl flex items-center justify-center">
-                  <span className="text-muted-foreground text-sm">
-                    {language === 'en' ? 'QR Code' : 'QR குறியீடு'}
-                  </span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {language === 'en' 
-                    ? 'Scan to donate via mobile banking' 
-                    : 'மொபைல் வங்கி மூலம் நன்கொடை வழங்க ஸ்கேன் செய்யவும்'}
-                </p>
-              </div>
+              
             </motion.div>
           </div>
 
