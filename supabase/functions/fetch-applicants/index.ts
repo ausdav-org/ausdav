@@ -5,16 +5,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 declare const Deno: { env: { get(key: string): string | undefined } };
 
-serve(async (req: Request) => {
-  const origin = req.headers.get('origin') || '*';
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Credentials': 'true',
-  };
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 
-  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
+serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
@@ -23,21 +21,7 @@ serve(async (req: Request) => {
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return new Response(JSON.stringify({ error: 'Service misconfigured' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  let payload: { allow_results_view?: boolean };
-  try {
-    payload = await req.json();
-  } catch (_err) {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  if (typeof payload?.allow_results_view !== 'boolean') {
-    return new Response(JSON.stringify({ error: 'Missing allow_results_view boolean' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'Service misconfigured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -72,7 +56,7 @@ serve(async (req: Request) => {
           const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
           userId = payload?.sub ?? null;
           userMeta = payload?.user_metadata ?? payload?.app_user_metadata ?? null;
-          console.log('update-results-publish decoded JWT sub=', userId, 'payload_keys=', Object.keys(payload || {}));
+          console.log('fetch-applicants decoded JWT sub=', userId, 'payload_keys=', Object.keys(payload || {}));
         }
       } catch (decErr) {
         console.error('JWT decode fallback failed', decErr);
@@ -81,42 +65,47 @@ serve(async (req: Request) => {
 
     if (!userId) return new Response(JSON.stringify({ error: 'Cannot identify user' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    // Prefer member lookup, fallback to user metadata
+    // Prefer members table lookup, but allow a fallback to user metadata for admins
     let callerRole: string | null = null;
     try {
-      const { data: memberRow, error: memberErr } = await adminClient
+      const { data: callerRow, error: callerErr } = await adminClient
         .from('members')
         .select('mem_id, role')
         .eq('auth_user_id', userId)
         .maybeSingle();
-      if (memberErr) throw memberErr;
-      if (memberRow) callerRole = memberRow.role;
+      if (callerErr) throw callerErr;
+      if (callerRow && callerRow.role) {
+        callerRole = callerRow.role;
+      }
     } catch (e) {
+      // ignore and try metadata fallback below
       console.error('members lookup failed', e);
     }
 
     if (!callerRole) {
+      // Check user metadata for explicit role markers (e.g. user_metadata.roles or is_super_admin)
       const meta = userMeta;
       if (meta?.is_super_admin === true) callerRole = 'super_admin';
       else if (Array.isArray(meta?.roles) && meta.roles.includes('super_admin')) callerRole = 'super_admin';
       else if (Array.isArray(meta?.roles) && meta.roles.includes('admin')) callerRole = 'admin';
     }
 
-    if (!callerRole || (callerRole !== 'admin' && callerRole !== 'super_admin')) {
-      return new Response(JSON.stringify({ error: 'Only admins or super admins can change this setting' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!callerRole || !['admin', 'super_admin'].includes(callerRole)) {
+      return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Perform update with service role (bypass RLS)
-    const { data: updated, error: updErr } = await adminClient
-      .from('app_settings')
-      .update({ allow_results_view: payload.allow_results_view })
-      .eq('id', 1)
-      .select('id, allow_results_view, updated_at');
-    if (updErr) throw updErr;
+    // Fetch applicants and results using service role (bypasses RLS)
+    const [{ data: applicantsData, error: applicantsErr }, { data: resultsData, error: resultsErr }] = await Promise.all([
+      adminClient.from('applicants').select('*').order('created_at', { ascending: false }),
+      adminClient.from('results').select('*').order('created_at', { ascending: false }),
+    ] as any[]);
 
-    return new Response(JSON.stringify({ updated: updated ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (applicantsErr) throw applicantsErr;
+    if (resultsErr) throw resultsErr;
+
+    return new Response(JSON.stringify({ applicants: applicantsData ?? [], results: resultsData ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
-    console.error('update-results-publish failed', e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Update failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    console.error('fetch-applicants failed', e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Fetch failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
