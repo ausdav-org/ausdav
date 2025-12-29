@@ -19,7 +19,7 @@ export const useAdminGrantedPermissions = () => {
 
     // Super admin has all permissions
     if (isSuperAdmin) {
-      setGrantedPermissions(['member', 'applicant', 'events', 'exam', 'seminar', 'finance', 'announcement', 'patrons']);
+      setGrantedPermissions(['member', 'applicant', 'events', 'exam', 'seminar', 'finance', 'announcement', 'patrons', 'feedback']);
       setLoading(false);
       return;
     }
