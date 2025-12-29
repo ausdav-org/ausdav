@@ -80,7 +80,7 @@ serve(async (req: Request) => {
 
   try {
     // getUser may accept the access token; supabase-js should return user info
-    const { data: userData, error: userErr } = await adminClient.auth.getUser(token as string) as any;
+    const { data: userData, error: userErr } = await adminClient.auth.getUser({ access_token: token as string }) as any;
     if (userErr) throw userErr;
     const userId = userData?.user?.id;
     if (!userId) {

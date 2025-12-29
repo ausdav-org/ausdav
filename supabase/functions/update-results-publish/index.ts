@@ -52,7 +52,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { data: userData, error: userErr } = await adminClient.auth.getUser(token as string) as any;
+    const { data: userData, error: userErr } = await adminClient.auth.getUser({ access_token: token as string }) as any;
     if (userErr) throw userErr;
     const userId = userData?.user?.id;
     if (!userId) return new Response(JSON.stringify({ error: 'Cannot identify user' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

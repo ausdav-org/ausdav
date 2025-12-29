@@ -54,7 +54,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { data: userData, error: userErr } = await adminClient.auth.getUser(token as string) as any;
+    const { data: userData, error: userErr } = await adminClient.auth.getUser({ access_token: token as string }) as any;
     if (userErr) throw userErr;
     const userId = userData?.user?.id;
     if (!userId) return new Response(JSON.stringify({ error: 'Cannot identify user' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -135,13 +135,19 @@ serve(async (req: Request) => {
       }
     }
 
-    // Perform update directly with service role (bypasses RLS)
-    const { data: updated, error: updErr } = await adminClient
+    // Perform update via privileged RPC which sets a session flag so the
+    // trigger will allow service-side updates. This avoids trigger
+    // 'forbidden' exceptions when changing role/designation.
+    const { data: rpcResult, error: rpcErr } = await adminClient.rpc('set_member_roles', { p_ids: memIds, p_role: newRole }) as any;
+    if (rpcErr) throw rpcErr;
+
+    // rpcResult contains mem_id and role; fetch full rows for notifications
+    const { data: updatedRows, error: fetchErr } = await adminClient
       .from('members')
-      .update({ role: newRole })
-      .in('mem_id', memIds)
-      .select('mem_id, role, fullname, auth_user_id');
-    if (updErr) throw updErr;
+      .select('mem_id, role, fullname, auth_user_id')
+      .in('mem_id', memIds as number[]);
+    if (fetchErr) throw fetchErr;
+    const updated = updatedRows;
 
     // If we just promoted members to honourable, notify all super admins
     if (newRole === 'honourable') {

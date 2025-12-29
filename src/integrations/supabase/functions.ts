@@ -8,10 +8,46 @@ type InvokeResult = { data: any | null; error: any | null };
  */
 export async function invokeFunction(name: string, body: any): Promise<InvokeResult> {
   try {
-    const res = await supabase.functions.invoke(name, { body });
-    // supabase-js returns { data, error }
-    if ((res as any).error) return { data: (res as any).data ?? null, error: (res as any).error };
-    return { data: (res as any).data ?? null, error: null };
+    // Use a direct fetch to the Edge Function endpoint so we can guarantee
+    // forwarding of both the anon `apikey` and the current session
+    // `Authorization: Bearer <token>` header. Some environments or versions
+    // of supabase-js do not reliably forward custom headers via
+    // `supabase.functions.invoke`.
+    const base = import.meta.env.VITE_SUPABASE_URL;
+    const anon = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    if (!base) throw new Error('Missing VITE_SUPABASE_URL');
+
+    let authHeader: Record<string, string> = {};
+    try {
+      const s = await supabase.auth.getSession();
+      const token = s?.data?.session?.access_token;
+      if (token) authHeader = { Authorization: `Bearer ${token}` };
+    } catch (_e) {
+      // ignore
+    }
+
+    const url = `${base.replace(/\/$/, '')}/functions/v1/${name}`;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(anon ? { apikey: anon } : {}),
+        ...authHeader,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await r.text().catch(() => '');
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (_e) { data = text; }
+    if (!r.ok) {
+      const message = data?.error || (typeof data === 'string' ? data : r.statusText);
+      const error = new Error(`Edge function ${name} returned ${r.status}: ${message}`);
+      console.error('invokeFunction fetch error', { name, url, status: r.status, body: data });
+      return { data, error };
+    }
+
+    return { data, error: null };
   } catch (err) {
     // Fallback: call the function endpoint directly and surface detailed errors
     try {
