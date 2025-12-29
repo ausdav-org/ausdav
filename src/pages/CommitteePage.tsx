@@ -315,7 +315,14 @@ const CommitteePage: React.FC = () => {
           { tEn: TITLES.gen.en, tTa: TITLES.gen.ta, members: data.y2025_general, gradient: true },
         ],
       },
-      { year: 2024, blocks: [{ tEn: TITLES.exec.en, tTa: TITLES.exec.ta, members: data.y2024_exec, gradient: true }, { tEn: TITLES.reps.en, tTa: TITLES.reps.ta, members: data.y2024_reps, gradient: true }] },
+      {
+        year: 2024,
+        blocks: [
+          { tEn: TITLES.patrons.en, tTa: TITLES.patrons.ta, sEn: 'Meet the dedicated team guiding AUSDAV', sTa: 'AUSDAV ஐ வழிநடத்தும் அர்ப்பணிப்பு குழுவை சந்திக்கவும்', members: data.top, cols: 'grid sm:grid-cols-2 lg:grid-cols-4 gap-6', gradient: true },
+          { tEn: TITLES.exec.en, tTa: TITLES.exec.ta, members: data.y2024_exec, gradient: true },
+          { tEn: TITLES.reps.en, tTa: TITLES.reps.ta, members: data.y2024_reps, gradient: true },
+        ],
+      },
     ],
     []
   );
