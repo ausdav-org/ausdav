@@ -1,12 +1,19 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { FileText, Search, Loader2, Calendar, User } from 'lucide-react';
-import { AdminHeader } from '@/components/admin/AdminHeader';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { PermissionGate } from '@/components/admin/PermissionGate';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -15,223 +22,601 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  FileText,
+  Loader2,
+  ShieldCheck,
+  ShieldOff,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 
-interface AuditLog {
-  id: string;
-  actor_id: string;
-  action: string;
-  entity_type: string;
-  entity_id: string | null;
-  details: any;
+interface AccountSummary {
+  pp_id: number;
+  yrs: number;
+  subject: string;
+  exam_paper_path: string | null;
   created_at: string;
-  actor_name?: string;
+  updated_at: string;
 }
 
-export default function AdminAuditPage() {
-  const { isSuperAdmin } = useAdminAuth();
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+type AccountsAccessRow = {
+  yrs: number;
+  allowed: boolean;
+  allowed_by: string | null;
+  allowed_at: string | null;
+};
 
-  useEffect(() => {
-    if (isSuperAdmin) {
-      fetchLogs();
-    }
-  }, [isSuperAdmin]);
+export default function AdminAccountsPage() {
+  // ✅ Safer: some contexts provide role, some provide isAdmin/isSuperAdmin
+  const auth = useAdminAuth() as any;
+  const role: string = auth?.role ?? '';
+  const isSuperAdmin: boolean = !!auth?.isSuperAdmin || role === 'super_admin';
+  const isAdmin: boolean = !!auth?.isAdmin || role === 'admin' || role === 'super_admin';
 
-  const fetchLogs = async () => {
-    try {
-      let query = supabase
-        .from('audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(500);
+  const queryClient = useQueryClient();
 
-      const { data, error } = await query;
-      if (error) throw error;
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<AccountSummary | null>(null);
 
-      // Fetch actor names
-      const actorIds = [...new Set(data?.map((l) => l.actor_id).filter(Boolean))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, full_name')
-        .in('user_id', actorIds);
-
-      const logsWithNames = (data || []).map((log) => ({
-        ...log,
-        actor_name: profiles?.find((p) => p.user_id === log.actor_id)?.full_name || 'System',
-      }));
-
-      setLogs(logsWithNames);
-    } catch (error) {
-      console.error('Error fetching audit logs:', error);
-      toast.error('Failed to fetch audit logs');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredLogs = logs.filter((log) => {
-    const matchesSearch =
-      log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.entity_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.actor_name?.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const logDate = new Date(log.created_at).toISOString().split('T')[0];
-    const matchesDateFrom = !dateFrom || logDate >= dateFrom;
-    const matchesDateTo = !dateTo || logDate <= dateTo;
-
-    return matchesSearch && matchesDateFrom && matchesDateTo;
+  const [formData, setFormData] = useState({
+    yrs: new Date().getFullYear(),
+    eventName: '',
   });
 
-  const getActionBadgeColor = (action: string) => {
-    if (action.includes('create') || action.includes('add')) {
-      return 'bg-green-500/20 text-green-400';
+  const [summaryFile, setSummaryFile] = useState<File | null>(null);
+
+  // ✅ Year accordion
+  const [expandedYear, setExpandedYear] = useState<number | null>(null);
+
+  // ✅ Toggle card visibility
+  const [showAccessCard, setShowAccessCard] = useState(false);
+
+  // ✅ who am I
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [myBatchYear, setMyBatchYear] = useState<number | null>(null);
+
+  // ✅ access state
+  const [accountsAllowedForMyYear, setAccountsAllowedForMyYear] = useState<boolean>(false);
+  const [loadingAccess, setLoadingAccess] = useState<boolean>(false);
+
+  // ✅ Fetch records
+  const { data: records, isLoading } = useQuery({
+    queryKey: ['audit-reports'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('past_papers')
+        .select('*')
+        .order('yrs', { ascending: false });
+
+      if (error) throw error;
+      return data as AccountSummary[];
+    },
+  });
+
+  // ✅ Group years
+  const years = useMemo(() => {
+    const set = new Set<number>();
+    (records ?? []).forEach((r) => set.add(r.yrs));
+    return Array.from(set).sort((a, b) => b - a);
+  }, [records]);
+
+  const recordsForYear = (year: number) => (records ?? []).filter((r) => r.yrs === year);
+
+  const refreshAccessForYear = async (yrs: number) => {
+    try {
+      setLoadingAccess(true);
+
+      const res = await supabase
+        .from('accounts_access' as any)
+        .select('yrs, allowed, allowed_by, allowed_at')
+        .eq('yrs', yrs)
+        .maybeSingle();
+
+      if (res.error) throw res.error;
+
+      const row = (res.data as unknown as AccountsAccessRow | null) ?? null;
+      setAccountsAllowedForMyYear(row?.allowed ?? false);
+    } catch (e) {
+      console.error('refreshAccessForYear failed', e);
+      setAccountsAllowedForMyYear(false);
+    } finally {
+      setLoadingAccess(false);
     }
-    if (action.includes('delete') || action.includes('remove')) {
-      return 'bg-red-500/20 text-red-400';
-    }
-    if (action.includes('update') || action.includes('change')) {
-      return 'bg-yellow-500/20 text-yellow-400';
-    }
-    return 'bg-muted text-muted-foreground';
   };
 
-  if (!isSuperAdmin) {
+  // ✅ Load auth + batch/year (RPC to avoid SelectQueryError)
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const { data: authData, error: authErr } = await supabase.auth.getUser();
+        if (authErr) throw authErr;
+
+        const uid = authData?.user?.id ?? null;
+        setCurrentUserId(uid);
+        if (!uid) return;
+
+        const { data: batchData, error: batchErr } = await (supabase.rpc as any)('get_my_batch');
+        if (batchErr) {
+          console.error('get_my_batch rpc missing or failed:', batchErr);
+          toast.error('Missing RPC: get_my_batch (needed to load your batch/year)');
+          return;
+        }
+
+        const batch = (batchData ?? null) as number | null;
+        setMyBatchYear(batch);
+
+        if (batch) await refreshAccessForYear(batch);
+      } catch (e) {
+        console.error('load user batch/year failed', e);
+      }
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setAccountsAccessForMyYear = async (allowed: boolean) => {
+    if (!isSuperAdmin) {
+      toast.error('Only super admins can change this setting');
+      return;
+    }
+    if (!currentUserId) {
+      toast.error('Not logged in');
+      return;
+    }
+    if (!myBatchYear) {
+      toast.error('Your member record has no batch/year');
+      return;
+    }
+
+    try {
+      setLoadingAccess(true);
+
+      const upsertRes = await supabase
+        .from('accounts_access' as any)
+        .upsert(
+          {
+            yrs: myBatchYear,
+            allowed,
+            allowed_by: currentUserId,
+            allowed_at: new Date().toISOString(),
+          },
+          { onConflict: 'yrs' }
+        );
+
+      if (upsertRes.error) throw upsertRes.error;
+
+      setAccountsAllowedForMyYear(allowed);
+      toast.success(
+        allowed
+          ? `Enabled visibility for batch/year ${myBatchYear}`
+          : `Disabled visibility for batch/year ${myBatchYear}`
+      );
+    } catch (e: any) {
+      console.error('setAccountsAccessForMyYear failed', e);
+      toast.error(e?.message || 'Failed to update setting');
+    } finally {
+      setLoadingAccess(false);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      yrs: new Date().getFullYear(),
+      eventName: '',
+    });
+    setSummaryFile(null);
+  };
+
+  // ✅ Create
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof formData & { summaryFile?: File }) => {
+      let summaryPath: string | null = null;
+
+      if (data.summaryFile) {
+        const fileExt = data.summaryFile.name.split('.').pop() || 'pdf';
+        const safeEvent = data.eventName.trim().replace(/\s+/g, '_');
+        const fileName = `${data.yrs}_${safeEvent}_accounts_summary.${fileExt}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('audit-reports')
+          .upload(fileName, data.summaryFile);
+
+        if (uploadError) throw uploadError;
+        summaryPath = uploadData.path;
+      }
+
+      const { data: result, error } = await supabase
+        .from('past_papers')
+        .insert({
+          yrs: data.yrs,
+          subject: data.eventName,
+          exam_paper_path: summaryPath,
+          scheme_path: null,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
+      toast.success('Account summary created successfully');
+      setIsCreateDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast.error('Failed to create account summary: ' + (error?.message || 'Unknown error'));
+    },
+  });
+
+  // ✅ Update
+  const updateMutation = useMutation({
+    mutationFn: async (data: { id: number } & typeof formData & { summaryFile?: File }) => {
+      let summaryPath = editingRecord?.exam_paper_path ?? null;
+
+      if (data.summaryFile) {
+        const fileExt = data.summaryFile.name.split('.').pop() || 'pdf';
+        const safeEvent = data.eventName.trim().replace(/\s+/g, '_');
+        const fileName = `${data.yrs}_${safeEvent}_accounts_summary.${fileExt}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('audit-reports')
+          .upload(fileName, data.summaryFile, { upsert: true });
+
+        if (uploadError) throw uploadError;
+        summaryPath = uploadData.path;
+      }
+
+      const { data: result, error } = await supabase
+        .from('past_papers')
+        .update({
+          yrs: data.yrs,
+          subject: data.eventName,
+          exam_paper_path: summaryPath,
+          scheme_path: null,
+        })
+        .eq('pp_id', data.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
+      toast.success('Account summary updated successfully');
+      setEditingRecord(null);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast.error('Failed to update account summary: ' + (error?.message || 'Unknown error'));
+    },
+  });
+
+  // ✅ Delete
+  const deleteMutation = useMutation({
+    mutationFn: async (record: AccountSummary) => {
+      if (record.exam_paper_path) {
+        await supabase.storage.from('audit-reports').remove([record.exam_paper_path]);
+      }
+      const { error } = await supabase.from('past_papers').delete().eq('pp_id', record.pp_id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
+      toast.success('Account summary deleted successfully');
+    },
+    onError: (error: any) => {
+      toast.error('Failed to delete account summary: ' + (error?.message || 'Unknown error'));
+    },
+  });
+
+  const handleCreate = () => {
+    if (!isSuperAdmin) {
+      toast.error('Only super admins can create accounts summaries');
+      return;
+    }
+    if (!formData.eventName.trim()) {
+      toast.error('Please enter an event name');
+      return;
+    }
+    createMutation.mutate({ ...formData, summaryFile });
+  };
+
+  const handleUpdate = () => {
+    if (!isSuperAdmin) {
+      toast.error('Only super admins can update accounts summaries');
+      return;
+    }
+    if (!editingRecord || !formData.eventName.trim()) {
+      toast.error('Please enter an event name');
+      return;
+    }
+    updateMutation.mutate({ id: editingRecord.pp_id, ...formData, summaryFile });
+  };
+
+  const handleEdit = (record: AccountSummary) => {
+    if (!isSuperAdmin) return;
+    setEditingRecord(record);
+    setFormData({
+      yrs: record.yrs,
+      eventName: record.subject,
+    });
+    setIsCreateDialogOpen(false);
+  };
+
+  const handleDelete = (record: AccountSummary) => {
+    if (!isSuperAdmin) return;
+    if (confirm('Are you sure you want to delete this account summary? This action cannot be undone.')) {
+      deleteMutation.mutate(record);
+    }
+  };
+
+  if (isLoading) {
     return (
-      <div className="min-h-screen">
-        <AdminHeader title="Audit Log" breadcrumb="Security" />
-        <div className="p-6 flex items-center justify-center min-h-[60vh]">
-          <Card className="max-w-md w-full bg-card/50 backdrop-blur-sm border-border">
-            <CardContent className="p-8 text-center">
-              <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Access Restricted</h2>
-              <p className="text-muted-foreground">
-                Audit logs are only accessible to super administrators.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen">
-      <AdminHeader title="Audit Log" breadcrumb="Security" />
-
+    <PermissionGate permissionKey="exam" permissionName="Exam Handling">
       <div className="p-6 space-y-6">
-        {/* Filters */}
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap gap-4 items-end">
-              <div className="flex-1 min-w-[200px]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        {/* Header + Add */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Audit (Accounts)</h1>
+            <p className="text-muted-foreground">Committee year → expand to view event-wise accounts summary files</p>
+          </div>
+
+          <Dialog
+            open={isCreateDialogOpen || !!editingRecord}
+            onOpenChange={(open) => {
+              if (!open) {
+                setIsCreateDialogOpen(false);
+                setEditingRecord(null);
+                resetForm();
+              }
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  if (!isSuperAdmin) {
+                    toast.error('Only super admins can add accounts');
+                    return;
+                  }
+                  setIsCreateDialogOpen(true);
+                }}
+                disabled={!isSuperAdmin}
+                title={!isSuperAdmin ? 'Super Admin only' : undefined}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Accounts
+              </Button>
+            </DialogTrigger>
+
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{editingRecord ? 'Edit Accounts' : 'Add Accounts'}</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="event-name">Event Name</Label>
                   <Input
-                    placeholder="Search logs..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 bg-background/50"
+                    id="event-name"
+                    value={formData.eventName}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, eventName: e.target.value }))}
+                    placeholder="Enter event name"
                   />
                 </div>
+
+                <div>
+                  <Label htmlFor="summary-pdf">Accounts Summary (PDF)</Label>
+                  <Input
+                    id="summary-pdf"
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => setSummaryFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    onClick={editingRecord ? handleUpdate : handleCreate}
+                    disabled={!isSuperAdmin || createMutation.isPending || updateMutation.isPending}
+                    className="flex-1"
+                  >
+                    {createMutation.isPending || updateMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : null}
+                    {editingRecord ? 'Update' : 'Create'}
+                  </Button>
+                </div>
+
+                <div className="text-xs text-muted-foreground">
+                  Saving under year: <span className="font-mono">{formData.yrs}</span>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* ✅ Button to reveal extra card */}
+        {(isAdmin || isSuperAdmin) && (
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setShowAccessCard((s) => !s)}>
+              {showAccessCard ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+              {showAccessCard ? 'Hide Control' : 'Show Control'}
+            </Button>
+          </div>
+        )}
+
+        {/* ✅ Extra card */}
+        {(isAdmin || isSuperAdmin) && showAccessCard && (
+          <Card className="bg-card/50 backdrop-blur-sm border-border">
+            <CardHeader>
+              <CardTitle className="text-lg">Accounts / Audit Visibility</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              <div className="text-sm text-muted-foreground space-y-1">
+                <div>Control whether members in the same batch/year can view Accounts/Audit.</div>
+                <div>
+                  Your batch/year:{' '}
+                  <span className="font-mono text-foreground">{myBatchYear ?? 'N/A'}</span>{' '}
+                  {myBatchYear ? (
+                    <span className={accountsAllowedForMyYear ? 'text-green-500' : 'text-red-500'}>
+                      ({accountsAllowedForMyYear ? 'ENABLED' : 'DISABLED'})
+                    </span>
+                  ) : null}
+                </div>
+                {!isSuperAdmin && <div className="text-xs">Only Super Admin can change this setting.</div>}
               </div>
 
-              <div className="flex items-center gap-2">
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-[140px] bg-background/50"
-                />
-                <span className="text-muted-foreground">to</span>
-                <Input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-[140px] bg-background/50"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => setAccountsAccessForMyYear(true)}
+                  disabled={!isSuperAdmin || loadingAccess || !myBatchYear}
+                >
+                  {loadingAccess ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                  )}
+                  Allow
+                </Button>
 
-        {/* Logs Table */}
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              Activity Log
-              <Badge className="ml-2">{filteredLogs.length} records</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <Button
+                  variant="outline"
+                  onClick={() => setAccountsAccessForMyYear(false)}
+                  disabled={!isSuperAdmin || loadingAccess || !myBatchYear}
+                >
+                  {loadingAccess ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldOff className="mr-2 h-4 w-4" />
+                  )}
+                  Disable
+                </Button>
               </div>
-            ) : filteredLogs.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No audit logs found</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Timestamp</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Details</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredLogs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="text-sm">
-                        {new Date(log.created_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          {log.actor_name}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ✅ Year accordion */}
+        <div className="space-y-4">
+          {years.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-muted-foreground">No records found</CardContent>
+            </Card>
+          ) : (
+            years.map((yr) => {
+              const isOpen = expandedYear === yr;
+              const list = recordsForYear(yr);
+
+              return (
+                <Card key={yr}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-xl">Committee Year: {yr}</CardTitle>
+                        <div className="text-sm text-muted-foreground">
+                          {list.length} event{list.length === 1 ? '' : 's'}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getActionBadgeColor(log.action)}>
-                          {log.action}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-muted-foreground">{log.entity_type}</span>
-                        {log.entity_id && (
-                          <span className="text-xs text-muted-foreground ml-1">
-                            ({log.entity_id.slice(0, 8)}...)
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-[200px]">
-                        {log.details ? (
-                          <pre className="text-xs text-muted-foreground truncate">
-                            {JSON.stringify(log.details)}
-                          </pre>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                      </div>
+
+                      <Button variant="outline" onClick={() => setExpandedYear(isOpen ? null : yr)}>
+                        {isOpen ? 'Hide' : 'View'}
+                      </Button>
+                    </div>
+                  </CardHeader>
+
+                  {isOpen && (
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Event Name</TableHead>
+                            <TableHead>Summary</TableHead>
+                            <TableHead className="w-[140px]">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+
+                        <TableBody>
+                          {list.map((record) => (
+                            <TableRow key={record.pp_id}>
+                              <TableCell>{record.subject}</TableCell>
+
+                              <TableCell>
+                                {record.exam_paper_path ? (
+                                  <Button variant="outline" size="sm" asChild>
+                                    <a
+                                      href={
+                                        supabase.storage
+                                          .from('accounts-summaries')
+                                          .getPublicUrl(record.exam_paper_path).data.publicUrl
+                                      }
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      <FileText className="h-4 w-4 mr-2" />
+                                      View
+                                    </a>
+                                  </Button>
+                                ) : (
+                                  <span className="text-muted-foreground">No file</span>
+                                )}
+                              </TableCell>
+
+                              <TableCell>
+                                <div className="flex gap-2 justify-end">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleEdit(record)}
+                                    disabled={!isSuperAdmin}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDelete(record)}
+                                    disabled={!isSuperAdmin || deleteMutation.isPending}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+
+                          {list.length === 0 && (
+                            <TableRow>
+                              <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+                                No events for this year
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })
+          )}
+        </div>
       </div>
-    </div>
+    </PermissionGate>
   );
 }

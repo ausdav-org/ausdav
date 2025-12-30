@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { ArrowRight, BookOpen, Users, Calendar, MessageSquare, ChevronRight, Sparkles, GraduationCap, Heart, Zap } from 'lucide-react';
@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import AnnouncementCarousel from '@/components/AnnouncementCarousel';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 type CarouselAnnouncement = {
   id: string;
   en: string;
@@ -43,6 +44,17 @@ const committeePreview = [
   { id: 2, role: 'Secretary', roleTA: 'செயலாளர்', name: 'Ms. T. Priya', batch: '2018' },
   { id: 3, role: 'Treasurer', roleTA: 'பொருளாளர்', name: 'Mr. S. Rajan', batch: '2017' },
 ];
+
+// Executive designations to show on the Home page
+const HOME_EXEC_DESIGNATIONS = ['president', 'secretary', 'treasurer', 'editor', 'web_designer'];
+
+const HOME_DESIGNATION_TO_ROLE: Record<string, { en: string; ta: string }> = {
+  president: { en: 'President', ta: 'தலைவர்' },
+  secretary: { en: 'Secretary', ta: 'செயலாளர்' },
+  treasurer: { en: 'Treasurer', ta: 'பொருளாளர்' },
+  editor: { en: 'Editor', ta: 'ஊடக தலைவர்' },
+  web_designer: { en: 'Web Developer', ta: 'இணைய நிர்வாகி' },
+};
 
 const stats = [
   { value: '500+', label: 'Students Helped', labelTA: 'உதவிய மாணவர்கள்' },
@@ -114,6 +126,52 @@ const HomePage: React.FC = () => {
   useEffect(() => {
     loadAnnouncements();
   }, [loadAnnouncements]);
+
+  // Fetch executive members for the Home page (current/latest batch)
+  const { data: execRows } = useQuery<any[]>({
+    queryKey: ['home-exec-members'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('members')
+        .select('mem_id, fullname, designation, batch, university, uni_degree, profile_bucket, profile_path')
+        .in('designation', HOME_EXEC_DESIGNATIONS as any)
+        .neq('designation', 'none')
+        .not('designation', 'is', null)
+        .order('batch', { ascending: false })
+        .order('fullname', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const execMembers = useMemo(() => {
+    if (!execRows || execRows.length === 0) return [] as any[];
+    const maxBatch = Math.max(...execRows.map((r) => r.batch || 0));
+    const rows = execRows.filter((r) => (r.batch || 0) === maxBatch);
+    return rows.map((r) => {
+      const roleInfo = HOME_DESIGNATION_TO_ROLE[r.designation] || { en: r.designation, ta: r.designation };
+      const workParts: string[] = [];
+      if (r.uni_degree) workParts.push(r.uni_degree);
+      if (r.university) workParts.push(r.university);
+      const work = workParts.join(',');
+      let photo: string | null = null;
+      if (r.profile_path && r.profile_bucket) {
+        const { data } = supabase.storage.from(r.profile_bucket).getPublicUrl(r.profile_path);
+        photo = data?.publicUrl || null;
+      }
+      return {
+        id: r.mem_id,
+        role: roleInfo.en,
+        roleTA: roleInfo.ta,
+        name: r.fullname,
+        nameTA: r.fullname,
+        Work: work,
+        batch: r.batch,
+        photo,
+      };
+    });
+  }, [execRows]);
 
   const { scrollYProgress } = useScroll({
     target: heroRef,
@@ -470,7 +528,7 @@ const HomePage: React.FC = () => {
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-            {committeePreview.map((member, idx) => (
+            {(execMembers && execMembers.length ? execMembers : committeePreview).map((member, idx) => (
               <motion.div
                 key={member.id}
                 initial={{ opacity: 0, y: 30 }}
@@ -489,9 +547,11 @@ const HomePage: React.FC = () => {
                 <p className="text-primary font-medium mb-2">
                   {language === 'en' ? member.role : member.roleTA}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  {language === 'en' ? 'Batch' : 'தொகுதி'} {member.batch}
-                </p>
+                {member.batch && (
+                  <p className="text-sm text-muted-foreground">
+                    {language === 'en' ? 'Batch' : 'தொகுதி'} {member.batch}
+                  </p>
+                )}
               </motion.div>
             ))}
           </div>
