@@ -114,8 +114,8 @@ export default function AdminAuditPage() {
       if (!data.auditFile) throw new Error('Please select a file');
 
       const safeEvent = data.event.trim().replace(/\s+/g, '_');
-      const fileName = data.auditFile.name;
-      const objectName = `${data.year}_${safeEvent}_${Date.now()}_${fileName}`.replace(/[^\w.\-]+/g, '_');
+      const fileName = `${data.year}_${safeEvent}_audit_summary.pdf`;
+      const objectName = fileName.replace(/[^\w.\-]+/g, '_');
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from(DEFAULT_BUCKET)
@@ -156,22 +156,23 @@ export default function AdminAuditPage() {
       let objectPath = editingRecord?.object_path ?? '';
       let fileName = editingRecord?.file_name ?? null;
       let fileSize = editingRecord?.file_size ?? null;
-      let uploadedNewFile = false;
 
       if (data.auditFile) {
         const safeEvent = data.event.trim().replace(/\s+/g, '_');
-        const newFileName = data.auditFile.name;
-        const objectName = `${data.year}_${safeEvent}_${Date.now()}_${newFileName}`.replace(/[^\w.\-]+/g, '_');
+        const newFileName = `${data.year}_${safeEvent}_audit_summary.pdf`;
+        const objectName = newFileName.replace(/[^\w.\-]+/g, '_');
 
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from(DEFAULT_BUCKET)
           .upload(objectName, data.auditFile, { upsert: true });
 
         if (uploadError) throw uploadError;
+        if (editingRecord?.object_path && editingRecord.object_path !== uploadData.path) {
+          await supabase.storage.from(DEFAULT_BUCKET).remove([editingRecord.object_path]);
+        }
         objectPath = uploadData.path;
         fileName = newFileName;
         fileSize = data.auditFile.size;
-        uploadedNewFile = true;
       }
 
       const { data: result, error } = await supabase
@@ -189,16 +190,6 @@ export default function AdminAuditPage() {
         .single();
 
       if (error) throw error;
-
-      if (uploadedNewFile && editingRecord?.object_path && editingRecord.object_path !== objectPath) {
-        const { error: removeError } = await supabase.storage
-          .from(DEFAULT_BUCKET)
-          .remove([editingRecord.object_path]);
-        if (removeError) {
-          console.error('Failed to delete old audit file:', removeError);
-          toast.warning('New file saved, but failed to delete the old file');
-        }
-      }
 
       return result;
     },
@@ -247,10 +238,6 @@ export default function AdminAuditPage() {
   };
 
   const handleUpdate = () => {
-    if (!isSuperAdmin) {
-      toast.error('Only super admins can update audit files');
-      return;
-    }
     if (!editingRecord || !formData.event.trim()) {
       toast.error('Please enter an event name');
       return;
@@ -259,7 +246,6 @@ export default function AdminAuditPage() {
   };
 
   const handleEdit = (record: AuditAction) => {
-    if (!isSuperAdmin) return;
     setEditingRecord(record);
     setFormData({
       year: record.year,
@@ -269,9 +255,23 @@ export default function AdminAuditPage() {
   };
 
   const handleDelete = (record: AuditAction) => {
-    if (!isSuperAdmin) return;
     if (confirm('Are you sure you want to delete this audit file? This action cannot be undone.')) {
       deleteMutation.mutate(record);
+    }
+  };
+
+  const handleOpenAuditFile = async (record: AuditAction) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from(record.bucket_id)
+        .createSignedUrl(record.object_path, 300);
+
+      if (error) throw error;
+      if (!data?.signedUrl) throw new Error('Failed to create file link');
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.error('Failed to open audit file:', err);
+      toast.error('Failed to open file');
     }
   };
 
@@ -416,19 +416,13 @@ export default function AdminAuditPage() {
                               <TableCell>{record.event}</TableCell>
                               <TableCell>
                                 {record.object_path ? (
-                                  <Button variant="outline" size="sm" asChild>
-                                    <a
-                                      href={
-                                        supabase.storage
-                                          .from(record.bucket_id)
-                                          .getPublicUrl(record.object_path).data.publicUrl
-                                      }
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      <FileText className="h-4 w-4 mr-2" />
-                                      {record.file_name || 'View'}
-                                    </a>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleOpenAuditFile(record)}
+                                  >
+                                    <FileText className="h-4 w-4 mr-2" />
+                                    {record.file_name || 'View'}
                                   </Button>
                                 ) : (
                                   <span className="text-muted-foreground">No file</span>
@@ -441,7 +435,6 @@ export default function AdminAuditPage() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleEdit(record)}
-                                    disabled={!isSuperAdmin}
                                   >
                                     <Pencil className="h-4 w-4" />
                                   </Button>
@@ -450,7 +443,7 @@ export default function AdminAuditPage() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleDelete(record)}
-                                    disabled={!isSuperAdmin || deleteMutation.isPending}
+                                    disabled={deleteMutation.isPending}
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>

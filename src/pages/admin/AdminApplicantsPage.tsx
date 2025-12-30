@@ -129,6 +129,8 @@ export default function AdminApplicantsPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [importMode, setImportMode] = useState<'single' | 'bulk' | null>(null);
   const [singleSubmitting, setSingleSubmitting] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
   const [singleForm, setSingleForm] = useState({
     fullName: '',
     email: '',
@@ -964,57 +966,41 @@ export default function AdminApplicantsPage() {
                       <TableRow>
                         <TableHead>Index No</TableHead>
                         <TableHead>Full Name</TableHead>
-                        <TableHead>Gender</TableHead>
-                        <TableHead>Stream</TableHead>
-                        <TableHead>NIC</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>School</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead className="w-10"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredApplicants.map((applicant) => (
+                    <TableHead>Stream</TableHead>
+                    <TableHead>School</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredApplicants.map((applicant) => (
                         <TableRow key={applicant.applicant_id}>
                           <TableCell className="font-medium">{applicant.index_no}</TableCell>
                           <TableCell>{applicant.fullname}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={applicant.gender ? 'default' : 'secondary'}
-                              className={applicant.gender ? 'bg-blue-500/20 text-blue-600' : 'bg-pink-500/20 text-pink-600'}
+                      <TableCell>
+                        <Badge variant="outline">{applicant.stream}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[150px] truncate" title={applicant.school}>
+                        {applicant.school}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedApplicant(applicant);
+                                setDetailsOpen(true);
+                              }}
                             >
-                              {applicant.gender ? 'Male' : 'Female'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{applicant.stream}</Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">{applicant.nic}</TableCell>
-                          <TableCell>{applicant.phone || '-'}</TableCell>
-                          <TableCell className="max-w-[150px] truncate" title={applicant.email || ''}>
-                            {applicant.email || '-'}
-                          </TableCell>
-                          <TableCell className="max-w-[150px] truncate" title={applicant.school}>
-                            {applicant.school}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
-                            {new Date(applicant.created_at).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem>
-                                  <FileText className="h-4 w-4 mr-2" />
-                                  View Details
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                              <FileText className="h-4 w-4 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1029,6 +1015,49 @@ export default function AdminApplicantsPage() {
                 )}
               </CardContent>
             </Card>
+
+            <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Applicant Details</DialogTitle>
+                </DialogHeader>
+                {selectedApplicant && (
+                  <Card>
+                    <CardContent className="p-4 space-y-3 text-sm">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="text-muted-foreground">Index No</div>
+                        <div className="font-medium">{selectedApplicant.index_no}</div>
+                        <div className="text-muted-foreground">Full Name</div>
+                        <div className="font-medium">{selectedApplicant.fullname}</div>
+                        <div className="text-muted-foreground">Stream</div>
+                        <div className="font-medium">{selectedApplicant.stream}</div>
+                        <div className="text-muted-foreground">School</div>
+                        <div className="font-medium">{selectedApplicant.school}</div>
+                        <div className="text-muted-foreground">Gender</div>
+                        <div className="font-medium">{selectedApplicant.gender ? 'Male' : 'Female'}</div>
+                        <div className="text-muted-foreground">NIC</div>
+                        <div className="font-medium">{selectedApplicant.nic}</div>
+                        <div className="text-muted-foreground">Phone</div>
+                        <div className="font-medium">{selectedApplicant.phone || '-'}</div>
+                        <div className="text-muted-foreground">Email</div>
+                        <div className="font-medium">{selectedApplicant.email || '-'}</div>
+                        <div className="text-muted-foreground">Year</div>
+                        <div className="font-medium">{selectedApplicant.year}</div>
+                        <div className="text-muted-foreground">Created</div>
+                        <div className="font-medium">
+                          {new Date(selectedApplicant.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="flex justify-end pt-2">
+                        <Button variant="outline" onClick={() => setDetailsOpen(false)}>
+                          Close
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </DialogContent>
+            </Dialog>
 
             {isSuperAdmin && (
               <Card className="border-destructive/50">
