@@ -123,18 +123,7 @@ export function AdminSidebar() {
 
     return true;
   });
-    // For super_admin, always show all items they have role access to
-    if (isSuperAdmin) return true;
-
-    // For admin, check if they have the required permission
-    if (role === 'admin' && item.permissionKey) {
-      // Allow admins to view the Feedback portal even if they don't have the granular 'feedback' grant.
-      if (item.permissionKey === 'feedback') return true;
-      return hasPermission(item.permissionKey);
-    }
-
-    return true;
-  });
+  
 
   return (
     <motion.aside
