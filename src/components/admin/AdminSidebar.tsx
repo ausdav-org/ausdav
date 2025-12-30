@@ -15,6 +15,7 @@ import {
   DollarSign,
   Megaphone,
   Shield,
+  Phone,
   GraduationCap,
   BookOpen,
   UserPlus,
@@ -59,8 +60,11 @@ const navItems: NavItem[] = [
 
   { title: 'Announcements', href: '/admin/announcements', icon: Megaphone, roles: ['admin', 'super_admin'], permissionKey: 'announcement' },
 
+  { title: 'Feedback', href: '/admin/feedback', icon: Megaphone, roles: ['admin', 'super_admin'], permissionKey: 'feedback' },
+
   { title: 'Claim Permission', href: '/admin/claim-permission', icon: HandHelping, roles: ['admin'] },
   { title: 'Permissions', href: '/admin/permissions', icon: Shield, roles: ['super_admin'] },
+  { title: 'Contact', href: '/admin/contact', icon: Phone, roles: ['admin', 'super_admin'] },
   { title: 'Audit Log', href: '/admin/audit', icon: FileText, roles: ['super_admin'] },
   { title: 'Settings', href: '/admin/settings', icon: Settings, roles: ['super_admin'] },
 ];
@@ -82,6 +86,8 @@ export function AdminSidebar() {
 
     // For admin, check if they have the required permission
     if (role === 'admin' && item.permissionKey) {
+      // Allow admins to view the Feedback portal even if they don't have the granular 'feedback' grant.
+      if (item.permissionKey === 'feedback') return true;
       return hasPermission(item.permissionKey);
     }
 

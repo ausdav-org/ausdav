@@ -27,8 +27,8 @@ const DESIGNATION_TO_ROLE: Record<string, { en: string; ta: string }> = {
   vice_secretary: { en: 'Vice Secretary', ta: 'துணைச் செயலாளர்' },
   treasurer: { en: 'Treasurer', ta: 'பொருளாளர்' },
   assistant_treasurer: { en: 'Vice Treasurer', ta: 'துணைப் பொருளாளர்' },
-  editor: { en: 'Media Head', ta: 'ஊடக தலைவர்' },
-  web_designer: { en: 'Web Handler', ta: 'இணைய நிர்வாகி' },
+   editor: { en: 'Editor', ta: 'ஊடக தலைவர்' },
+   web_designer: { en: 'Web Developer', ta: 'இணைய நிர்வாகி' },
   general_committee_member: { en: 'General', ta: 'பொது' },
   education_committee_member: { en: 'Education', ta: 'கல்வி' },
   university_representative: { en: 'Representative', ta: 'பல்கலை பிரதிநிதி' },
@@ -100,22 +100,14 @@ const Card = ({
       viewport={{ once: true, margin: '-80px' }}
       transition={{ delay: i * 0.04, duration: 0.5, ease: 'easeOut' }}
       whileHover={{ y: -6, scale: 1.01 }}
-      className={cn(
-        'relative rounded-2xl p-6 text-center border backdrop-blur-md transition',
-        isDark
-          ? 'border-white/10 bg-white/5 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.8)] hover:border-white/20'
-          : 'border-border/60 bg-card/70 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.18)] hover:border-border'
-      )}
+      className={cn('glass-card rounded-2xl p-8 text-center neon-glow-hover')}
     >
       {m.linkedin && (
         <a
           href={m.linkedin}
           target="_blank"
           rel="noopener noreferrer"
-          className={cn(
-            'absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center transition shadow',
-            isDark ? 'bg-white/10 text-white hover:bg-white/15' : 'bg-muted text-foreground hover:bg-muted/80'
-          )}
+          className={cn('absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center transition shadow', isDark ? 'bg-white/10 text-white hover:bg-white/15' : 'bg-muted text-foreground hover:bg-muted/80')}
           aria-label="LinkedIn Profile"
         >
           <IconLI />
@@ -123,36 +115,31 @@ const Card = ({
       )}
 
       {imgOk && m.photo ? (
-        <div className="w-24 h-24 mx-auto mb-4 rounded-full p-[2px] bg-gradient-to-br from-cyan-400/70 via-sky-500/70 to-indigo-500/70 shadow">
+        <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary to-gold-light flex items-center justify-center neon-glow">
           <img
             src={m.photo}
             alt={m.role === 'Patron' ? '' : name}
-            className="w-full h-full rounded-full object-cover"
+            className="w-full h-full rounded-2xl object-cover"
             loading="lazy"
             onError={() => setImgOk(false)}
           />
         </div>
       ) : (
-        <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-to-br from-cyan-400/70 to-indigo-500/70 flex items-center justify-center shadow">
-          <div
-            className={cn(
-              'w-12 h-12 rounded-full flex items-center justify-center',
-              isDark ? 'bg-white/10 text-white' : 'bg-white/20 text-black'
-            )}
-          >
-            <IconUser />
-          </div>
+        <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary to-gold-light flex items-center justify-center neon-glow">
+          <span className="text-3xl font-bold text-primary-foreground">
+            {name.charAt(0)}
+          </span>
         </div>
       )}
 
-      <h3 className={cn('font-serif font-semibold text-lg tracking-wide', isDark ? 'text-white' : 'text-foreground')}>
-        {name.toUpperCase()}
+      <h3 className={cn('font-bold text-xl mb-1', isDark ? 'text-white' : '')}>
+        {name}
       </h3>
-      <p className={cn('font-medium text-sm mt-1', isDark ? 'text-cyan-200/90' : 'text-primary')}>
+      <p className={cn('text-primary font-medium mb-2', isDark ? 'text-cyan-200/90' : '')}>
         {role}
       </p>
 
-      <p className={cn('text-sm mt-2 leading-relaxed', isDark ? 'text-white/70' : 'text-muted-foreground')}>
+      <p className={cn('text-sm text-muted-foreground')}> 
         {work.map((t, idx) => (
           <React.Fragment key={idx}>
             {t.trim()}
