@@ -9,6 +9,7 @@ import {
   Loader2,
   TrendingUp,
   TrendingDown,
+  Upload,
   Plus,
   Pencil,
   MoreVertical,
@@ -119,6 +120,7 @@ const emptyFormData: TransactionFormData = {
 
 // ✅ Receipt bucket (change if your storage bucket name is different)
 const RECEIPT_BUCKET = 'finance-photos';
+const AUDIT_BUCKET = 'audit-reports';
 const MAX_RECEIPT_SIZE_BYTES = 5 * 1024 * 1024;
 
 export default function FinanceLedgerPage() {
@@ -131,6 +133,10 @@ export default function FinanceLedgerPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [auditDialogOpen, setAuditDialogOpen] = useState(false);
+  const [auditEventName, setAuditEventName] = useState('');
+  const [auditYear, setAuditYear] = useState(new Date().getFullYear());
+  const [auditUploading, setAuditUploading] = useState(false);
 
   // Stats
   const [totalIncome, setTotalIncome] = useState(0);
@@ -259,93 +265,98 @@ export default function FinanceLedgerPage() {
     }
   };
 
-  const exportPDF = async () => {
+  const buildLedgerPdfDoc = async () => {
     if (filteredTransactions.length === 0) {
       toast.error('No transactions to export');
-      return;
+      throw new Error('No transactions to export');
     }
 
-    setExportingPdf(true);
-    try {
-      const sorted = [...filteredTransactions].sort((a, b) =>
-        (a.txn_date || '').localeCompare(b.txn_date || '')
+    const sorted = [...filteredTransactions].sort((a, b) =>
+      (a.txn_date || '').localeCompare(b.txn_date || '')
+    );
+
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const title = 'Finance Ledger';
+    doc.setFontSize(16);
+    doc.text(title, 40, 40);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 40, 58);
+
+    const summaryHead = [['Date', 'Type', 'Category', 'Amount', 'Description']];
+    const summaryBody = sorted.map((txn) => [
+      txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-',
+      txn.exp_type,
+      txn.category,
+      `Rs. ${txn.amount.toLocaleString()}`,
+      txn.description || '-',
+    ]);
+
+    autoTable(doc, {
+      head: summaryHead,
+      body: summaryBody,
+      startY: 74,
+      styles: { fontSize: 9, cellPadding: 4, overflow: 'linebreak' },
+      headStyles: { fillColor: [33, 150, 243] },
+      columnStyles: {
+        0: { cellWidth: 70 },
+        1: { cellWidth: 55 },
+        2: { cellWidth: 80 },
+        3: { cellWidth: 70 },
+        4: { cellWidth: 220 },
+      },
+    });
+
+    const imageRows = sorted.filter((txn) => txn.photo_path);
+    if (imageRows.length > 0) {
+      const imageDataList = await Promise.all(
+        imageRows.map((txn) => getReceiptDataUrl(txn.photo_path!))
       );
 
-      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-      const title = 'Finance Ledger';
-      doc.setFontSize(16);
-      doc.text(title, 40, 40);
-      doc.setFontSize(10);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 40, 58);
+      for (let i = 0; i < imageRows.length; i += 4) {
+        doc.addPage();
+        const pageImages = imageDataList.slice(i, i + 4);
+        const margin = 40;
+        const gap = 12;
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const cellWidth = (pageWidth - margin * 2 - gap) / 2;
+        const cellHeight = (pageHeight - margin * 2 - gap) / 2;
 
-      const summaryHead = [['Date', 'Type', 'Category', 'Amount', 'Description']];
-      const summaryBody = sorted.map((txn) => [
-        txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-',
-        txn.exp_type,
-        txn.category,
-        `Rs. ${txn.amount.toLocaleString()}`,
-        txn.description || '-',
-      ]);
+        pageImages.forEach((imageData, index) => {
+          const row = Math.floor(index / 2);
+          const col = index % 2;
+          const cellX = margin + col * (cellWidth + gap);
+          const cellY = margin + row * (cellHeight + gap);
 
-      autoTable(doc, {
-        head: summaryHead,
-        body: summaryBody,
-        startY: 74,
-        styles: { fontSize: 9, cellPadding: 4, overflow: 'linebreak' },
-        headStyles: { fillColor: [33, 150, 243] },
-        columnStyles: {
-          0: { cellWidth: 70 },
-          1: { cellWidth: 55 },
-          2: { cellWidth: 80 },
-          3: { cellWidth: 70 },
-          4: { cellWidth: 220 },
-        },
-      });
+          if (!imageData) {
+            doc.setFontSize(10);
+            doc.text('No receipt', cellX + 4, cellY + 14);
+            return;
+          }
 
-      const imageRows = sorted.filter((txn) => txn.photo_path);
-      if (imageRows.length > 0) {
-        const imageDataList = await Promise.all(
-          imageRows.map((txn) => getReceiptDataUrl(txn.photo_path!))
-        );
+          const format = imageData.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+          const padding = 8;
+          const imgProps = doc.getImageProperties(imageData);
+          const maxWidth = cellWidth - padding * 2;
+          const maxHeight = cellHeight - padding * 2;
+          const ratio = Math.min(maxWidth / imgProps.width, maxHeight / imgProps.height);
+          const imgWidth = imgProps.width * ratio;
+          const imgHeight = imgProps.height * ratio;
+          const x = cellX + padding + (maxWidth - imgWidth) / 2;
+          const y = cellY + padding + (maxHeight - imgHeight) / 2;
 
-        for (let i = 0; i < imageRows.length; i += 4) {
-          doc.addPage();
-          const pageImages = imageDataList.slice(i, i + 4);
-          const margin = 40;
-          const gap = 12;
-          const pageWidth = doc.internal.pageSize.getWidth();
-          const pageHeight = doc.internal.pageSize.getHeight();
-          const cellWidth = (pageWidth - margin * 2 - gap) / 2;
-          const cellHeight = (pageHeight - margin * 2 - gap) / 2;
-
-          pageImages.forEach((imageData, index) => {
-            const row = Math.floor(index / 2);
-            const col = index % 2;
-            const cellX = margin + col * (cellWidth + gap);
-            const cellY = margin + row * (cellHeight + gap);
-
-            if (!imageData) {
-              doc.setFontSize(10);
-              doc.text('No receipt', cellX + 4, cellY + 14);
-              return;
-            }
-
-            const format = imageData.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-            const padding = 8;
-            const imgProps = doc.getImageProperties(imageData);
-            const maxWidth = cellWidth - padding * 2;
-            const maxHeight = cellHeight - padding * 2;
-            const ratio = Math.min(maxWidth / imgProps.width, maxHeight / imgProps.height);
-            const imgWidth = imgProps.width * ratio;
-            const imgHeight = imgProps.height * ratio;
-            const x = cellX + padding + (maxWidth - imgWidth) / 2;
-            const y = cellY + padding + (maxHeight - imgHeight) / 2;
-
-            doc.addImage(imageData, format, x, y, imgWidth, imgHeight);
-          });
-        }
+          doc.addImage(imageData, format, x, y, imgWidth, imgHeight);
+        });
       }
+    }
 
+    return doc;
+  };
+
+  const exportPDF = async () => {
+    setExportingPdf(true);
+    try {
+      const doc = await buildLedgerPdfDoc();
       doc.save(`finance-ledger-${new Date().toISOString().split('T')[0]}.pdf`);
       toast.success('PDF exported successfully');
     } catch (error) {
@@ -547,6 +558,52 @@ export default function FinanceLedgerPage() {
     }
   };
 
+  const handleUploadAuditPdf = async () => {
+    if (!auditEventName.trim()) {
+      toast.error('Please enter an event name');
+      return;
+    }
+
+    setAuditUploading(true);
+    try {
+      const doc = await buildLedgerPdfDoc();
+      const blob = doc.output('blob') as Blob;
+      const safeEvent = auditEventName.trim().replace(/\s+/g, '_');
+      const fileName = `${auditYear}_${safeEvent}_audit_summary.pdf`;
+      const objectName = `${auditYear}_${safeEvent}_${Date.now()}_audit_summary.pdf`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(AUDIT_BUCKET)
+        .upload(objectName, blob, { contentType: 'application/pdf' });
+
+      if (uploadError) throw uploadError;
+
+      const { error: insertError } = await supabase
+        .from('audit_actions' as any)
+        .insert({
+          year: auditYear,
+          event: auditEventName.trim(),
+          bucket_id: AUDIT_BUCKET,
+          object_path: uploadData.path,
+          file_name: fileName,
+          file_size: blob.size,
+          uploaded_by: user?.id ?? null,
+        });
+
+      if (insertError) throw insertError;
+
+      toast.success('Audit summary uploaded successfully');
+      setAuditDialogOpen(false);
+      setAuditEventName('');
+      setAuditYear(new Date().getFullYear());
+    } catch (error: any) {
+      console.error('Failed to upload audit summary:', error);
+      toast.error(error?.message || 'Failed to upload audit summary');
+    } finally {
+      setAuditUploading(false);
+    }
+  };
+
   const handleConfirmDelete = (txn: Transaction) => {
     setTransactionToDelete(txn);
     setDeleteDialogOpen(true);
@@ -697,12 +754,36 @@ export default function FinanceLedgerPage() {
                   {exportingPdf ? 'Exporting...' : 'Export PDF'}
                 </Button>
 
+
                 {canEdit && (
                   <Button onClick={handleOpenAddDialog}>
                     <Plus className="h-4 w-4 mr-2" />
                     Add Record
                   </Button>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/50 backdrop-blur-sm border-border">
+            <CardHeader>
+              <CardTitle>Audit Summary Instructions</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground space-y-3">
+              <div>Use the filters above to prepare the event-wise ledger summary.</div>
+              <div>
+                Click <span className="font-medium text-foreground">Upload Audit PDF</span> to generate the filtered PDF
+                and save it in the Audit page.
+              </div>
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setAuditDialogOpen(true)}
+                  disabled={!canEdit || filterCategory === 'All Categories'}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Audit PDF
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -946,6 +1027,54 @@ export default function FinanceLedgerPage() {
                   'Update Transaction'
                 ) : (
                   'Add Transaction'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={auditDialogOpen} onOpenChange={setAuditDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Upload Audit Summary</DialogTitle>
+              <DialogDescription>
+                This will generate a PDF from the current filters and save it to the Audit page.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="audit-event">Event Name *</Label>
+                <Input
+                  id="audit-event"
+                  value={auditEventName}
+                  onChange={(e) => setAuditEventName(e.target.value)}
+                  placeholder="Enter event name"
+                  className="bg-background/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="audit-year">Committee Year *</Label>
+                <Input
+                  id="audit-year"
+                  type="number"
+                  value={auditYear}
+                  onChange={(e) => setAuditYear(Number(e.target.value))}
+                  className="bg-background/50"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAuditDialogOpen(false)} disabled={auditUploading}>
+                Cancel
+              </Button>
+              <Button onClick={handleUploadAuditPdf} disabled={auditUploading}>
+                {auditUploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  'Upload PDF'
                 )}
               </Button>
             </DialogFooter>
