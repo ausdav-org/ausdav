@@ -95,7 +95,14 @@ const App = () => {
 
                   {/* ✅ Recommended clean profile route */}
 
-                  <Route path="/profile" element={<Layout><ProfilePage /></Layout>} />
+                  <Route
+                    path="/profile"
+                    element={
+                      <AdminAuthProvider>
+                        <Layout><ProfilePage /></Layout>
+                      </AdminAuthProvider>
+                    }
+                  />
                   {/* Feedback form moved to footer; no dedicated page */}
 
                   {/* ✅ Backward-compat: old (file-like) path redirects to /profile */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   User,
@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 /** ✅ SVG overlay ONLY (no background fill) so it matches your site's container background */
@@ -81,6 +83,10 @@ const IconUser = () => (
 const ImageAvatar: React.FC<{ photo?: string; alt?: string; isDark: boolean }> = ({ photo, alt, isDark }) => {
   const [imgOk, setImgOk] = useState<boolean>(!!photo);
 
+  useEffect(() => {
+    setImgOk(!!photo);
+  }, [photo]);
+
   return (
     <div className="relative">
       {imgOk && photo ? (
@@ -113,22 +119,47 @@ const ImageAvatar: React.FC<{ photo?: string; alt?: string; isDark: boolean }> =
 const ProfilePage: React.FC = () => {
   const { language } = useLanguage();
   const { theme } = useTheme();
+  const { profile, user } = useAdminAuth();
   const isDark = theme === 'dark';
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
 
-  // ✅ your data unchanged
-  const profile = {
-    photo: '/ausdav/src/assets/Committee/2022/Ruthu.jpg',
-    fullName: 'Ruththiragayan Sutharsan',
-    username: '@ruththraa2003',
-    nic: '200311400232',
-    gender: language === 'en' ? 'Male' : 'ஆண்',
-    role: language === 'en' ? 'Media Head' : 'ஊடக தலைவர்',
-    batch: '2025',
-    university: language === 'en' ? 'University of Moratuwa' : 'மொரட்டுவ பல்கலைக்கழகம்',
-    school: 'V/Maththiriya M.V.',
-    phone: '+94 77 112 3456',
-    designation: language === 'en' ? 'AUSDAV Executive Committee' : 'AUSDAV நிர்வாக குழு',
-    email: 'ruththu2003@gmail.com',
+  useEffect(() => {
+    const loadSignedAvatar = async () => {
+      if (!profile?.profile_path) {
+        setAvatarUrl(undefined);
+        return;
+      }
+      const bucket = profile?.profile_bucket || 'member-profiles';
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(profile.profile_path, 60 * 60);
+      if (error) {
+        setAvatarUrl(undefined);
+        return;
+      }
+      setAvatarUrl(data?.signedUrl);
+    };
+
+    loadSignedAvatar();
+  }, [profile?.profile_path, profile?.profile_bucket]);
+
+  const profileData = {
+    photo: avatarUrl,
+    fullName: profile?.fullname || '-',
+    username: profile?.username
+      ? profile.username.startsWith('@')
+        ? profile.username
+        : `@${profile.username}`
+      : '-',
+    nic: profile?.nic || '-',
+    gender: profile ? (profile.gender ? 'Male' : 'Female') : '-',
+    role: profile?.role ? profile.role.replace('_', ' ') : '-',
+    batch: profile?.batch ? String(profile.batch) : '-',
+    university: profile?.university || '-',
+    school: profile?.school || '-',
+    phone: profile?.phone || '-',
+    designation: profile?.designation || '-',
+    email: user?.email || '-',
   };
 
   const labels = {
@@ -150,14 +181,14 @@ const ProfilePage: React.FC = () => {
   const textSub = isDark ? 'text-white/70' : 'text-muted-foreground';
 
   const rows = [
-    { icon: IdCard, label: labels.nic, value: profile.nic },
-    { icon: Users, label: labels.gender, value: profile.gender },
-    { icon: BadgeCheck, label: labels.role, value: profile.role },
-    { icon: GraduationCap, label: labels.batch, value: profile.batch },
-    { icon: Building2, label: labels.university, value: profile.university },
-    { icon: School, label: labels.school, value: profile.school },
-    { icon: Phone, label: labels.phone, value: profile.phone },
-    { icon: Mail, label: labels.email, value: profile.email },
+    { icon: IdCard, label: labels.nic, value: profileData.nic },
+    { icon: Users, label: labels.gender, value: profileData.gender },
+    { icon: BadgeCheck, label: labels.role, value: profileData.role },
+    { icon: GraduationCap, label: labels.batch, value: profileData.batch },
+    { icon: Building2, label: labels.university, value: profileData.university },
+    { icon: School, label: labels.school, value: profileData.school },
+    { icon: Phone, label: labels.phone, value: profileData.phone },
+    { icon: Mail, label: labels.email, value: profileData.email },
   ];
 
   return (
@@ -207,15 +238,15 @@ const ProfilePage: React.FC = () => {
             )}
           >
             <div className="flex flex-col items-center text-center">
-                <ImageAvatar photo={profile.photo} alt={profile.fullName} isDark={isDark} />
+                <ImageAvatar photo={profileData.photo} alt={profileData.fullName} isDark={isDark} />
 
               <h2 className={cn('mt-5 text-2xl md:text-3xl font-serif font-bold', textMain)}>
-                {profile.fullName}
+                {profileData.fullName}
               </h2>
 
               <div className={cn('mt-1 flex items-center gap-2', textSub)}>
                 <AtSign className="w-4 h-4" />
-                <span className="font-medium">{profile.username}</span>
+                <span className="font-medium">{profileData.username}</span>
               </div>
 
               <div
@@ -225,7 +256,7 @@ const ProfilePage: React.FC = () => {
                 )}
               >
                 <User className={cn('w-4 h-4', isDark ? 'text-cyan-200' : 'text-primary')} />
-                <span className={cn('text-sm font-semibold', textMain)}>{profile.designation}</span>
+                <span className={cn('text-sm font-semibold', textMain)}>{profileData.designation}</span>
               </div>
             </div>
 
