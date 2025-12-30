@@ -123,6 +123,21 @@ serve(async (req: Request) => {
     if (saErr) throw saErr;
     const totalSuper = (superAdmins || []).length;
 
+    // Load committee changing phase setting to enforce server-side
+    let committeeChangingPhase: boolean | null = null;
+    try {
+      const { data: settingRow, error: settingErr } = await adminClient
+        .from('app_settings')
+        .select('committee_changing_phase')
+        .eq('id', 1)
+        .maybeSingle();
+      if (settingErr) throw settingErr;
+      committeeChangingPhase = settingRow?.committee_changing_phase ?? null;
+    } catch (err) {
+      console.warn('Unable to load committee_changing_phase setting', err);
+      committeeChangingPhase = null;
+    }
+
     console.log('update-member-role called by', userId, 'callerRole=', callerRole, 'callerMemId=', callerMemId, 'memIds=', memIds, 'newRole=', newRole, 'totalSuper=', totalSuper);
 
     // Only super_admin can change roles
@@ -153,6 +168,10 @@ serve(async (req: Request) => {
 
     // Restrict promotions TO honourable: only targets that are currently 'admin' may be promoted
     if (newRole === 'honourable') {
+      // Server-side enforcement: if committee changing phase is disabled, disallow promoting to honourable
+      if (committeeChangingPhase === false) {
+        return new Response(JSON.stringify({ error: 'Committee changing phase is disabled — cannot promote to Honourable' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
       const nonAdminTargets = (targets || []).filter((t: any) => t.role !== 'admin');
       if (nonAdminTargets.length > 0) {
         return new Response(JSON.stringify({ error: 'Only members with role "admin" may be promoted to honourable' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

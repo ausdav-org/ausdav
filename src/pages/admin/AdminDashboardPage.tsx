@@ -15,6 +15,8 @@ import {
   Key,
 } from 'lucide-react';
 import { useAdminGrantedPermissions } from '@/hooks/useAdminGrantedPermissions';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import invokeFunction from '@/integrations/supabase/functions';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -48,68 +50,22 @@ export default function AdminDashboardPage() {
     fetchDashboardStats();
   }, []);
 
+  const { session } = useAdminAuth();
+
   const fetchDashboardStats = async () => {
     try {
-      // Fetch member stats
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('is_active, batch');
-
-      if (profiles) {
-        const totalMembers = profiles.length;
-        const activeMembers = profiles.filter((p) => p.is_active).length;
-
-        // Group by batch
-        const batchCounts: { [key: string]: number } = {};
-        profiles.forEach((p) => {
-          const batch = p.batch || 'Unknown';
-          batchCounts[batch] = (batchCounts[batch] || 0) + 1;
-        });
-        const membersByBatch = Object.entries(batchCounts)
-          .map(([batch, count]) => ({ batch, count }))
-          .sort((a, b) => b.count - a.count);
-
-        setStats((prev) => ({
-          ...prev,
-          totalMembers,
-          activeMembers,
-          membersByBatch,
-        }));
-      }
-
-
-      // Fetch pending submissions count
-      const { count: pendingCount } = await db
-        .from('finance_submissions')
-        .select('*', { count: 'exact', head: true })
-        .eq('approved', false);
-
-      // Fetch monthly finance stats
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      const { data: transactions } = await supabase
-        .from('finance' as any)
-        .select('exp_type, amount, txn_date')
-        .gte('txn_date', startOfMonth.toISOString().split('T')[0]);
-
-      // Normalize returned transactions to an array and guard types
-      const txs = Array.isArray(transactions) ? (transactions as any[]) : [];
-
-      const monthlyIncome = txs
-        .filter((t) => t?.exp_type === 'income')
-        .reduce((sum, t) => sum + Number(t?.amount ?? 0), 0);
-
-      const monthlyExpense = txs
-        .filter((t) => t?.exp_type === 'expense')
-        .reduce((sum, t) => sum + Number(t?.amount ?? 0), 0);
+      setLoading(true);
+      const { data, error } = await invokeFunction('fetch-dashboard-stats', {});
+      if (error) throw error;
 
       setStats((prev) => ({
         ...prev,
-        monthlyIncome,
-        monthlyExpense,
-        pendingSubmissions: pendingCount || 0,
+        totalMembers: data?.totalMembers || 0,
+        activeMembers: data?.activeMembers || 0,
+        monthlyIncome: data?.monthlyIncome || 0,
+        monthlyExpense: data?.monthlyExpense || 0,
+        pendingSubmissions: data?.pendingSubmissions || 0,
+        membersByBatch: data?.membersByBatch || [],
       }));
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
@@ -154,6 +110,7 @@ export default function AdminDashboardPage() {
   ];
 
   const { hasPermission, loading: permissionsLoading } = useAdminGrantedPermissions();
+  const { isAdmin, isSuperAdmin } = useAdminAuth();
 
   const actions = [
     { title: 'Create Announcement', icon: Megaphone, href: '/admin/announcements', permission: 'announcement' },
@@ -165,13 +122,20 @@ export default function AdminDashboardPage() {
     { title: 'Manage Members', icon: Users, href: '/admin/members', permission: 'member' },
     { title: 'Manage Patrons', icon: Users, href: '/admin/patrons', permission: 'patrons' },
     { title: 'Manage Permissions', icon: Key, href: '/admin/permissions', permission: 'permissions' },
+    { title: 'Feedback', icon: Megaphone, href: '/admin/feedback', permission: 'feedback' },
     { title: 'Audit Log', icon: ShieldCheck, href: '/admin/audit', permission: 'audit' },
     { title: 'Settings', icon: Settings, href: '/admin/settings', permission: 'settings' },
   ];
 
   // While permissions are loading, show the existing actions (fallback). Once loaded,
   // only show actions for which the admin has the required permission.
-  const visibleActions = permissionsLoading ? actions : actions.filter((a) => hasPermission(a.permission));
+  const visibleActions = permissionsLoading
+    ? actions
+    : actions.filter((a) => {
+        // Feedback portal should be visible to Admins and Super Admins.
+        if (a.permission === 'feedback') return isAdmin || isSuperAdmin || hasPermission(a.permission);
+        return hasPermission(a.permission);
+      });
 
   return (
     <div className="min-h-screen">

@@ -73,6 +73,7 @@ const permissionConfig: Record<string, { title: string; icon: React.ElementType;
   seminar: { title: 'Seminar Handling', icon: BookOpen, color: 'from-rose-500 to-red-500' },
   finance: { title: 'Finance Handling', icon: DollarSign, color: 'from-green-500 to-emerald-500' },
   announcement: { title: 'Announcement Handling', icon: Megaphone, color: 'from-indigo-500 to-violet-500' },
+  feedback: { title: 'Feedback Handling', icon: Megaphone, color: 'from-emerald-500 to-green-500' },
 };
 
 const allPermissionKeys = Object.keys(permissionConfig);
@@ -185,6 +186,7 @@ const AdminPermissionsPage: React.FC = () => {
       finance_approval: '💰',
       member_management: '👥',
       announcements: '📢',
+      feedback: '📢',
       events_management: '📅',
       exam_management: '📝',
       seminar_management: '🎓',
