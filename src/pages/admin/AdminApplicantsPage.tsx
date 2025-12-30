@@ -40,7 +40,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -86,6 +85,8 @@ const supabase2 = createClient(
 type AppSettings = {
   allow_exam_applications: boolean;
   allow_results_view: boolean;
+  // ✅ NEW: manual submission page control for members dashboard
+  allow_manual_applications: boolean;
 };
 
 interface Applicant {
@@ -113,8 +114,12 @@ export default function AdminApplicantsPage() {
   const [filterSchool, setFilterSchool] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
-  // Exam applications setting (kept)
+  // Exam applications setting
   const [allowExamApplications, setAllowExamApplications] = useState<boolean | null>(null);
+
+  // ✅ NEW: manual applications setting (controls members page)
+  const [allowManualApplications, setAllowManualApplications] = useState<boolean | null>(null);
+
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
 
@@ -122,6 +127,19 @@ export default function AdminApplicantsPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importMode, setImportMode] = useState<'single' | 'bulk' | null>(null);
+  const [singleSubmitting, setSingleSubmitting] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
+  const [singleForm, setSingleForm] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    nic: '',
+    stream: '',
+    school: '',
+    gender: '' as 'male' | 'female' | '',
+  });
 
   // Get unique years from all applicants (descending order)
   const uniqueYears = useMemo(() => {
@@ -141,10 +159,11 @@ export default function AdminApplicantsPage() {
 
   useEffect(() => {
     fetchApplicants();
-    loadExamSetting();
+    loadAppSettings();
   }, []);
 
-  const loadExamSetting = async () => {
+  // ✅ Load both settings in one go
+  const loadAppSettings = async () => {
     setSettingsLoading(true);
     try {
       const { data, error } = await supabase
@@ -156,10 +175,12 @@ export default function AdminApplicantsPage() {
       if (error) throw error;
 
       const settings = data as unknown as AppSettings | null;
+
       setAllowExamApplications(settings?.allow_exam_applications ?? false);
+      setAllowManualApplications(settings?.allow_manual_applications ?? false);
     } catch (error) {
-      console.error('Error loading exam setting:', error);
-      toast.error('Failed to load exam application setting');
+      console.error('Error loading app settings:', error);
+      toast.error('Failed to load application settings');
     } finally {
       setSettingsLoading(false);
     }
@@ -178,10 +199,38 @@ export default function AdminApplicantsPage() {
 
       if (error) throw error;
       setAllowExamApplications(data?.allow_exam_applications ?? false);
-      toast.success(data?.allow_exam_applications ? 'Exam applications opened' : 'Exam applications closed');
+      toast.success(
+        data?.allow_exam_applications ? 'Exam applications opened' : 'Exam applications closed'
+      );
     } catch (error) {
       console.error('Error updating exam setting:', error);
       toast.error('Failed to update exam application setting');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  // ✅ NEW: toggle manual applications (members dashboard control)
+  const toggleManualSetting = async () => {
+    if (allowManualApplications === null || settingsSaving) return;
+    setSettingsSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('app_settings' as any)
+        .update({ allow_manual_applications: !allowManualApplications })
+        .eq('id', 1)
+        .select('allow_manual_applications')
+        .maybeSingle<AppSettings>();
+
+      if (error) throw error;
+
+      const newValue = data?.allow_manual_applications ?? false;
+      setAllowManualApplications(newValue);
+
+      toast.success(newValue ? 'Manual application page opened (Members)' : 'Manual application page closed (Members)');
+    } catch (error) {
+      console.error('Error updating manual setting:', error);
+      toast.error('Failed to update manual application setting');
     } finally {
       setSettingsSaving(false);
     }
@@ -259,6 +308,10 @@ export default function AdminApplicantsPage() {
 
   const uniqueStreams = useMemo(() => [...new Set(yearApplicants.map(a => a.stream))], [yearApplicants]);
   const uniqueSchools = useMemo(() => [...new Set(yearApplicants.map(a => a.school))], [yearApplicants]);
+  const streamOptions = useMemo(() => {
+    const cleaned = uniqueStreams.map((s) => s?.trim()).filter((s) => s);
+    return cleaned.length > 0 ? cleaned : ['Maths', 'Biology'];
+  }, [uniqueStreams]);
 
   // --- Index format helpers ---
   const streamLetter = (value: string) => (value?.trim()?.[0] ? value.trim()[0].toUpperCase() : 'S');
@@ -354,7 +407,9 @@ export default function AdminApplicantsPage() {
       if (error) throw error;
 
       const indicesList = Array.isArray(generatedIndices) ? generatedIndices.join(', ') : 'N/A';
-      toast.success(`Successfully uploaded ${applicantsArray.length} applicants. Generated index numbers: ${indicesList}`);
+      toast.success(
+        `Successfully uploaded ${applicantsArray.length} applicants. Generated index numbers: ${indicesList}`
+      );
       setUploadOpen(false);
       setCsvFile(null);
       fetchApplicants();
@@ -363,6 +418,74 @@ export default function AdminApplicantsPage() {
       toast.error(error.message || 'Failed to upload CSV');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const resetSingleForm = () => {
+    setSingleForm({
+      fullName: '',
+      email: '',
+      phone: '',
+      nic: '',
+      stream: '',
+      school: '',
+      gender: '',
+    });
+  };
+
+  const handleSingleApplicantSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      !singleForm.fullName.trim() ||
+      !singleForm.email.trim() ||
+      !singleForm.phone.trim() ||
+      !singleForm.nic.trim() ||
+      !singleForm.stream.trim() ||
+      !singleForm.school.trim() ||
+      !singleForm.gender
+    ) {
+      toast.error('Please fill all required fields');
+      return;
+    }
+
+    if (singleForm.phone.trim().length !== 10) {
+      toast.error('Phone number must be 10 digits');
+      return;
+    }
+
+    if (singleForm.nic.trim().length !== 12) {
+      toast.error('NIC must be 12 digits');
+      return;
+    }
+
+    if (allowExamApplications === false) {
+      toast.error('Applications are closed');
+      return;
+    }
+
+    setSingleSubmitting(true);
+    try {
+      const year = selectedYear ?? new Date().getFullYear();
+      const { data: indexNo, error } = await supabase.rpc('insert_applicant', {
+        p_fullname: singleForm.fullName.trim(),
+        p_gender: singleForm.gender === 'male',
+        p_stream: singleForm.stream.trim(),
+        p_nic: singleForm.nic.trim(),
+        p_phone: singleForm.phone.trim(),
+        p_email: singleForm.email.trim().toLowerCase(),
+        p_school: singleForm.school.trim(),
+        p_year: year,
+      });
+
+      if (error) throw error;
+      toast.success(`Applicant added successfully. Index No: ${indexNo}`);
+      resetSingleForm();
+      fetchApplicants();
+    } catch (error: any) {
+      console.error('Error submitting applicant:', error);
+      toast.error(error?.message || 'Failed to submit applicant');
+    } finally {
+      setSingleSubmitting(false);
     }
   };
 
@@ -512,11 +635,18 @@ export default function AdminApplicantsPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <CardTitle className="text-lg">Select Year</CardTitle>
+
                 <Badge className={allowExamApplications ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}>
                   {settingsLoading ? 'Loading...' : allowExamApplications ? 'Applications Open' : 'Applications Closed'}
                 </Badge>
+
+                {/* ✅ NEW BADGE for manual applications (members page) */}
+                <Badge className={allowManualApplications ? 'bg-blue-500/20 text-blue-600' : 'bg-muted text-muted-foreground'}>
+                  {settingsLoading ? 'Loading...' : allowManualApplications ? 'Manual Page Open' : 'Manual Page Closed'}
+                </Badge>
               </div>
 
+              {/* ✅ BOTH BUTTONS IN SAME ROW */}
               <div className="flex gap-2">
                 <Button
                   variant={allowExamApplications ? 'destructive' : 'default'}
@@ -527,6 +657,17 @@ export default function AdminApplicantsPage() {
                 >
                   {settingsSaving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
                   {allowExamApplications ? 'Close Applications' : 'Open Applications'}
+                </Button>
+
+                <Button
+                  variant={allowManualApplications ? 'destructive' : 'default'}
+                  size="sm"
+                  onClick={toggleManualSetting}
+                  disabled={!isAdmin || settingsLoading || settingsSaving || allowManualApplications === null}
+                  title={isAdmin ? undefined : 'Only admins can change this setting'}
+                >
+                  {settingsSaving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                  {allowManualApplications ? 'Manual Application Close' : 'Manual Application Open'}
                 </Button>
               </div>
             </div>
@@ -825,57 +966,41 @@ export default function AdminApplicantsPage() {
                       <TableRow>
                         <TableHead>Index No</TableHead>
                         <TableHead>Full Name</TableHead>
-                        <TableHead>Gender</TableHead>
-                        <TableHead>Stream</TableHead>
-                        <TableHead>NIC</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>School</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead className="w-10"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredApplicants.map((applicant) => (
+                    <TableHead>Stream</TableHead>
+                    <TableHead>School</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredApplicants.map((applicant) => (
                         <TableRow key={applicant.applicant_id}>
                           <TableCell className="font-medium">{applicant.index_no}</TableCell>
                           <TableCell>{applicant.fullname}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={applicant.gender ? 'default' : 'secondary'}
-                              className={applicant.gender ? 'bg-blue-500/20 text-blue-600' : 'bg-pink-500/20 text-pink-600'}
+                      <TableCell>
+                        <Badge variant="outline">{applicant.stream}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[150px] truncate" title={applicant.school}>
+                        {applicant.school}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedApplicant(applicant);
+                                setDetailsOpen(true);
+                              }}
                             >
-                              {applicant.gender ? 'Male' : 'Female'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{applicant.stream}</Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">{applicant.nic}</TableCell>
-                          <TableCell>{applicant.phone || '-'}</TableCell>
-                          <TableCell className="max-w-[150px] truncate" title={applicant.email || ''}>
-                            {applicant.email || '-'}
-                          </TableCell>
-                          <TableCell className="max-w-[150px] truncate" title={applicant.school}>
-                            {applicant.school}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
-                            {new Date(applicant.created_at).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem>
-                                  <FileText className="h-4 w-4 mr-2" />
-                                  View Details
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                              <FileText className="h-4 w-4 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -890,6 +1015,49 @@ export default function AdminApplicantsPage() {
                 )}
               </CardContent>
             </Card>
+
+            <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Applicant Details</DialogTitle>
+                </DialogHeader>
+                {selectedApplicant && (
+                  <Card>
+                    <CardContent className="p-4 space-y-3 text-sm">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="text-muted-foreground">Index No</div>
+                        <div className="font-medium">{selectedApplicant.index_no}</div>
+                        <div className="text-muted-foreground">Full Name</div>
+                        <div className="font-medium">{selectedApplicant.fullname}</div>
+                        <div className="text-muted-foreground">Stream</div>
+                        <div className="font-medium">{selectedApplicant.stream}</div>
+                        <div className="text-muted-foreground">School</div>
+                        <div className="font-medium">{selectedApplicant.school}</div>
+                        <div className="text-muted-foreground">Gender</div>
+                        <div className="font-medium">{selectedApplicant.gender ? 'Male' : 'Female'}</div>
+                        <div className="text-muted-foreground">NIC</div>
+                        <div className="font-medium">{selectedApplicant.nic}</div>
+                        <div className="text-muted-foreground">Phone</div>
+                        <div className="font-medium">{selectedApplicant.phone || '-'}</div>
+                        <div className="text-muted-foreground">Email</div>
+                        <div className="font-medium">{selectedApplicant.email || '-'}</div>
+                        <div className="text-muted-foreground">Year</div>
+                        <div className="font-medium">{selectedApplicant.year}</div>
+                        <div className="text-muted-foreground">Created</div>
+                        <div className="font-medium">
+                          {new Date(selectedApplicant.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="flex justify-end pt-2">
+                        <Button variant="outline" onClick={() => setDetailsOpen(false)}>
+                          Close
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </DialogContent>
+            </Dialog>
 
             {isSuperAdmin && (
               <Card className="border-destructive/50">
@@ -935,36 +1103,195 @@ export default function AdminApplicantsPage() {
           </>
         )}
 
-        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <Dialog
+          open={uploadOpen}
+          onOpenChange={(open) => {
+            setUploadOpen(open);
+            if (!open) {
+              setImportMode(null);
+              setCsvFile(null);
+            }
+          }}
+        >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Upload Applicants CSV</DialogTitle>
+              <DialogTitle>Import Applicants</DialogTitle>
               <DialogDescription>
-                Upload a CSV file with applicant data. The file should have the following columns:
-                index_no (must be empty — auto-generated), fullname, gender, stream, nic, phone, email, school, results.
-                Index numbers are generated automatically in order using digits 0000–9999.
+                Choose single applicant or bulk import. Bulk import uses CSV with index_no left empty.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="csv-file">CSV File</Label>
-                <Input
-                  id="csv-file"
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
-                />
-              </div>
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base">Single Applicant</CardTitle>
+                      <CardDescription>
+                        Use the exam application form from the Exam page.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setImportMode(importMode === 'single' ? null : 'single')}
+                    >
+                      {importMode === 'single' ? 'Hide' : 'Expand'}
+                    </Button>
+                  </div>
+                </CardHeader>
+                {importMode === 'single' && (
+                  <CardContent className="pt-0 space-y-3">
+                    <form onSubmit={handleSingleApplicantSubmit} className="space-y-4">
+                      <div>
+                        <Label htmlFor="single-fullname">Full Name *</Label>
+                        <Input
+                          id="single-fullname"
+                          value={singleForm.fullName}
+                          onChange={(e) => setSingleForm((prev) => ({ ...prev, fullName: e.target.value }))}
+                          placeholder="Enter full name"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="single-email">Email *</Label>
+                        <Input
+                          id="single-email"
+                          type="email"
+                          value={singleForm.email}
+                          onChange={(e) => setSingleForm((prev) => ({ ...prev, email: e.target.value }))}
+                          placeholder="email@example.com"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="single-phone">Phone *</Label>
+                        <Input
+                          id="single-phone"
+                          value={singleForm.phone}
+                          onChange={(e) => setSingleForm((prev) => ({ ...prev, phone: e.target.value }))}
+                          placeholder="0757575757"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="single-nic">NIC *</Label>
+                        <Input
+                          id="single-nic"
+                          value={singleForm.nic}
+                          onChange={(e) => setSingleForm((prev) => ({ ...prev, nic: e.target.value }))}
+                          placeholder="123456789012"
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Stream *</Label>
+                        <Select
+                          value={singleForm.stream}
+                          onValueChange={(v) => setSingleForm((prev) => ({ ...prev, stream: v }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select stream" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {streamOptions.map((stream) => (
+                              <SelectItem key={stream} value={stream}>
+                                {stream}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="single-school">School *</Label>
+                        <Input
+                          id="single-school"
+                          value={singleForm.school}
+                          onChange={(e) => setSingleForm((prev) => ({ ...prev, school: e.target.value }))}
+                          placeholder="Enter school name"
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Gender *</Label>
+                        <Select
+                          value={singleForm.gender}
+                          onValueChange={(v) => setSingleForm((prev) => ({ ...prev, gender: v as 'male' | 'female' }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select gender" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="male">Male</SelectItem>
+                            <SelectItem value="female">Female</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button type="button" variant="outline" onClick={resetSingleForm} disabled={singleSubmitting}>
+                          Reset
+                        </Button>
+                        <Button type="submit" disabled={singleSubmitting}>
+                          {singleSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                          Submit Applicant
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                )}
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base">Bulk Applicants</CardTitle>
+                      <CardDescription>
+                        Upload a CSV file for multiple applicants.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setImportMode(importMode === 'bulk' ? null : 'bulk')}
+                    >
+                      {importMode === 'bulk' ? 'Hide' : 'Expand'}
+                    </Button>
+                  </div>
+                </CardHeader>
+                {importMode === 'bulk' && (
+                  <CardContent className="pt-0 space-y-4">
+                    <div className="text-sm text-muted-foreground">
+                      CSV columns: index_no (leave empty), fullname, gender, stream, nic, phone, email, school.
+                    </div>
+                    <div>
+                      <Label htmlFor="csv-file">CSV File</Label>
+                      <Input
+                        id="csv-file"
+                        type="file"
+                        accept=".csv"
+                        onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" onClick={() => setUploadOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleCsvUpload} disabled={uploading}>
+                        {uploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        Import CSV
+                      </Button>
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
             </div>
-            <DialogFooter>
+            <div className="flex justify-end pt-2">
               <Button variant="outline" onClick={() => setUploadOpen(false)}>
-                Cancel
+                Close
               </Button>
-              <Button onClick={handleCsvUpload} disabled={uploading}>
-                {uploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Upload
-              </Button>
-            </DialogFooter>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

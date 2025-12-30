@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { PermissionGate } from '@/components/admin/PermissionGate';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,31 +27,24 @@ import {
   Trash2,
   FileText,
   Loader2,
-  ShieldCheck,
-  ShieldOff,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface AccountSummary {
-  pp_id: number;
-  yrs: number;
-  subject: string;
-  exam_paper_path: string | null;
-  created_at: string;
-  updated_at: string;
+interface AuditAction {
+  id: number;
+  year: number;
+  event: string;
+  bucket_id: string;
+  object_path: string;
+  file_name: string | null;
+  file_size: number | null;
+  uploaded_by: string | null;
+  created_at: string | null;
 }
 
-type AccountsAccessRow = {
-  yrs: number;
-  allowed: boolean;
-  allowed_by: string | null;
-  allowed_at: string | null;
-};
+const DEFAULT_BUCKET = 'audit-reports';
 
-export default function AdminAccountsPage() {
-  // ✅ Safer: some contexts provide role, some provide isAdmin/isSuperAdmin
+export default function AdminAuditPage() {
   const auth = useAdminAuth() as any;
   const role: string = auth?.role ?? '';
   const isSuperAdmin: boolean = !!auth?.isSuperAdmin || role === 'super_admin';
@@ -61,75 +53,39 @@ export default function AdminAccountsPage() {
   const queryClient = useQueryClient();
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<AccountSummary | null>(null);
+  const [editingRecord, setEditingRecord] = useState<AuditAction | null>(null);
 
   const [formData, setFormData] = useState({
-    yrs: new Date().getFullYear(),
-    eventName: '',
+    year: new Date().getFullYear(),
+    event: '',
   });
 
-  const [summaryFile, setSummaryFile] = useState<File | null>(null);
-
-  // ✅ Year accordion
+  const [auditFile, setAuditFile] = useState<File | null>(null);
   const [expandedYear, setExpandedYear] = useState<number | null>(null);
 
-  // ✅ Toggle card visibility
-  const [showAccessCard, setShowAccessCard] = useState(false);
-
-  // ✅ who am I
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [myBatchYear, setMyBatchYear] = useState<number | null>(null);
 
-  // ✅ access state
-  const [accountsAllowedForMyYear, setAccountsAllowedForMyYear] = useState<boolean>(false);
-  const [loadingAccess, setLoadingAccess] = useState<boolean>(false);
-
-  // ✅ Fetch records
   const { data: records, isLoading } = useQuery({
-    queryKey: ['audit-reports'],
+    queryKey: ['audit-actions'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('past_papers')
+        .from('audit_actions' as any)
         .select('*')
-        .order('yrs', { ascending: false });
+        .order('year', { ascending: false });
 
       if (error) throw error;
-      return data as AccountSummary[];
+      return (data ?? []) as unknown as AuditAction[];
     },
   });
 
-  // ✅ Group years
   const years = useMemo(() => {
     const set = new Set<number>();
-    (records ?? []).forEach((r) => set.add(r.yrs));
+    (records ?? []).forEach((r) => set.add(r.year));
     return Array.from(set).sort((a, b) => b - a);
   }, [records]);
 
-  const recordsForYear = (year: number) => (records ?? []).filter((r) => r.yrs === year);
+  const recordsForYear = (year: number) => (records ?? []).filter((r) => r.year === year);
 
-  const refreshAccessForYear = async (yrs: number) => {
-    try {
-      setLoadingAccess(true);
-
-      const res = await supabase
-        .from('accounts_access' as any)
-        .select('yrs, allowed, allowed_by, allowed_at')
-        .eq('yrs', yrs)
-        .maybeSingle();
-
-      if (res.error) throw res.error;
-
-      const row = (res.data as unknown as AccountsAccessRow | null) ?? null;
-      setAccountsAllowedForMyYear(row?.allowed ?? false);
-    } catch (e) {
-      console.error('refreshAccessForYear failed', e);
-      setAccountsAllowedForMyYear(false);
-    } finally {
-      setLoadingAccess(false);
-    }
-  };
-
-  // ✅ Load auth + batch/year (RPC to avoid SelectQueryError)
   useEffect(() => {
     const run = async () => {
       try {
@@ -138,105 +94,45 @@ export default function AdminAccountsPage() {
 
         const uid = authData?.user?.id ?? null;
         setCurrentUserId(uid);
-        if (!uid) return;
-
-        const { data: batchData, error: batchErr } = await (supabase.rpc as any)('get_my_batch');
-        if (batchErr) {
-          console.error('get_my_batch rpc missing or failed:', batchErr);
-          toast.error('Missing RPC: get_my_batch (needed to load your batch/year)');
-          return;
-        }
-
-        const batch = (batchData ?? null) as number | null;
-        setMyBatchYear(batch);
-
-        if (batch) await refreshAccessForYear(batch);
       } catch (e) {
         console.error('load user batch/year failed', e);
       }
     };
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const setAccountsAccessForMyYear = async (allowed: boolean) => {
-    if (!isSuperAdmin) {
-      toast.error('Only super admins can change this setting');
-      return;
-    }
-    if (!currentUserId) {
-      toast.error('Not logged in');
-      return;
-    }
-    if (!myBatchYear) {
-      toast.error('Your member record has no batch/year');
-      return;
-    }
-
-    try {
-      setLoadingAccess(true);
-
-      const upsertRes = await supabase
-        .from('accounts_access' as any)
-        .upsert(
-          {
-            yrs: myBatchYear,
-            allowed,
-            allowed_by: currentUserId,
-            allowed_at: new Date().toISOString(),
-          },
-          { onConflict: 'yrs' }
-        );
-
-      if (upsertRes.error) throw upsertRes.error;
-
-      setAccountsAllowedForMyYear(allowed);
-      toast.success(
-        allowed
-          ? `Enabled visibility for batch/year ${myBatchYear}`
-          : `Disabled visibility for batch/year ${myBatchYear}`
-      );
-    } catch (e: any) {
-      console.error('setAccountsAccessForMyYear failed', e);
-      toast.error(e?.message || 'Failed to update setting');
-    } finally {
-      setLoadingAccess(false);
-    }
-  };
 
   const resetForm = () => {
     setFormData({
-      yrs: new Date().getFullYear(),
-      eventName: '',
+      year: new Date().getFullYear(),
+      event: '',
     });
-    setSummaryFile(null);
+    setAuditFile(null);
   };
 
-  // ✅ Create
   const createMutation = useMutation({
-    mutationFn: async (data: typeof formData & { summaryFile?: File }) => {
-      let summaryPath: string | null = null;
+    mutationFn: async (data: typeof formData & { auditFile?: File }) => {
+      if (!data.auditFile) throw new Error('Please select a file');
 
-      if (data.summaryFile) {
-        const fileExt = data.summaryFile.name.split('.').pop() || 'pdf';
-        const safeEvent = data.eventName.trim().replace(/\s+/g, '_');
-        const fileName = `${data.yrs}_${safeEvent}_accounts_summary.${fileExt}`;
+      const safeEvent = data.event.trim().replace(/\s+/g, '_');
+      const fileName = `${data.year}_${safeEvent}_audit_summary.pdf`;
+      const objectName = fileName.replace(/[^\w.\-]+/g, '_');
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('audit-reports')
-          .upload(fileName, data.summaryFile);
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(DEFAULT_BUCKET)
+        .upload(objectName, data.auditFile);
 
-        if (uploadError) throw uploadError;
-        summaryPath = uploadData.path;
-      }
+      if (uploadError) throw uploadError;
 
       const { data: result, error } = await supabase
-        .from('past_papers')
+        .from('audit_actions' as any)
         .insert({
-          yrs: data.yrs,
-          subject: data.eventName,
-          exam_paper_path: summaryPath,
-          scheme_path: null,
+          year: data.year,
+          event: data.event,
+          bucket_id: DEFAULT_BUCKET,
+          object_path: uploadData.path,
+          file_name: fileName,
+          file_size: data.auditFile.size,
+          uploaded_by: currentUserId,
         })
         .select()
         .single();
@@ -245,116 +141,137 @@ export default function AdminAccountsPage() {
       return result;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
-      toast.success('Account summary created successfully');
+      queryClient.invalidateQueries({ queryKey: ['audit-actions'] });
+      toast.success('Audit file created successfully');
       setIsCreateDialogOpen(false);
       resetForm();
     },
     onError: (error: any) => {
-      toast.error('Failed to create account summary: ' + (error?.message || 'Unknown error'));
+      toast.error('Failed to create audit file: ' + (error?.message || 'Unknown error'));
     },
   });
 
-  // ✅ Update
   const updateMutation = useMutation({
-    mutationFn: async (data: { id: number } & typeof formData & { summaryFile?: File }) => {
-      let summaryPath = editingRecord?.exam_paper_path ?? null;
+    mutationFn: async (data: { id: number } & typeof formData & { auditFile?: File }) => {
+      let objectPath = editingRecord?.object_path ?? '';
+      let fileName = editingRecord?.file_name ?? null;
+      let fileSize = editingRecord?.file_size ?? null;
 
-      if (data.summaryFile) {
-        const fileExt = data.summaryFile.name.split('.').pop() || 'pdf';
-        const safeEvent = data.eventName.trim().replace(/\s+/g, '_');
-        const fileName = `${data.yrs}_${safeEvent}_accounts_summary.${fileExt}`;
+      if (data.auditFile) {
+        const safeEvent = data.event.trim().replace(/\s+/g, '_');
+        const newFileName = `${data.year}_${safeEvent}_audit_summary.pdf`;
+        const objectName = newFileName.replace(/[^\w.\-]+/g, '_');
 
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('audit-reports')
-          .upload(fileName, data.summaryFile, { upsert: true });
+          .from(DEFAULT_BUCKET)
+          .upload(objectName, data.auditFile, { upsert: true });
 
         if (uploadError) throw uploadError;
-        summaryPath = uploadData.path;
+        if (editingRecord?.object_path && editingRecord.object_path !== uploadData.path) {
+          await supabase.storage.from(DEFAULT_BUCKET).remove([editingRecord.object_path]);
+        }
+        objectPath = uploadData.path;
+        fileName = newFileName;
+        fileSize = data.auditFile.size;
       }
 
       const { data: result, error } = await supabase
-        .from('past_papers')
+        .from('audit_actions' as any)
         .update({
-          yrs: data.yrs,
-          subject: data.eventName,
-          exam_paper_path: summaryPath,
-          scheme_path: null,
+          year: data.year,
+          event: data.event,
+          bucket_id: DEFAULT_BUCKET,
+          object_path: objectPath,
+          file_name: fileName,
+          file_size: fileSize,
         })
-        .eq('pp_id', data.id)
+        .eq('id', data.id)
         .select()
         .single();
 
       if (error) throw error;
+
       return result;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
-      toast.success('Account summary updated successfully');
+      queryClient.invalidateQueries({ queryKey: ['audit-actions'] });
+      toast.success('Audit file updated successfully');
       setEditingRecord(null);
       resetForm();
     },
     onError: (error: any) => {
-      toast.error('Failed to update account summary: ' + (error?.message || 'Unknown error'));
+      toast.error('Failed to update audit file: ' + (error?.message || 'Unknown error'));
     },
   });
 
-  // ✅ Delete
   const deleteMutation = useMutation({
-    mutationFn: async (record: AccountSummary) => {
-      if (record.exam_paper_path) {
-        await supabase.storage.from('audit-reports').remove([record.exam_paper_path]);
+    mutationFn: async (record: AuditAction) => {
+      if (record.bucket_id && record.object_path) {
+        await supabase.storage.from(record.bucket_id).remove([record.object_path]);
       }
-      const { error } = await supabase.from('past_papers').delete().eq('pp_id', record.pp_id);
+      const { error } = await supabase.from('audit_actions' as any).delete().eq('id', record.id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
-      toast.success('Account summary deleted successfully');
+      queryClient.invalidateQueries({ queryKey: ['audit-actions'] });
+      toast.success('Audit file deleted successfully');
     },
     onError: (error: any) => {
-      toast.error('Failed to delete account summary: ' + (error?.message || 'Unknown error'));
+      toast.error('Failed to delete audit file: ' + (error?.message || 'Unknown error'));
     },
   });
 
   const handleCreate = () => {
     if (!isSuperAdmin) {
-      toast.error('Only super admins can create accounts summaries');
+      toast.error('Only super admins can create audit files');
       return;
     }
-    if (!formData.eventName.trim()) {
+    if (!formData.event.trim()) {
       toast.error('Please enter an event name');
       return;
     }
-    createMutation.mutate({ ...formData, summaryFile });
+    if (!auditFile) {
+      toast.error('Please select a file');
+      return;
+    }
+    createMutation.mutate({ ...formData, auditFile });
   };
 
   const handleUpdate = () => {
-    if (!isSuperAdmin) {
-      toast.error('Only super admins can update accounts summaries');
-      return;
-    }
-    if (!editingRecord || !formData.eventName.trim()) {
+    if (!editingRecord || !formData.event.trim()) {
       toast.error('Please enter an event name');
       return;
     }
-    updateMutation.mutate({ id: editingRecord.pp_id, ...formData, summaryFile });
+    updateMutation.mutate({ id: editingRecord.id, ...formData, auditFile });
   };
 
-  const handleEdit = (record: AccountSummary) => {
-    if (!isSuperAdmin) return;
+  const handleEdit = (record: AuditAction) => {
     setEditingRecord(record);
     setFormData({
-      yrs: record.yrs,
-      eventName: record.subject,
+      year: record.year,
+      event: record.event,
     });
     setIsCreateDialogOpen(false);
   };
 
-  const handleDelete = (record: AccountSummary) => {
-    if (!isSuperAdmin) return;
-    if (confirm('Are you sure you want to delete this account summary? This action cannot be undone.')) {
+  const handleDelete = (record: AuditAction) => {
+    if (confirm('Are you sure you want to delete this audit file? This action cannot be undone.')) {
       deleteMutation.mutate(record);
+    }
+  };
+
+  const handleOpenAuditFile = async (record: AuditAction) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from(record.bucket_id)
+        .createSignedUrl(record.object_path, 300);
+
+      if (error) throw error;
+      if (!data?.signedUrl) throw new Error('Failed to create file link');
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.error('Failed to open audit file:', err);
+      toast.error('Failed to open file');
     }
   };
 
@@ -366,152 +283,95 @@ export default function AdminAccountsPage() {
     );
   }
 
+  if (!isAdmin && !isSuperAdmin) {
+    return (
+      <div className="p-6 text-center text-muted-foreground">
+        You do not have access to this page.
+      </div>
+    );
+  }
+
   return (
-    <PermissionGate permissionKey="exam" permissionName="Exam Handling">
       <div className="p-6 space-y-6">
-        {/* Header + Add */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Audit (Accounts)</h1>
-            <p className="text-muted-foreground">Committee year → expand to view event-wise accounts summary files</p>
+            <p className="text-muted-foreground">Committee year — expand to view event files</p>
           </div>
 
-          <Dialog
-            open={isCreateDialogOpen || !!editingRecord}
-            onOpenChange={(open) => {
-              if (!open) {
-                setIsCreateDialogOpen(false);
-                setEditingRecord(null);
-                resetForm();
-              }
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button
-                onClick={() => {
-                  if (!isSuperAdmin) {
-                    toast.error('Only super admins can add accounts');
-                    return;
-                  }
-                  setIsCreateDialogOpen(true);
-                }}
-                disabled={!isSuperAdmin}
-                title={!isSuperAdmin ? 'Super Admin only' : undefined}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Accounts
-              </Button>
-            </DialogTrigger>
+          {isSuperAdmin && (
+            <Dialog
+              open={isCreateDialogOpen || !!editingRecord}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setIsCreateDialogOpen(false);
+                  setEditingRecord(null);
+                  resetForm();
+                }
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button onClick={() => setIsCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Audit File
+                </Button>
+              </DialogTrigger>
 
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>{editingRecord ? 'Edit Accounts' : 'Add Accounts'}</DialogTitle>
-              </DialogHeader>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>{editingRecord ? 'Edit Audit File' : 'Add Audit File'}</DialogTitle>
+                </DialogHeader>
 
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="event-name">Event Name</Label>
-                  <Input
-                    id="event-name"
-                    value={formData.eventName}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, eventName: e.target.value }))}
-                    placeholder="Enter event name"
-                  />
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="audit-year">Committee Year</Label>
+                    <Input
+                      id="audit-year"
+                      type="number"
+                      value={formData.year}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, year: Number(e.target.value) }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="event-name">Event Name</Label>
+                    <Input
+                      id="event-name"
+                      value={formData.event}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, event: e.target.value }))}
+                      placeholder="Enter event name"
+                      className="bg-background/50"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="audit-file">Audit File (PDF)</Label>
+                    <Input
+                      id="audit-file"
+                      type="file"
+                      accept=".pdf"
+                      onChange={(e) => setAuditFile(e.target.files?.[0] || null)}
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-4">
+                    <Button
+                      onClick={editingRecord ? handleUpdate : handleCreate}
+                      disabled={createMutation.isPending || updateMutation.isPending}
+                      className="flex-1"
+                    >
+                      {createMutation.isPending || updateMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : null}
+                      {editingRecord ? 'Update' : 'Create'}
+                    </Button>
+                  </div>
                 </div>
-
-                <div>
-                  <Label htmlFor="summary-pdf">Accounts Summary (PDF)</Label>
-                  <Input
-                    id="summary-pdf"
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => setSummaryFile(e.target.files?.[0] || null)}
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  <Button
-                    onClick={editingRecord ? handleUpdate : handleCreate}
-                    disabled={!isSuperAdmin || createMutation.isPending || updateMutation.isPending}
-                    className="flex-1"
-                  >
-                    {createMutation.isPending || updateMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : null}
-                    {editingRecord ? 'Update' : 'Create'}
-                  </Button>
-                </div>
-
-                <div className="text-xs text-muted-foreground">
-                  Saving under year: <span className="font-mono">{formData.yrs}</span>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
 
-        {/* ✅ Button to reveal extra card */}
-        {(isAdmin || isSuperAdmin) && (
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={() => setShowAccessCard((s) => !s)}>
-              {showAccessCard ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
-              {showAccessCard ? 'Hide Control' : 'Show Control'}
-            </Button>
-          </div>
-        )}
-
-        {/* ✅ Extra card */}
-        {(isAdmin || isSuperAdmin) && showAccessCard && (
-          <Card className="bg-card/50 backdrop-blur-sm border-border">
-            <CardHeader>
-              <CardTitle className="text-lg">Accounts / Audit Visibility</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-              <div className="text-sm text-muted-foreground space-y-1">
-                <div>Control whether members in the same batch/year can view Accounts/Audit.</div>
-                <div>
-                  Your batch/year:{' '}
-                  <span className="font-mono text-foreground">{myBatchYear ?? 'N/A'}</span>{' '}
-                  {myBatchYear ? (
-                    <span className={accountsAllowedForMyYear ? 'text-green-500' : 'text-red-500'}>
-                      ({accountsAllowedForMyYear ? 'ENABLED' : 'DISABLED'})
-                    </span>
-                  ) : null}
-                </div>
-                {!isSuperAdmin && <div className="text-xs">Only Super Admin can change this setting.</div>}
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => setAccountsAccessForMyYear(true)}
-                  disabled={!isSuperAdmin || loadingAccess || !myBatchYear}
-                >
-                  {loadingAccess ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <ShieldCheck className="mr-2 h-4 w-4" />
-                  )}
-                  Allow
-                </Button>
-
-                <Button
-                  variant="outline"
-                  onClick={() => setAccountsAccessForMyYear(false)}
-                  disabled={!isSuperAdmin || loadingAccess || !myBatchYear}
-                >
-                  {loadingAccess ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <ShieldOff className="mr-2 h-4 w-4" />
-                  )}
-                  Disable
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ✅ Year accordion */}
         <div className="space-y-4">
           {years.length === 0 ? (
             <Card>
@@ -545,31 +405,24 @@ export default function AdminAccountsPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Event Name</TableHead>
-                            <TableHead>Summary</TableHead>
-                            <TableHead className="w-[140px]">Actions</TableHead>
+                            <TableHead>File</TableHead>
+                            <TableHead className="w-[160px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
 
                         <TableBody>
                           {list.map((record) => (
-                            <TableRow key={record.pp_id}>
-                              <TableCell>{record.subject}</TableCell>
-
+                            <TableRow key={record.id}>
+                              <TableCell>{record.event}</TableCell>
                               <TableCell>
-                                {record.exam_paper_path ? (
-                                  <Button variant="outline" size="sm" asChild>
-                                    <a
-                                      href={
-                                        supabase.storage
-                                          .from('accounts-summaries')
-                                          .getPublicUrl(record.exam_paper_path).data.publicUrl
-                                      }
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      <FileText className="h-4 w-4 mr-2" />
-                                      View
-                                    </a>
+                                {record.object_path ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleOpenAuditFile(record)}
+                                  >
+                                    <FileText className="h-4 w-4 mr-2" />
+                                    {record.file_name || 'View'}
                                   </Button>
                                 ) : (
                                   <span className="text-muted-foreground">No file</span>
@@ -582,7 +435,6 @@ export default function AdminAccountsPage() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleEdit(record)}
-                                    disabled={!isSuperAdmin}
                                   >
                                     <Pencil className="h-4 w-4" />
                                   </Button>
@@ -591,7 +443,7 @@ export default function AdminAccountsPage() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleDelete(record)}
-                                    disabled={!isSuperAdmin || deleteMutation.isPending}
+                                    disabled={deleteMutation.isPending}
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
@@ -617,6 +469,5 @@ export default function AdminAccountsPage() {
           )}
         </div>
       </div>
-    </PermissionGate>
   );
 }
