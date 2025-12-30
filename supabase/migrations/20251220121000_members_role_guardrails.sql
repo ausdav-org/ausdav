@@ -17,7 +17,11 @@ set
 where role is null or designation is null;
 
 --------------------------------------------------------------------------------
--- 2) RLS: INSERT policy for self-signups (must start as member/none)
+-- 2) RLS: INSERT policy for self-signups
+--    Normal self-signups must start as member/none. However, allow the
+--    very first member to be created during initial setup: that insert is
+--    permitted even if the role is set to 'super_admin' by the DB trigger
+--    below. The trigger ensures the first account becomes a super_admin.
 --------------------------------------------------------------------------------
 drop policy if exists members_insert_self on public.members;
 
@@ -27,9 +31,45 @@ for insert
 to authenticated
 with check (
   auth_user_id = auth.uid()
-  and role = 'member'
-  and designation = 'none'
+  and (
+    -- Normal path: must be a plain member with no designation
+    (role = 'member' and designation = 'none')
+    -- Or, if this is the very first row in the table, allow the insert
+    -- (a BEFORE INSERT trigger will set the role to super_admin in that case)
+    or ( (select count(*) from public.members) = 0 )
+  )
 );
+
+-- BEFORE INSERT trigger: when the members table is empty, the first inserted
+-- row should be promoted to super_admin automatically. We do this in a
+-- BEFORE trigger so the inserted row will get the intended role prior to
+-- other DB-side checks and to ensure consistent behaviour across imports.
+create or replace function private.tg_members_before_insert_set_first_super_admin()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  -- If there are no existing members (count excluding this new row equals 0)
+  if (select count(*) from public.members) = 0 then
+    new.role := 'super_admin';
+  end if;
+
+  -- Ensure defaults for designation and timestamps are applied normally
+  if new.designation is null then
+    new.designation := 'none';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists members_before_insert_set_first_super_admin on public.members;
+
+create trigger members_before_insert_set_first_super_admin
+before insert on public.members
+for each row execute function private.tg_members_before_insert_set_first_super_admin();
 
 --------------------------------------------------------------------------------
 -- 3) RLS: Make sure only SUPER ADMIN can change role/designation

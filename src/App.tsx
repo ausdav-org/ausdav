@@ -17,7 +17,6 @@ import ExamPage from "@/pages/ExamPage";
 import SeminarPage from "@/pages/SeminarPage";
 import EventsPage from "@/pages/EventsPage";
 import EventDetailsPage from "@/pages/EventDetailsPage";
-import GalleryPage from "@/pages/GalleryPage";
 import DonatePage from "@/pages/DonatePage";
 import LoginPage from "@/pages/LoginPage";
 import NotFoundPage from "@/pages/NotFoundPage";
@@ -34,6 +33,8 @@ import AdminAuditPage from "@/pages/admin/AdminAuditPage";
 import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
 import AdminPermissionsPage from "@/pages/admin/AdminPermissionsPage";
 import AdminEventsPage from "@/pages/admin/AdminEventsPage";
+import AdminFeedbackPage from "@/pages/admin/AdminFeedbackPage";
+import ContactSettingsPage from "@/pages/admin/ContactSettingsPage";
 import FinanceSubmitPage from "@/pages/admin/finance/FinanceSubmitPage";
 import FinanceVerifyPage from "@/pages/admin/finance/FinanceVerifyPage";
 import FinanceLedgerPage from "@/pages/admin/finance/FinanceLedgerPage";
@@ -43,8 +44,11 @@ import AdminSeminarPage from "@/pages/admin/AdminSeminarPage";
 import AdminApplicantsPage from "@/pages/admin/AdminApplicantsPage";
 import ClaimPermissionPage from "@/pages/admin/ClaimPermissionPage";
 
+import AdminPatronsPage from "@/pages/admin/AdminPatronsPage";
+
 // ✅ ADD THIS IMPORT (create this file or update the path to your actual results page)
 import AdminResultsPage from "@/pages/admin/AdminResultsPage";
+import AdminDesignationsPage from "@/pages/admin/AdminDesignationsPage";
 
 const queryClient = new QueryClient();
 
@@ -84,14 +88,15 @@ const App = () => {
                   <Route path="/seminar" element={<Layout><SeminarPage /></Layout>} />
                   <Route path="/events" element={<Layout><EventsPage /></Layout>} />
                   <Route path="/events/:id" element={<Layout><EventDetailsPage /></Layout>} />
-                  <Route path="/gallery" element={<Layout><GalleryPage /></Layout>} />
                   <Route path="/donate" element={<Layout><DonatePage /></Layout>} />
                   <Route path="/login" element={<Layout><LoginPage /></Layout>} />
                   <Route path="/signup" element={<Layout><SignupPortalPage /></Layout>} />
                   <Route path="/register" element={<Navigate to="/signup" replace />} />
 
                   {/* ✅ Recommended clean profile route */}
+
                   <Route path="/profile" element={<Layout><ProfilePage /></Layout>} />
+                  {/* Feedback form moved to footer; no dedicated page */}
 
                   {/* ✅ Backward-compat: old (file-like) path redirects to /profile */}
                   <Route
@@ -115,16 +120,20 @@ const App = () => {
                     <Route path="profile" element={<AdminProfilePage />} />
                     <Route path="members" element={<AdminMembersPage />} />
                     <Route path="applicants" element={<AdminApplicantsPage />} />
+                    <Route path="patrons" element={<AdminPatronsPage />} />
 
                     {/* ✅ ADDED: Results page route */}
                     <Route path="results" element={<AdminResultsPage />} />
+                    <Route path="designations" element={<AdminDesignationsPage />} />
 
                     <Route path="events" element={<AdminEventsPage />} />
                     <Route path="exam" element={<AdminExamPage />} />
                     <Route path="seminar" element={<AdminSeminarPage />} />
                     <Route path="announcements" element={<AdminAnnouncementsPage />} />
+                    <Route path="feedback" element={<AdminFeedbackPage />} />
                     <Route path="claim-permission" element={<ClaimPermissionPage />} />
                     <Route path="permissions" element={<AdminPermissionsPage />} />
+                    <Route path="contact" element={<ContactSettingsPage />} />
                     <Route path="audit" element={<AdminAuditPage />} />
                     <Route path="settings" element={<AdminSettingsPage />} />
                     <Route path="finance/submit" element={<FinanceSubmitPage />} />

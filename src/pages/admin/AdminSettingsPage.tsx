@@ -12,35 +12,101 @@ import { Input } from '@/components/ui/input';
 
 export default function AdminSettingsPage() {
   const { isSuperAdmin, user } = useAdminAuth();
-  const [settings, setSettings] = useState<{ allow_signup: boolean; updated_at: string | null; updated_by: string | null; batch?: string | null } | null>(null);
+  type AppSettings = {
+    allow_signup: boolean;
+    updated_at: string | null;
+    updated_by: string | null;
+    // batch may be stored as a number in the DB but we keep it as number|string|null to avoid
+    // repeated conversions while still allowing input editing as string.
+    batch?: number | string | null;
+  };
+
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [batchInput, setBatchInput] = useState<string>('');
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Committee changing phase is managed separately to avoid coupling signup loading/errors
+  const [committeeChangingPhase, setCommitteeChangingPhase] = useState<boolean | null>(null);
+  const [committeeLoading, setCommitteeLoading] = useState(true);
+  const [committeeError, setCommitteeError] = useState<string | null>(null);
+  const [committeeUpdatedAt, setCommitteeUpdatedAt] = useState<string | null>(null);
+  const [committeeUpdatedBy, setCommitteeUpdatedBy] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isSuperAdmin) return;
 
     const loadSettings = async () => {
       setSettingsError(null);
-      const { data, error } = await supabase
-        .from('app_settings')
-        .select('allow_signup, updated_at, updated_by, batch')
-        .eq('id', 1)
-        .maybeSingle();
+      try {
+        const res: any = await (supabase as any)
+          .from('app_settings')
+          .select('allow_signup, updated_at, updated_by, batch')
+          .eq('id', 1)
+          .maybeSingle();
 
-      if (error) {
+        const data = res?.data;
+        const error = res?.error;
+
+        if (error) {
+          setSettingsError('Unable to load signup setting.');
+        } else if (data) {
+          const normalized: AppSettings = {
+            allow_signup: data.allow_signup,
+            updated_at: data.updated_at ?? null,
+            updated_by: data.updated_by ?? null,
+            batch: data.batch ?? null,
+          };
+          setSettings(normalized);
+          setBatchInput(String(data.batch ?? ''));
+        }
+      } catch (err) {
         setSettingsError('Unable to load signup setting.');
-      } else if (data) {
-        setSettings(data);
-        setBatchInput(data.batch ?? '');
+      } finally {
+        setSettingsLoading(false);
       }
 
-      setSettingsLoading(false);
+      // load committee flag separately so missing column doesn't break signup UI
+      (async () => {
+        setCommitteeError(null);
+        try {
+          const r: any = await (supabase as any)
+            .from('app_settings')
+            .select('committee_changing_phase, updated_at, updated_by')
+            .eq('id', 1)
+            .maybeSingle();
+          const d = r?.data;
+          const e = r?.error;
+          if (e) {
+            // don't treat this as fatal for the signup settings
+            setCommitteeChangingPhase(null);
+            setCommitteeError(friendlyDbError(e, 'Committee phase setting unavailable'));
+          } else {
+            setCommitteeChangingPhase(d?.committee_changing_phase ?? null);
+            setCommitteeUpdatedAt(d?.updated_at ?? null);
+            setCommitteeUpdatedBy(d?.updated_by ?? null);
+          }
+        } catch (err) {
+          setCommitteeChangingPhase(null);
+          setCommitteeError('Committee phase setting unavailable');
+        } finally {
+          setCommitteeLoading(false);
+        }
+      })();
     };
 
     loadSettings();
   }, [isSuperAdmin]);
+
+  // Map raw DB/schema errors to friendly messages shown in the UI
+  const friendlyDbError = (err: any, fallback = 'Setting unavailable') => {
+    const msg = err?.message || String(err || '');
+    if (msg.includes("Could not find the 'committee_changing_phase' column")) {
+      return "Committee phase setting unavailable — apply DB migration to add the 'committee_changing_phase' column.";
+    }
+    return fallback;
+  };
 
   const toggleSignup = async () => {
     if (!settings || saving) return;
@@ -48,25 +114,76 @@ export default function AdminSettingsPage() {
     setSaving(true);
     setSettingsError(null);
 
-    const { data, error } = await supabase
-      .from('app_settings')
-      .update({
-        allow_signup: !settings.allow_signup,
-        updated_by: user?.id ?? null,
-        // preserve batch unless changed via the batch editor
-        batch: settings.batch ?? null,
-      })
-      .eq('id', 1)
-      .select('allow_signup, updated_at, updated_by, batch')
-      .maybeSingle();
+    try {
+      const res: any = await (supabase as any)
+        .from('app_settings')
+        .update({
+          allow_signup: !settings.allow_signup,
+          updated_by: user?.id ?? null,
+          // preserve batch unless changed via the batch editor — ensure number|null
+          batch:
+            typeof settings.batch === 'string' && settings.batch !== ''
+              ? parseInt(settings.batch, 10)
+              : typeof settings.batch === 'number'
+              ? settings.batch
+              : null,
+        })
+        .eq('id', 1)
+        .select('allow_signup, updated_at, updated_by, batch')
+        .maybeSingle();
 
-    if (error) {
-      setSettingsError(error.message);
-    } else if (data) {
-      setSettings(data);
+      const data = res?.data;
+      const error = res?.error;
+
+      if (error) {
+        setSettingsError(error.message);
+      } else if (data) {
+        const normalized: AppSettings = {
+          allow_signup: data.allow_signup,
+          updated_at: data.updated_at ?? null,
+          updated_by: data.updated_by ?? null,
+          batch: data.batch ?? null,
+        };
+        setSettings(normalized);
+        setBatchInput(String(data.batch ?? ''));
+      }
+    } catch (err: any) {
+      setSettingsError(err?.message ?? 'Failed to update signup setting');
+    } finally {
+      setSaving(false);
     }
+  };
 
-    setSaving(false);
+  const toggleCommitteePhase = async () => {
+    if (saving) return;
+    setSaving(true);
+    setCommitteeError(null);
+    try {
+      const res2: any = await (supabase as any)
+        .from('app_settings')
+        .update({
+          committee_changing_phase: !(committeeChangingPhase ?? false),
+          updated_by: user?.id ?? null,
+        })
+        .eq('id', 1)
+        .select('committee_changing_phase, updated_at, updated_by')
+        .maybeSingle();
+
+      const data2 = res2?.data;
+      const error2 = res2?.error;
+
+      if (error2) {
+        setCommitteeError(friendlyDbError(error2, error2.message));
+      } else if (data2) {
+        setCommitteeChangingPhase(data2.committee_changing_phase ?? null);
+        setCommitteeUpdatedAt(data2.updated_at ?? null);
+        setCommitteeUpdatedBy(data2.updated_by ?? null);
+      }
+    } catch (err: any) {
+      setCommitteeError(friendlyDbError(err, err?.message ?? 'Failed to update committee phase'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveBatch = async () => {
@@ -74,24 +191,37 @@ export default function AdminSettingsPage() {
     setSaving(true);
     setSettingsError(null);
 
-    const { data, error } = await supabase
-      .from('app_settings')
-      .update({
-        batch: batchInput || null,
-        updated_by: user?.id ?? null,
-      })
-      .eq('id', 1)
-      .select('allow_signup, updated_at, updated_by, batch')
-      .maybeSingle();
+    try {
+      const res3: any = await (supabase as any)
+        .from('app_settings')
+        .update({
+          batch: batchInput ? parseInt(batchInput, 10) : null,
+          updated_by: user?.id ?? null,
+        })
+        .eq('id', 1)
+        .select('allow_signup, updated_at, updated_by, batch')
+        .maybeSingle();
 
-    if (error) {
-      setSettingsError(error.message);
-    } else if (data) {
-      setSettings(data);
-      setBatchInput(data.batch ?? '');
+      const data3 = res3?.data;
+      const error3 = res3?.error;
+
+      if (error3) {
+        setSettingsError(error3.message);
+      } else if (data3) {
+        const normalized: AppSettings = {
+          allow_signup: data3.allow_signup,
+          updated_at: data3.updated_at ?? null,
+          updated_by: data3.updated_by ?? null,
+          batch: data3.batch ?? null,
+        };
+        setSettings(normalized);
+        setBatchInput(String(data3.batch ?? ''));
+      }
+    } catch (err: any) {
+      setSettingsError(err?.message ?? 'Failed to save batch');
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   };
 
   if (!isSuperAdmin) {
@@ -131,6 +261,7 @@ export default function AdminSettingsPage() {
       permissions: [
         'Dashboard access',
         'Manage members (limited)',
+        'Classify feedback',
         'Verify finance submissions',
         'Manage content (events, announcements, exams)',
         'View finance ledger',
@@ -208,6 +339,7 @@ export default function AdminSettingsPage() {
                   </Button>
                 </div>
               </div>
+              
               <div className="mt-4 border-t border-border pt-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                   <div className="md:col-span-2">
@@ -224,6 +356,53 @@ export default function AdminSettingsPage() {
                       {saving ? 'Saving...' : 'Save Batch'}
                     </Button>
                   </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Committee Changing Phase (separate card) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+        >
+          <Card className="bg-card/60 backdrop-blur-sm border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-primary" />
+                Committee Changing Phase
+              </CardTitle>
+              <CardDescription>
+                Toggle whether committee role changes (Honourable promotions) are allowed.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-2">
+                  <Badge className={committeeChangingPhase ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}>
+                    {committeeLoading ? 'Checking...' : committeeChangingPhase ? 'Enabled' : 'Disabled'}
+                  </Badge>
+                  <p className="text-sm text-muted-foreground">
+                    When disabled, honourable members are hidden and promotions to Honourable are blocked.
+                  </p>
+                  {committeeUpdatedAt && (
+                    <p className="text-xs text-muted-foreground">Last updated {new Date(committeeUpdatedAt).toLocaleString()}{committeeUpdatedBy ? ` by ${committeeUpdatedBy}` : ''}</p>
+                  )}
+                  {committeeError && (
+                    <p className="text-sm text-destructive">{committeeError}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant={committeeChangingPhase ? 'destructive' : 'default'}
+                    onClick={toggleCommitteePhase}
+                    disabled={committeeLoading || saving}
+                  >
+                    {saving ? 'Updating...' : committeeChangingPhase ? 'Disable' : 'Enable'}
+                  </Button>
                 </div>
               </div>
             </CardContent>
