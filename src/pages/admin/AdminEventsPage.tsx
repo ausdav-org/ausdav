@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { AdminHeader } from '@/components/admin/AdminHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
@@ -508,6 +509,7 @@ const AdminEventsPage: React.FC = () => {
   return (
     <PermissionGate permissionKey="events" permissionName="Event Handling">
       <div className="space-y-6">
+        <AdminHeader title="Events" breadcrumb="Admin / Events" />
         <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Events Management</h1>

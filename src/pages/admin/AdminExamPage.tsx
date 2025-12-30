@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { PermissionGate } from '@/components/admin/PermissionGate';
+import { AdminHeader } from '@/components/admin/AdminHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -261,6 +262,7 @@ export default function AdminExamPage() {
   return (
     <PermissionGate permissionKey="exam" permissionName="Exam Handling">
       <div className="p-6 space-y-6">
+        <AdminHeader title="Exam Management" breadcrumb="Admin / Exam Management" />
         <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Exam Management</h1>
