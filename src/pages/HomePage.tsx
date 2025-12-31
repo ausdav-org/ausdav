@@ -1,5 +1,7 @@
 import { Tables } from "@/integrations/supabase/types";
 import heroBg from "@/assets/Home/BG1.jpg";
+import logoImg from "@/assets/Exam/AUSDAV logo.png";
+import mountainImg from "@/assets/Home/removed.png";
 
 type AnnouncementRow = Tables<"announcements"> & {
   description_en?: string | null;
@@ -313,18 +315,50 @@ const HomePage: React.FC = () => {
         ref={heroRef}
         className="relative min-h-screen flex items-center justify-center overflow-hidden bg-cover bg-center"
         style={{
-          backgroundImage: `url(${heroBg})`,
+          backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.6), rgba(15, 23, 42, 0.6)), url('${heroBg}')`,
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
+          backgroundAttachment: "fixed",
         }}
       >
+        {/* Animated Rising Logo (Sun) */}
+        {/* <motion.div
+          initial={{ opacity: 0, y: 150 }}
+          animate={{ opacity: 1, y: -50 }}
+          transition={{ duration: 2.5, ease: "easeOut", delay: 0.3 }}
+          className="absolute bottom-1/4 left-1/2 -translate-x-1/2 z-10"
+        >
+          <div className="relative">
+            <div className="w-40 h-40 rounded-full blur-2xl bg-cyan-400/30 absolute inset-0" />
+            <img
+              src={logoImg}
+              alt="Rising Logo Sun"
+              className="w-40 h-40 object-contain drop-shadow-2xl"
+            />
+          </div>
+        </motion.div> */}
+
+        {/* Mountain Silhouette (on top of background and logo) */}
+          {/* <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1.5, delay: 0.5 }}
+            className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none"
+          >
+            <img
+              src={mountainImg}
+              alt="Mountain Silhouette"
+              className="w-full h-auto object-cover"
+            />
+          </motion.div> */}
+
         {/* Dark overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-transparent to-black/70"></div>
         {/* Content */}
         <motion.div
           style={{ opacity }}
-          className="container mx-auto px-4 relative z-10 py-32"
+          className="container mx-auto px-4 relative z-30 py-32"
         >
           <div className="max-w-5xl mx-auto text-center">
             {/* Main heading */}
@@ -400,6 +434,97 @@ const HomePage: React.FC = () => {
           </p>
         )}
       </div>
+
+      {/* Who We Are Section */}
+      <section className="py-16 md:py-24 bg-gradient-to-b from-slate-900 to-slate-800">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 max-w-6xl mx-auto items-center">
+            {/* Left Content */}
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="space-y-6"
+            >
+              {/* <div className="flex items-center gap-2 text-cyan-400">
+                <Users className="w-5 h-5" />
+                <span className="text-sm font-semibold uppercase tracking-wide">About Us</span>
+              </div> */}
+              <h2 className="text-4xl md:text-5xl font-bold text-white">
+                Who <span className="text-cyan-400">We Are</span>
+              </h2>
+              <p className="text-slate-300 text-lg leading-relaxed">
+                {language === "en"
+                  ? "AUSDAV is a passionate community of leaders, innovators, and changemakers dedicated to creating positive impact in our society. Our diverse team brings together unique perspectives and expertise to drive meaningful change."
+                  : "AUSDAV என்பது வவுனியா மற்றும் அதற்கு அப்பால் உள்ள பல்கலைக்கழக மாணவர்களின் முழுமையான வளர்ச்சিக்கு அர்ப்பணிக்கப்பட்ட லாভலாபி அமைப்பு. கல்வி இடைவெளிகளைக் குறைக்கவும் கல்வியுயர் சிறந்மையை ஊக்குவிக்கவும் வேண்டிய வெளிப்பாட்டுடன் நிறுவப்பட்ட இது, மாணவர்களின் கல்வி பயணத்தை ஆதரிக்க பாடுபடுகிறது."}
+              </p>
+              <Button
+                asChild
+                variant="outline"
+                size="lg"
+                className="border-cyan-500/40 hover:border-cyan-500/60 text-cyan-400 hover:text-cyan-300 w-fit"
+              >
+                <Link to="/about">
+                  {language === "en" ? "Learn More" : "மேலும் அறிக"}
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Link>
+              </Button>
+            </motion.div>
+
+            {/* Right Content - Responsive YouTube Video */}
+            <motion.div
+              initial={{ opacity: 0, x: 30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="flex items-center justify-center"
+            >
+              <div className="w-full max-w-3xl aspect-video rounded-2xl overflow-hidden border border-cyan-500/20 shadow-lg">
+                <iframe
+                  className="w-full h-full"
+                  src="https://www.youtube.com/embed/LbEa34kbbfg?si=FpAI3xiGWpMqeq4Q&autoplay=1&controls=0&mute=1&rel=0&modestbranding=1"
+                  title="AUSDAV Video"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+      {/* Quick Exam Actions */}
+      <section className="py-12 md:py-16 bg-slate-900/20">
+        <div className="container mx-auto px-4">
+          <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Link to="/exam#apply" className="group block rounded-2xl p-6 bg-cyan-500/10 backdrop-blur-sm border border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/20 transition">
+              <div className="w-12 h-12 mb-4 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                <GraduationCap className="w-6 h-6 text-cyan-400" />
+              </div>
+              <h4 className="text-xl font-bold text-white">{language === 'en' ? 'Apply for Exam' : 'தேர்விற்கு விண்ணப்பிக்க'}</h4>
+              <p className="text-slate-300 mt-2 text-sm">{language === 'en' ? 'Register online for upcoming exams' : 'வரவிருக்கும் தேர்வுகளுக்கு ஆன்லைனில் பதிவு செய்யவும்'}</p>
+            </Link>
+
+            <Link to="/exam#results" className="group block rounded-2xl p-6 bg-cyan-500/10 backdrop-blur-sm border border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/20 transition">
+              <div className="w-12 h-12 mb-4 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                <Zap className="w-6 h-6 text-cyan-400" />
+              </div>
+              <h4 className="text-xl font-bold text-white">{language === 'en' ? 'View My Result' : 'என் மதிப்பெண்கள்'}</h4>
+              <p className="text-slate-300 mt-2 text-sm">{language === 'en' ? 'Check your scores and download certificates' : 'உங்கள் மதிப்பெண்களைப் பரிசீலிக்கவும் மற்றும் சான்றிதழ்களை பதிவிறக்கவும்'}</p>
+            </Link>
+
+            <Link to="/resources" className="group block rounded-2xl p-6 bg-cyan-500/10 backdrop-blur-sm border border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/20 transition">
+              <div className="w-12 h-12 mb-4 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                <BookOpen className="w-6 h-6 text-cyan-400" />
+              </div>
+              <h4 className="text-xl font-bold text-white">{language === 'en' ? 'Exam Resources' : 'தேர்வு ஆதாரங்கள்'}</h4>
+              <p className="text-slate-300 mt-2 text-sm">{language === 'en' ? 'Past papers, study guides and sample questions' : 'முந்தைய पेக்குகள், படிப்பு வழிகாட்டிகள் மற்றும் மாதிரி கேள்விகள்'}</p>
+            </Link>
+          </div>
+        </div>
+      </section>
 
       {/* About Us and Events Section */}
       <section className="py-16 md:py-24 bg-slate-800/30">
