@@ -125,10 +125,10 @@ export function AdminHeader({ title, breadcrumb }: AdminHeaderProps) {
             <User className="mr-2 h-4 w-4" />
             Profile
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => navigate('/')}>
+          {/* <DropdownMenuItem onClick={() => navigate('/')}>
             <Home className="mr-2 h-4 w-4" />
             Home
-          </DropdownMenuItem>
+          </DropdownMenuItem> */}
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
             <LogOut className="mr-2 h-4 w-4" />
