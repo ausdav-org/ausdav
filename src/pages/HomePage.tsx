@@ -8,8 +8,6 @@ type AnnouncementRow = Tables<"announcements"> & {
   is_permanent?: boolean;
   category?: string | null;
 };
-
-type CarouselAnnouncement = {
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
@@ -19,8 +17,29 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import AnnouncementCarousel from '@/components/AnnouncementCarousel';
+import ReviewCarousel from '@/components/ReviewCarousel';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
+
+interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  image_url?: string | null;
+  type?: 'urgent' | 'event' | 'news';
+}
+
+type SeedAnnouncement = {
+  id: string;
+  en: string;
+  ta: string;
+  img?: string | null;
+};
+
+const fallbackAnnouncements: SeedAnnouncement[] = [
+  { id: 'a1', en: 'Welcome to AUSDAV', ta: 'AUSDAV-க்கு வரவேற்பு', img: null },
+  { id: 'a2', en: 'Check out our upcoming events', ta: 'எங்கள் வரவிருக்கும் நிகழ்வுகளைப் பார்க்கவும்', img: null },
+];
 
 
 // Sample events
@@ -93,15 +112,20 @@ const stats = [
 
 const HomePage: React.FC = () => {
   const { language, t } = useLanguage();
-  const [announcements, setAnnouncements] = useState<CarouselAnnouncement[]>(
-    fallbackAnnouncements
+  const [announcements, setAnnouncements] = useState<Announcement[]>(() =>
+    fallbackAnnouncements.map((s) => ({
+      id: s.id,
+      title: s.en,
+      message: s.en,
+      image_url: s.img || null,
+    }))
   );
   const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
 
   const mapCategoryToType = (
     category?: string | null
-  ): CarouselAnnouncement["type"] => {
+  ): Announcement["type"] => {
     const normalized = (category || "").toLowerCase();
     if (normalized === "urgent") return "urgent";
     if (normalized === "event") return "event";
@@ -114,18 +138,19 @@ const HomePage: React.FC = () => {
   ) => {
     const text = primary?.trim() || fallback?.trim() || "";
     return text || "Announcement";
-  const [feedbackForm, setFeedbackForm] = useState({ name: '', contact: '', message: '' });
-  const fallbackCards = useMemo<HomeAnnouncement[]>(() => {
-    const useTamil = language === 'ta';
+  };
+
+  const [feedbackForm, setFeedbackForm] = useState({ name: "", contact: "", message: "" });
+
+  const fallbackCards = useMemo<Announcement[]>(() => {
+    const useTamil = language === "ta";
     return fallbackAnnouncements.map((seed) => ({
       id: seed.id,
       title: useTamil ? seed.ta : seed.en,
       message: useTamil ? seed.ta : seed.en,
-      image_url: null,
+      image_url: seed.img || null,
     }));
   }, [language]);
-
-  };
 
   const getAnnouncementImageUrl = (item: any) => {
     if (!item?.img_path) return null;
@@ -154,30 +179,53 @@ const HomePage: React.FC = () => {
         return item.is_active !== false && withinStart && withinEnd;
       });
 
-      const mapped = activeItems.map<CarouselAnnouncement>(
-        (item: AnnouncementRow) => ({
-          id: item.id || item.announcement_id || crypto.randomUUID(),
-          en: buildAnnouncementText(
-            item.description_en ?? item.message_en ?? item.title_en,
-            item.title_en
-          ),
-          ta: buildAnnouncementText(
-            item.description_ta ?? item.message_ta ?? item.title_ta,
-            item.title_ta || item.description_en || item.title_en
-          ),
+      const mapped = activeItems.map<Announcement>((item: AnnouncementRow) => {
+        const id = String(item.id || item.announcement_id || crypto.randomUUID());
+        const enText = buildAnnouncementText(
+          item.description_en ?? item.message_en ?? item.title_en,
+          item.title_en
+        );
+        const taText = buildAnnouncementText(
+          item.description_ta ?? item.message_ta ?? item.title_ta,
+          item.title_ta || item.description_en || item.title_en
+        );
+        const selected = language === "ta" ? taText : enText;
+        return {
+          id,
+          title: selected,
+          message: selected,
+          image_url: getAnnouncementImageUrl(item),
           type: mapCategoryToType(item.category ?? item.tag ?? null),
-        })
-      );
+        } as Announcement;
+      });
 
-      setAnnouncements(mapped.length ? mapped : fallbackAnnouncements);
+      if (mapped.length) {
+        setAnnouncements(mapped);
+      } else {
+        setAnnouncements(
+          fallbackAnnouncements.map((s) => ({
+            id: s.id,
+            title: language === "ta" ? s.ta : s.en,
+            message: language === "ta" ? s.ta : s.en,
+            image_url: s.img || null,
+          }))
+        );
+      }
     } catch (error) {
       console.error("Error loading announcements:", error);
       toast.error("Unable to load announcements right now.");
-      setAnnouncements(fallbackAnnouncements);
+      setAnnouncements(
+        fallbackAnnouncements.map((s) => ({
+          id: s.id,
+          title: language === "ta" ? s.ta : s.en,
+          message: language === "ta" ? s.ta : s.en,
+          image_url: s.img || null,
+        }))
+      );
     } finally {
       setIsLoadingAnnouncements(false);
     }
-  }, []);
+  }, [language]);
 
   useEffect(() => {
     loadAnnouncements();
@@ -533,63 +581,6 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* Feedback Section */}
-      <section className="py-24 relative bg-slate-700/30">
-        <div className="container mx-auto px-4 relative z-10">
-          <div className="max-w-2xl mx-auto">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              className="text-center mb-12"
-            >
-              <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-cyan-500/20 flex items-center justify-center">
-                <MessageSquare className="w-8 h-8 text-cyan-400" />
-              </div>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4 text-white">
-                {t("home.feedback.title")}
-              </h2>
-            </motion.div>
-
-            <motion.form
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              onSubmit={handleFeedbackSubmit}
-              className="bg-cyan-500/20 backdrop-blur-sm rounded-2xl p-8 space-y-6 border border-cyan-500/40"
-            >
-              <div>
-                <label className="block text-sm font-medium mb-2 text-white">
-                  {t("home.feedback.message")} *
-                </label>
-                <Textarea
-                  value={feedbackForm.message}
-                  onChange={(e) =>
-                    setFeedbackForm((prev) => ({
-                      ...prev,
-                      message: e.target.value,
-                    }))
-                  }
-                  placeholder={
-                    language === "en" ? "Your message..." : "உங்கள் செய்தி..."
-                  }
-                  rows={5}
-                  className="bg-slate-800/50 border-cyan-500/40 focus:border-cyan-500/60 text-white placeholder-slate-400 resize-none"
-                />
-              </div>
-
-              <Button
-                type="submit"
-                size="lg"
-                className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-900"
-              >
-                {t("home.feedback.submit")}
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </motion.form>
-          </div>
-        </div>
-      </section>
     </div>
   );
 };

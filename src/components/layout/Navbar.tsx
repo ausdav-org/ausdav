@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
+import logoImg from '@/assets/Exam/AUSDAV logo.png';
 import { cn } from '@/lib/utils';
 
 const PROFILE_IMG = "/ausdav/src/assets/Committee/2022/Ruthu.jpg";
@@ -139,8 +140,9 @@ const Navbar: React.FC = () => {
               whileHover={{ scale: 1.05, rotate: 5 }}
               className="relative"
             >
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center neon-glow">
-                <Sparkles className="w-6 h-6 text-primary-foreground" />
+              <div className="w-12 h-12 bg-transparent rounded-full flex items-center justify-center">
+                {/* <Sparkles className="w-6 h-6 text-primary-foreground" /> */}
+                <img src={logoImg} alt="AUSDAV Logo" className="absolute inset-0 w-full h-full object-contain bg-transparent neon-glow rounded-full" />
               </div>
               <div className="absolute right-0 bottom-0 w-full h-full rounded-xl bg-primary/20 blur-xl group-hover:blur-2xl transition-all" />
             </motion.div>
@@ -203,7 +205,7 @@ const Navbar: React.FC = () => {
             </Button>
 
             {/* Theme Toggle */}
-            <Button
+            {/* <Button
               variant="ghost"
               size="icon"
               onClick={toggleTheme}
@@ -222,7 +224,7 @@ const Navbar: React.FC = () => {
                   <Sun className="w-5 h-5" />
                 )}
               </motion.div>
-            </Button>
+            </Button> */}
 
             {/* Language Switcher */}
             <DropdownMenu>
