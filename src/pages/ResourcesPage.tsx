@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import { motion } from "framer-motion";
 import { Calendar, Download, MapPin, Users, FileText } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -33,6 +33,9 @@ type PastPaper = {
 
 const ResourcesPage: React.FC = () => {
   const { t, language } = useLanguage();
+
+  const seminarRef = useRef<HTMLDivElement>(null);
+  const pastPaperRef = useRef<HTMLDivElement>(null);
 
   // Fetch seminars from database
   const { data: seminars = [], isLoading: seminarsLoading } = useQuery({
@@ -84,7 +87,7 @@ const ResourcesPage: React.FC = () => {
         bucket = "exam-papers";
         path = paper.exam_paper_path;
       } else {
-        bucket = "schemes";
+        bucket = paper.scheme_bucket || "schemes";
         path = paper.scheme_path;
       }
     }
@@ -160,7 +163,13 @@ const ResourcesPage: React.FC = () => {
             transition={{ delay: 0.3 }}
             className="text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6"
           >
-            {t("resources.title")}
+            {language === "en" ? (
+              <>
+                Resou<span className="text-cyan-400">rces</span>
+              </>
+            ) : (
+              t("resources.title")
+            )}
           </motion.h1>
           <motion.p
             initial={{ opacity: 0 }}
@@ -172,11 +181,34 @@ const ResourcesPage: React.FC = () => {
               ? "Download seminar papers, answers, and past papers to enhance your learning"
               : "உங்கள் கல்வியை மேம்படுத்துவதற்கு செமினார் தாள்கள், பதில்கள் மற்றும் கடந்த கால வினாத்தாள்களை பதிவிறக்கவும்"}
           </motion.p>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="flex gap-6 justify-center mt-20"
+          >
+            <Button
+              onClick={() =>
+                seminarRef.current?.scrollIntoView({ behavior: "smooth" })
+              }
+              className="bg-cyan-500 hover:bg-cyan-600 hover:shadow-cyan-500 hover:shadow-lg text-white transition-all duration-300"
+            >
+              {language === "en" ? "Seminar" : "செமினார்"}
+            </Button>
+            <Button
+              onClick={() =>
+                pastPaperRef.current?.scrollIntoView({ behavior: "smooth" })
+              }
+              className="bg-cyan-500 hover:bg-cyan-600 hover:shadow-cyan-500 hover:shadow-lg text-white transition-all duration-300"
+            >
+              {language === "en" ? "Past Paper" : "கடந்த கால வினாத்தாள்"}
+            </Button>
+          </motion.div>
         </motion.div>
       </section>
 
       {/* Seminar Resources */}
-      <section className="py-16 md:py-24 bg-background">
+      <section ref={seminarRef} className="py-16 md:py-24">
         <div className="container mx-auto px-4">
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
@@ -184,7 +216,13 @@ const ResourcesPage: React.FC = () => {
             viewport={{ once: true }}
             className="text-3xl font-serif font-bold text-foreground mb-8"
           >
-            {language === "en" ? "Seminar Resources" : "செமினார் வளங்கள்"}
+            {language === "en" ? (
+              <>
+                Seminar <span className="text-cyan-400">Resources</span>
+              </>
+            ) : (
+              "செமினார் வளங்கள்"
+            )}
           </motion.h2>
 
           <div className="max-w-4xl mx-auto">
@@ -212,7 +250,7 @@ const ResourcesPage: React.FC = () => {
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
-                    className="flex items-center justify-between p-6 bg-card rounded-xl shadow-sm hover:shadow-md transition-shadow"
+                    className="flex items-center justify-between p-6 bg-cyan-500/20 backdrop-blur-sm rounded-xl border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
                   >
                     <div className="flex items-center gap-4">
                       <FileText className="w-8 h-8 text-secondary" />
@@ -266,7 +304,7 @@ const ResourcesPage: React.FC = () => {
       </section>
 
       {/* Past Papers */}
-      <section className="py-16 md:py-24 bg-muted/30">
+      <section ref={pastPaperRef} className="py-16 md:py-24 bg-slate-800/50">
         <div className="container mx-auto px-4">
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
@@ -274,7 +312,13 @@ const ResourcesPage: React.FC = () => {
             viewport={{ once: true }}
             className="text-3xl font-serif font-bold text-foreground mb-8"
           >
-            {language === "en" ? "Past Papers" : "கடந்த கால வினாத்தாள்கள்"}
+            {language === "en" ? (
+              <>
+                Past <span className="text-cyan-400">Papers</span>
+              </>
+            ) : (
+              "கடந்த கால வினாத்தாள்கள்"
+            )}
           </motion.h2>
 
           <div className="max-w-4xl mx-auto">
@@ -302,7 +346,7 @@ const ResourcesPage: React.FC = () => {
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
-                    className="flex items-center justify-between p-6 bg-card rounded-xl shadow-sm hover:shadow-md transition-shadow"
+                    className="flex items-center justify-between p-6 bg-cyan-500/20 backdrop-blur-sm rounded-xl border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
                   >
                     <div className="flex items-center gap-4">
                       <FileText className="w-8 h-8 text-secondary" />

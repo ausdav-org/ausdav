@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
@@ -36,11 +36,11 @@ const DESIGNATION_TO_ROLE: Record<string, { en: string; ta: string }> = {
 };
 
 const TITLES = {
-  patrons: { en: "Patrons Of AUSDAV", ta: "AUSDAV ஆதரவாளர்கள்" },
-  exec: { en: "Executive Committee", ta: "நிர்வாக குழு" },
-  reps: { en: "Representative", ta: "பல்கலை பிரதிநிதிகள்" },
-  edu: { en: "Education", ta: "கல்வி" },
-  gen: { en: "General", ta: "பொது" },
+  patrons: { en: <>Patrons Of <span className="text-cyan-400">AUSDAV</span></>, ta: "AUSDAV ஆதரவாளர்கள்" },
+  exec: { en: <>Executive <span className="text-cyan-400">Committee</span></>, ta: "நிர்வாக குழு" },
+  reps: { en: <><span className="text-cyan-400">Representative</span></>, ta: "பல்கலை பிரதிநிதிகள்" },
+  edu: { en: <><span className="text-cyan-400">Education</span></>, ta: "கல்வி" },
+  gen: { en: <><span className="text-cyan-400">General</span></>, ta: "பொது" },
 };
 
 // Executive committee designations
@@ -181,7 +181,7 @@ const Section = ({
   lang,
   isDark,
 }: {
-  title: string;
+  title: ReactNode;
   sub?: string;
   members: Member[];
   cols?: string;
@@ -257,7 +257,8 @@ const Section = ({
 };
 
 type Block = {
-  tEn: string;
+  type: string;
+  tEn: ReactNode;
   tTa: string;
   sEn?: string;
   sTa?: string;
@@ -465,6 +466,7 @@ const CommitteePage: React.FC = () => {
 
       const blocks: Block[] = [
         {
+          type: "patrons",
           tEn: TITLES.patrons.en,
           tTa: TITLES.patrons.ta,
           sEn: "Meet the dedicated team guiding AUSDAV",
@@ -477,8 +479,11 @@ const CommitteePage: React.FC = () => {
 
       if (execMembers.length > 0) {
         blocks.push({
+          type: "exec",
           tEn: TITLES.exec.en,
           tTa: TITLES.exec.ta,
+          sEn: "Meet the organizing committee",
+          sTa: "அமைப்பு குழுவை சந்திக்கவும்",
           members: execMembers,
           gradient: true,
         });
@@ -486,6 +491,7 @@ const CommitteePage: React.FC = () => {
 
       if (repMembers.length > 0) {
         blocks.push({
+          type: "reps",
           tEn: TITLES.reps.en,
           tTa: TITLES.reps.ta,
           members: repMembers,
@@ -495,6 +501,7 @@ const CommitteePage: React.FC = () => {
 
       if (eduMembers.length > 0) {
         blocks.push({
+          type: "edu",
           tEn: TITLES.edu.en,
           tTa: TITLES.edu.ta,
           members: eduMembers,
@@ -504,6 +511,7 @@ const CommitteePage: React.FC = () => {
 
       if (genMembers.length > 0) {
         blocks.push({
+          type: "gen",
           tEn: TITLES.gen.en,
           tTa: TITLES.gen.ta,
           members: genMembers,
@@ -683,7 +691,13 @@ const CommitteePage: React.FC = () => {
             transition={{ delay: 0.3 }}
             className="text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6"
           >
-            {language === "en" ? "Executive Committee" : "நிர்வாக குழு"}
+            {language === "en" ? (
+              <>
+                Executive <span className="text-cyan-400">Committee</span>
+              </>
+            ) : (
+              "நிர்வாக குழு"
+            )}
           </motion.h1>
           <motion.p
             initial={{ opacity: 0 }}
@@ -692,15 +706,15 @@ const CommitteePage: React.FC = () => {
             className="text-xl md:text-2xl text-slate-300 max-w-3xl mx-auto"
           >
             {language === "en"
-              ? "Meet the dedicated team guiding AUSDAV"
-              : "AUSDAV ஐ வழிநடத்தும் அர்ப்பணிப்பு குழுவை சந்திக்கவும்"}
+              ? "Know the people in the AUSDAV"
+              : "AUSDAV இல் உள்ளவர்களை அறிந்து கொள்ளுங்கள்"}
           </motion.p>
         </motion.div>
       </section>
 
       {cur.blocks.map((b, bi) => {
         const membersForBlock =
-          b.tEn === TITLES.patrons.en
+          b.type === "patrons"
             ? patronsMembers.length
               ? patronsMembers
               : b.members

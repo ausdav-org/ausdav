@@ -121,7 +121,7 @@ const AboutPage: React.FC = () => {
             transition={{ delay: 0.4 }}
             className="text-xl md:text-2xl text-slate-300 max-w-3xl mx-auto"
           >
-            Empowering students, transforming futures
+            Discover who we are and what we offer
           </motion.p>
         </motion.div>
       </section>
