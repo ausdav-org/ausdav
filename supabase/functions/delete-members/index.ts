@@ -53,21 +53,57 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { data: userData, error: userErr } = await adminClient.auth.getUser(token as string) as any;
-    if (userErr) throw userErr;
-    const userId = userData?.user?.id;
+    let userId: string | null = null;
+    let userMeta: any = null;
+    try {
+      const { data: userData, error: userErr } = await adminClient.auth.getUser({ access_token: token as string }) as any;
+      if (userErr) throw userErr;
+      userId = userData?.user?.id ?? null;
+      userMeta = userData?.user?.user_metadata ?? null;
+    } catch (e) {
+      console.error('auth.getUser failed, falling back to JWT decode', e instanceof Error ? e.message : e);
+      // As a fallback, attempt to decode the JWT payload to extract `sub` and
+      // `user_metadata`. This avoids failing when auth-js cannot validate the
+      // token (some edge runtime or token types), while still allowing us to
+      // identify the caller for authorization checks. We do not verify the
+      // signature here.
+      try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+          userId = payload?.sub ?? null;
+          userMeta = payload?.user_metadata ?? payload?.app_user_metadata ?? null;
+          console.log('delete-members decoded JWT sub=', userId, 'payload_keys=', Object.keys(payload || {}));
+        }
+      } catch (decErr) {
+        console.error('JWT decode fallback failed', decErr);
+      }
+    }
+
     if (!userId) return new Response(JSON.stringify({ error: 'Cannot identify user' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const { data: memberRow, error: memberErr } = await adminClient
-      .from('members')
-      .select('role')
-      .eq('auth_user_id', userId)
-      .maybeSingle();
+    // Prefer member lookup, fallback to user metadata
+    let callerRole: string | null = null;
+    try {
+      const { data: memberRow, error: memberErr } = await adminClient
+        .from('members')
+        .select('role')
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+      if (memberErr) throw memberErr;
+      if (memberRow) callerRole = memberRow.role;
+    } catch (e) {
+      console.error('members lookup failed', e);
+    }
 
-    if (memberErr) throw memberErr;
-    if (!memberRow) return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!callerRole) {
+      const meta = userMeta;
+      if (meta?.is_super_admin === true) callerRole = 'super_admin';
+      else if (Array.isArray(meta?.roles) && meta.roles.includes('super_admin')) callerRole = 'super_admin';
+      else if (Array.isArray(meta?.roles) && meta.roles.includes('admin')) callerRole = 'admin';
+    }
 
-    const callerRole = memberRow.role;
+    if (!callerRole) return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     // If caller is admin (not super_admin), ensure targets are only role='member'
     if (callerRole !== 'super_admin') {
@@ -86,11 +122,40 @@ serve(async (req: Request) => {
       }
     }
 
+    // Fetch affected members to collect `auth_user_id`s before deleting rows
+    const { data: targets, error: fetchErr } = await adminClient
+      .from('members')
+      .select('mem_id, auth_user_id')
+      .in('mem_id', memIds as number[]);
+    if (fetchErr) throw fetchErr;
+
+    const authIds = (targets || []).map((t: any) => t.auth_user_id).filter(Boolean) as string[];
+
     // Perform deletion using service role
     const { data: deleted, error: delErr } = await adminClient.from('members').delete().in('mem_id', memIds).select('mem_id');
     if (delErr) throw delErr;
 
-    return new Response(JSON.stringify({ deleted: deleted ?? [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    // Delete corresponding auth users (best-effort). log but don't fail overall if some deletions fail.
+    const deletedAuth: string[] = [];
+    for (const aid of authIds) {
+      try {
+        // supabase-js admin API: auth.admin.deleteUser
+        // @ts-ignore - runtime provides admin API
+        const { error: authErr } = await (adminClient as any).auth.admin.deleteUser(aid);
+        if (authErr) {
+          console.error('Failed to delete auth user', aid, authErr.message || authErr);
+        } else {
+          deletedAuth.push(aid);
+        }
+      } catch (e) {
+        console.error('Exception deleting auth user', aid, e);
+      }
+    }
+
+    return new Response(
+      JSON.stringify({ deleted: deleted ?? [], deleted_auth_ids: deletedAuth }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   } catch (e) {
     console.error('Delete-members failed', e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Delete failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

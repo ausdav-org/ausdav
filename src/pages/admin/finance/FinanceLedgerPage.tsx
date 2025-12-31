@@ -1,18 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   DollarSign,
   Download,
-  Filter,
   Search,
   Loader2,
   TrendingUp,
   TrendingDown,
-  Calendar,
+  Upload,
   Plus,
   Pencil,
   MoreVertical,
   Trash2,
+  Image as ImageIcon,
+  X,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { PermissionGate } from '@/components/admin/PermissionGate';
@@ -84,12 +87,12 @@ interface Transaction {
 
 const categories = [
   'Membership Fee',
-  'Donation',
-  'Event Income',
-  'Sponsorship',
-  'Rent',
+  'Fund Collection',
+  'Monthly Exams',
+  'Ausdav Exams',
+  'Practical Seminar',
   'Utilities',
-  'Transport',
+  'Blood Camp',
   'Printing',
   'Catering',
   'Other',
@@ -115,6 +118,11 @@ const emptyFormData: TransactionFormData = {
   description: '',
 };
 
+// ✅ Receipt bucket (change if your storage bucket name is different)
+const RECEIPT_BUCKET = 'finance-photos';
+const AUDIT_BUCKET = 'audit-reports';
+const MAX_RECEIPT_SIZE_BYTES = 5 * 1024 * 1024;
+
 export default function FinanceLedgerPage() {
   const { user, isSuperAdmin, isAdmin } = useAdminAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -124,6 +132,11 @@ export default function FinanceLedgerPage() {
   const [filterType, setFilterType] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [auditDialogOpen, setAuditDialogOpen] = useState(false);
+  const [auditEventName, setAuditEventName] = useState('');
+  const [auditYear, setAuditYear] = useState(new Date().getFullYear());
+  const [auditUploading, setAuditUploading] = useState(false);
 
   // Stats
   const [totalIncome, setTotalIncome] = useState(0);
@@ -134,6 +147,13 @@ export default function FinanceLedgerPage() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [formData, setFormData] = useState<TransactionFormData>(emptyFormData);
   const [saving, setSaving] = useState(false);
+
+  // ✅ NEW: Receipt upload state
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const [existingReceiptUrl, setExistingReceiptUrl] = useState<string | null>(null);
+  const [existingReceiptLoading, setExistingReceiptLoading] = useState(false);
+  const [receiptUploading, setReceiptUploading] = useState(false);
 
   // Delete confirmation
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -146,29 +166,36 @@ export default function FinanceLedgerPage() {
     fetchTransactions();
   }, []);
 
+  // Cleanup preview URL
+  useEffect(() => {
+    return () => {
+      if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const fetchTransactions = async () => {
     try {
       // Fetch only approved finance records for the ledger
-      let query = supabase
+      const { data, error } = await supabase
         .from('finance')
         .select('*')
         .eq('approved', true)
         .order('txn_date', { ascending: false });
 
-      const { data, error } = await query;
       if (error) throw error;
 
       // Fetch creator names from members or profiles
-      const submitterIds = [...new Set(data?.map((t) => t.submitted_by || t.verified_by).filter(Boolean))];
+      const submitterIds = [...new Set(data?.map((t: any) => t.submitted_by || t.verified_by).filter(Boolean))];
       const { data: membersData } = await supabase
         .from('members')
         .select('auth_user_id, fullname')
         .in('auth_user_id', submitterIds as string[]);
 
-      const transactionsWithNames = (data || []).map((txn) => ({
+      const transactionsWithNames = (data || []).map((txn: any) => ({
         ...txn,
         creator_name: membersData?.find((m) => m.auth_user_id === (txn.submitted_by || txn.verified_by))?.fullname || 'System',
-      }));
+      })) as Transaction[];
 
       setTransactions(transactionsWithNames);
 
@@ -215,30 +242,164 @@ export default function FinanceLedgerPage() {
     .filter((t) => t.exp_type === 'expense')
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
-  const exportCSV = () => {
-    const headers = ['Date', 'Type', 'Category', 'Amount', 'Description'];
-    const rows = filteredTransactions.map((txn) => [
-      txn.txn_date || '',
+  const getReceiptDataUrl = async (photoPath: string): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase.storage
+        .from(RECEIPT_BUCKET)
+        .createSignedUrl(photoPath, 300);
+
+      if (error) throw error;
+      const response = await fetch(data.signedUrl);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read receipt image'));
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error('Failed to load receipt image:', error);
+      return null;
+    }
+  };
+
+  const buildLedgerPdfDoc = async () => {
+    if (filteredTransactions.length === 0) {
+      toast.error('No transactions to export');
+      throw new Error('No transactions to export');
+    }
+
+    const sorted = [...filteredTransactions].sort((a, b) =>
+      (a.txn_date || '').localeCompare(b.txn_date || '')
+    );
+
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const title = 'Finance Ledger';
+    doc.setFontSize(16);
+    doc.text(title, 40, 40);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 40, 58);
+
+    const summaryHead = [['Date', 'Type', 'Category', 'Amount', 'Description']];
+    const summaryBody = sorted.map((txn) => [
+      txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-',
       txn.exp_type,
       txn.category,
-      txn.amount,
-      txn.description || '',
+      `Rs. ${txn.amount.toLocaleString()}`,
+      txn.description || '-',
     ]);
 
-    const csvContent = [headers, ...rows].map((row) => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `finance-ledger-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success('CSV exported successfully');
+    autoTable(doc, {
+      head: summaryHead,
+      body: summaryBody,
+      startY: 74,
+      styles: { fontSize: 9, cellPadding: 4, overflow: 'linebreak' },
+      headStyles: { fillColor: [33, 150, 243] },
+      columnStyles: {
+        0: { cellWidth: 70 },
+        1: { cellWidth: 55 },
+        2: { cellWidth: 80 },
+        3: { cellWidth: 70 },
+        4: { cellWidth: 220 },
+      },
+    });
+
+    const imageRows = sorted.filter((txn) => txn.photo_path);
+    if (imageRows.length > 0) {
+      const imageDataList = await Promise.all(
+        imageRows.map((txn) => getReceiptDataUrl(txn.photo_path!))
+      );
+
+      for (let i = 0; i < imageRows.length; i += 4) {
+        doc.addPage();
+        const pageImages = imageDataList.slice(i, i + 4);
+        const margin = 40;
+        const gap = 12;
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const cellWidth = (pageWidth - margin * 2 - gap) / 2;
+        const cellHeight = (pageHeight - margin * 2 - gap) / 2;
+
+        pageImages.forEach((imageData, index) => {
+          const row = Math.floor(index / 2);
+          const col = index % 2;
+          const cellX = margin + col * (cellWidth + gap);
+          const cellY = margin + row * (cellHeight + gap);
+
+          if (!imageData) {
+            doc.setFontSize(10);
+            doc.text('No receipt', cellX + 4, cellY + 14);
+            return;
+          }
+
+          const format = imageData.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+          const padding = 8;
+          const imgProps = doc.getImageProperties(imageData);
+          const maxWidth = cellWidth - padding * 2;
+          const maxHeight = cellHeight - padding * 2;
+          const ratio = Math.min(maxWidth / imgProps.width, maxHeight / imgProps.height);
+          const imgWidth = imgProps.width * ratio;
+          const imgHeight = imgProps.height * ratio;
+          const x = cellX + padding + (maxWidth - imgWidth) / 2;
+          const y = cellY + padding + (maxHeight - imgHeight) / 2;
+
+          doc.addImage(imageData, format, x, y, imgWidth, imgHeight);
+        });
+      }
+    }
+
+    return doc;
+  };
+
+  const exportPDF = async () => {
+    setExportingPdf(true);
+    try {
+      const doc = await buildLedgerPdfDoc();
+      doc.save(`finance-ledger-${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success('PDF exported successfully');
+    } catch (error) {
+      console.error('Failed to export PDF:', error);
+      toast.error('Failed to export PDF');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  const resetReceiptState = () => {
+    setReceiptFile(null);
+    if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+    setReceiptPreviewUrl(null);
+    setExistingReceiptUrl(null);
+  };
+
+  const loadExistingReceipt = async (photoPath: string | null) => {
+    if (!photoPath) {
+      setExistingReceiptUrl(null);
+      return;
+    }
+
+    setExistingReceiptLoading(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from(RECEIPT_BUCKET)
+        .createSignedUrl(photoPath, 300);
+
+      if (error) throw error;
+      setExistingReceiptUrl(data.signedUrl);
+    } catch (error) {
+      console.error('Error loading receipt:', error);
+      setExistingReceiptUrl(null);
+    } finally {
+      setExistingReceiptLoading(false);
+    }
   };
 
   const handleOpenAddDialog = () => {
     setEditingTransaction(null);
     setFormData(emptyFormData);
+    resetReceiptState();
     setDialogOpen(true);
   };
 
@@ -252,6 +413,8 @@ export default function FinanceLedgerPage() {
       category: txn.category,
       description: txn.description || '',
     });
+    resetReceiptState();
+    loadExistingReceipt(txn.photo_path);
     setDialogOpen(true);
   };
 
@@ -259,6 +422,75 @@ export default function FinanceLedgerPage() {
     setDialogOpen(false);
     setEditingTransaction(null);
     setFormData(emptyFormData);
+    resetReceiptState();
+  };
+
+  const handleReceiptChange = (file: File | null) => {
+    if (file && file.size > MAX_RECEIPT_SIZE_BYTES) {
+      toast.error('Receipt image must be 5 MB or smaller');
+      return;
+    }
+
+    setReceiptFile(file);
+    if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+    setReceiptPreviewUrl(file ? URL.createObjectURL(file) : null);
+    if (file) setExistingReceiptUrl(null);
+  };
+
+  const uploadReceiptIfAny = async (): Promise<string | null> => {
+    if (!receiptFile) return null;
+    if (receiptFile.size > MAX_RECEIPT_SIZE_BYTES) {
+      toast.error('Receipt image must be 5 MB or smaller');
+      return null;
+    }
+
+    try {
+      setReceiptUploading(true);
+
+      const safeName = receiptFile.name.replace(/[^\w.\-]+/g, '_');
+      const path = `${user?.id || 'admin'}/${Date.now()}-${safeName}`;
+
+      const { error } = await supabase.storage
+        .from(RECEIPT_BUCKET)
+        .upload(path, receiptFile, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: receiptFile.type || 'image/*',
+        });
+
+      if (error) throw error;
+
+      return path;
+    } finally {
+      setReceiptUploading(false);
+    }
+  };
+
+  const deleteOldReceiptIfNeeded = async (newPath: string | null) => {
+    if (!editingTransaction?.photo_path) return;
+    if (!newPath || newPath === editingTransaction.photo_path) return;
+
+    const { error } = await supabase.storage
+      .from(RECEIPT_BUCKET)
+      .remove([editingTransaction.photo_path]);
+
+    if (error) {
+      console.error('Failed to delete old receipt:', error);
+      toast.warning('New receipt saved, but failed to delete the old receipt');
+    }
+  };
+
+  const deleteReceiptForTransaction = async (txn: Transaction) => {
+    if (!txn.photo_path) return;
+
+    const { error } = await supabase.storage
+      .from(RECEIPT_BUCKET)
+      .remove([txn.photo_path]);
+
+    if (error) {
+      console.error('Failed to delete receipt:', error);
+      toast.warning('Transaction deleted, but failed to delete the receipt');
+    }
   };
 
   const handleSaveTransaction = async () => {
@@ -269,6 +501,12 @@ export default function FinanceLedgerPage() {
 
     setSaving(true);
     try {
+      // ✅ Upload receipt image if provided
+      let uploadedPhotoPath: string | null = null;
+      if (receiptFile) {
+        uploadedPhotoPath = await uploadReceiptIfAny();
+      }
+
       if (editingTransaction) {
         // Update existing transaction
         const { error } = await supabase
@@ -280,10 +518,13 @@ export default function FinanceLedgerPage() {
             txn_date: formData.txn_date,
             category: formData.category,
             description: formData.description,
+            // ✅ Keep existing unless a new receipt is uploaded
+            photo_path: uploadedPhotoPath ?? editingTransaction.photo_path ?? null,
           })
           .eq('fin_id', editingTransaction.fin_id);
 
         if (error) throw error;
+        await deleteOldReceiptIfNeeded(uploadedPhotoPath);
         toast.success('Transaction updated successfully');
       } else {
         // Create new transaction (admin direct entry - already approved)
@@ -299,7 +540,9 @@ export default function FinanceLedgerPage() {
             approved: true, // Admin entries are pre-approved
             verified_by: user?.id,
             verified_at: new Date().toISOString(),
-          });
+            // ✅ Save receipt path if uploaded
+            photo_path: uploadedPhotoPath,
+          } as any);
 
         if (error) throw error;
         toast.success('Transaction added successfully');
@@ -308,9 +551,56 @@ export default function FinanceLedgerPage() {
       handleCloseDialog();
       fetchTransactions();
     } catch (error: any) {
+      console.error(error);
       toast.error(error.message || 'Failed to save transaction');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleUploadAuditPdf = async () => {
+    if (!auditEventName.trim()) {
+      toast.error('Please enter an event name');
+      return;
+    }
+
+    setAuditUploading(true);
+    try {
+      const doc = await buildLedgerPdfDoc();
+      const blob = doc.output('blob') as Blob;
+      const safeEvent = auditEventName.trim().replace(/\s+/g, '_');
+      const fileName = `${auditYear}_${safeEvent}_audit_summary.pdf`;
+      const objectName = `${auditYear}_${safeEvent}_${Date.now()}_audit_summary.pdf`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(AUDIT_BUCKET)
+        .upload(objectName, blob, { contentType: 'application/pdf' });
+
+      if (uploadError) throw uploadError;
+
+      const { error: insertError } = await supabase
+        .from('audit_actions' as any)
+        .insert({
+          year: auditYear,
+          event: auditEventName.trim(),
+          bucket_id: AUDIT_BUCKET,
+          object_path: uploadData.path,
+          file_name: fileName,
+          file_size: blob.size,
+          uploaded_by: user?.id ?? null,
+        });
+
+      if (insertError) throw insertError;
+
+      toast.success('Audit summary uploaded successfully');
+      setAuditDialogOpen(false);
+      setAuditEventName('');
+      setAuditYear(new Date().getFullYear());
+    } catch (error: any) {
+      console.error('Failed to upload audit summary:', error);
+      toast.error(error?.message || 'Failed to upload audit summary');
+    } finally {
+      setAuditUploading(false);
     }
   };
 
@@ -331,6 +621,7 @@ export default function FinanceLedgerPage() {
 
       if (error) throw error;
 
+      await deleteReceiptForTransaction(transactionToDelete);
       toast.success('Transaction deleted successfully');
       setDeleteDialogOpen(false);
       setTransactionToDelete(null);
@@ -347,397 +638,491 @@ export default function FinanceLedgerPage() {
       <div className="min-h-screen">
         <AdminHeader title="Finance Ledger" breadcrumb="Finance" />
 
-      <div className="p-6 space-y-6">
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <Card className="bg-green-500/10 border-green-500/20">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Income</p>
-                    <p className="text-2xl font-bold text-green-400">
-                      Rs. {filteredIncome.toLocaleString()}
-                    </p>
+        <div className="p-6 space-y-6">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+              <Card className="bg-green-500/10 border-green-500/20">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Income</p>
+                      <p className="text-2xl font-bold text-green-400">Rs. {filteredIncome.toLocaleString()}</p>
+                    </div>
+                    <TrendingUp className="h-8 w-8 text-green-400" />
                   </div>
-                  <TrendingUp className="h-8 w-8 text-green-400" />
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
+                </CardContent>
+              </Card>
+            </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card className="bg-red-500/10 border-red-500/20">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Expense</p>
-                    <p className="text-2xl font-bold text-red-400">
-                      Rs. {filteredExpense.toLocaleString()}
-                    </p>
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+              <Card className="bg-red-500/10 border-red-500/20">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Expense</p>
+                      <p className="text-2xl font-bold text-red-400">Rs. {filteredExpense.toLocaleString()}</p>
+                    </div>
+                    <TrendingDown className="h-8 w-8 text-red-400" />
                   </div>
-                  <TrendingDown className="h-8 w-8 text-red-400" />
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
+                </CardContent>
+              </Card>
+            </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            <Card className="bg-primary/10 border-primary/20">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Net Balance</p>
-                    <p className={cn(
-                      'text-2xl font-bold',
-                      filteredIncome - filteredExpense >= 0 ? 'text-primary' : 'text-red-400'
-                    )}>
-                      Rs. {(filteredIncome - filteredExpense).toLocaleString()}
-                    </p>
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+              <Card className="bg-primary/10 border-primary/20">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Net Balance</p>
+                      <p
+                        className={cn(
+                          'text-2xl font-bold',
+                          filteredIncome - filteredExpense >= 0 ? 'text-primary' : 'text-red-400'
+                        )}
+                      >
+                        Rs. {(filteredIncome - filteredExpense).toLocaleString()}
+                      </p>
+                    </div>
+                    <DollarSign className="h-8 w-8 text-primary" />
                   </div>
-                  <DollarSign className="h-8 w-8 text-primary" />
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+
+          {/* Filters */}
+          <Card className="bg-card/50 backdrop-blur-sm border-border">
+            <CardContent className="p-4">
+              <div className="flex flex-wrap gap-4 items-end">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search transactions..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10 bg-background/50"
+                    />
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
 
-        {/* Filters */}
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap gap-4 items-end">
-              <div className="flex-1 min-w-[200px]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search transactions..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 bg-background/50"
-                  />
-                </div>
-              </div>
-
-              <Select value={filterCategory} onValueChange={setFilterCategory}>
-                <SelectTrigger className="w-[160px] bg-background/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {allCategories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-[120px] bg-background/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="income">Income</SelectItem>
-                  <SelectItem value="expense">Expense</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <div className="flex items-center gap-2">
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-[140px] bg-background/50"
-                  placeholder="From"
-                />
-                <span className="text-muted-foreground">to</span>
-                <Input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-[140px] bg-background/50"
-                  placeholder="To"
-                />
-              </div>
-
-              <Button variant="outline" onClick={exportCSV}>
-                <Download className="h-4 w-4 mr-2" />
-                Export CSV
-              </Button>
-
-              {canEdit && (
-                <Button onClick={handleOpenAddDialog}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Record
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Transactions Table */}
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-primary" />
-              Transactions
-              <Badge className="ml-2">{filteredTransactions.length} records</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : filteredTransactions.length === 0 ? (
-              <div className="text-center py-12">
-                <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No transactions found</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    {canEdit && <TableHead className="w-[50px]"></TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTransactions.map((txn) => (
-                    <TableRow key={txn.fin_id}>
-                      <TableCell>
-                        {txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={cn(
-                            txn.exp_type === 'income'
-                              ? 'bg-green-500/20 text-green-400'
-                              : 'bg-red-500/20 text-red-400'
-                          )}
-                        >
-                          {txn.exp_type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{txn.category}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">
-                        {txn.description || '-'}
-                      </TableCell>
-                      <TableCell className={cn(
-                        'text-right font-medium',
-                        txn.exp_type === 'income' ? 'text-green-400' : 'text-red-400'
-                      )}>
-                        {txn.exp_type === 'income' ? '+' : '-'} Rs. {txn.amount.toLocaleString()}
-                      </TableCell>
-                      {canEdit && (
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleOpenEditDialog(txn)}>
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleConfirmDelete(txn)}
-                                className="text-red-400"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Add/Edit Transaction Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {editingTransaction ? 'Edit Transaction' : 'Add New Transaction'}
-            </DialogTitle>
-            <DialogDescription>
-              {editingTransaction
-                ? 'Update the transaction details below.'
-                : 'Enter the details for the new finance record.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Transaction Type *</Label>
-                <Select
-                  value={formData.exp_type}
-                  onValueChange={(v) =>
-                    setFormData({ 
-                      ...formData, 
-                      exp_type: v as 'income' | 'expense',
-                      party_role: v === 'income' ? 'payer' : 'payee'
-                    })
-                  }
-                >
-                  <SelectTrigger className="bg-background/50">
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                  <SelectTrigger className="w-[160px] bg-background/50">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="income">Income</SelectItem>
-                    <SelectItem value="expense">Expense</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Amount (Rs.) *</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) =>
-                    setFormData({ ...formData, amount: e.target.value })
-                  }
-                  placeholder="0.00"
-                  className="bg-background/50"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Date *</Label>
-                <Input
-                  type="date"
-                  value={formData.txn_date}
-                  onChange={(e) =>
-                    setFormData({ ...formData, txn_date: e.target.value })
-                  }
-                  className="bg-background/50"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Category *</Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(v) => setFormData({ ...formData, category: v })}
-                >
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((cat) => (
+                    {allCategories.map((cat) => (
                       <SelectItem key={cat} value={cat}>
                         {cat}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger className="w-[120px] bg-background/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="income">Income</SelectItem>
+                    <SelectItem value="expense">Expense</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-[140px] bg-background/50"
+                    placeholder="From"
+                  />
+                  <span className="text-muted-foreground">to</span>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-[140px] bg-background/50"
+                    placeholder="To"
+                  />
+                </div>
+
+                <Button variant="outline" onClick={exportPDF} disabled={exportingPdf}>
+                  <Download className="h-4 w-4 mr-2" />
+                  {exportingPdf ? 'Exporting...' : 'Export PDF'}
+                </Button>
+
+
+                {canEdit && (
+                  <Button onClick={handleOpenAddDialog}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Record
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/50 backdrop-blur-sm border-border">
+            <CardHeader>
+              <CardTitle>Audit Summary Instructions</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground space-y-3">
+              <div>Use the filters above to prepare the event-wise ledger summary.</div>
+              <div>
+                Click <span className="font-medium text-foreground">Upload Audit PDF</span> to generate the filtered PDF
+                and save it in the Audit page.
+              </div>
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setAuditDialogOpen(true)}
+                  disabled={!canEdit || filterCategory === 'All Categories'}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Audit PDF
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Transactions Table */}
+          <Card className="bg-card/50 backdrop-blur-sm border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5 text-primary" />
+                Transactions
+                <Badge className="ml-2">{filteredTransactions.length} records</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : filteredTransactions.length === 0 ? (
+                <div className="text-center py-12">
+                  <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">No transactions found</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      {canEdit && <TableHead className="w-[50px]"></TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTransactions.map((txn) => (
+                      <TableRow key={txn.fin_id}>
+                        <TableCell>{txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-'}</TableCell>
+                        <TableCell>
+                          <Badge
+                            className={cn(
+                              txn.exp_type === 'income'
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-red-500/20 text-red-400'
+                            )}
+                          >
+                            {txn.exp_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{txn.category}</TableCell>
+                        <TableCell className="max-w-[200px] truncate">{txn.description || '-'}</TableCell>
+                        <TableCell
+                          className={cn(
+                            'text-right font-medium',
+                            txn.exp_type === 'income' ? 'text-green-400' : 'text-red-400'
+                          )}
+                        >
+                          {txn.exp_type === 'income' ? '+' : '-'} Rs. {txn.amount.toLocaleString()}
+                        </TableCell>
+                        {canEdit && (
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleOpenEditDialog(txn)}>
+                                  <Pencil className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleConfirmDelete(txn)}
+                                  className="text-red-400"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Add/Edit Transaction Dialog */}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{editingTransaction ? 'Edit Transaction' : 'Add New Transaction'}</DialogTitle>
+              <DialogDescription>
+                {editingTransaction ? 'Update the transaction details below.' : 'Enter the details for the new finance record.'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Transaction Type *</Label>
+                  <Select
+                    value={formData.exp_type}
+                    onValueChange={(v) =>
+                      setFormData({
+                        ...formData,
+                        exp_type: v as 'income' | 'expense',
+                        party_role: v === 'income' ? 'payer' : 'payee',
+                      })
+                    }
+                  >
+                    <SelectTrigger className="bg-background/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="income">Income</SelectItem>
+                      <SelectItem value="expense">Expense</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Amount (Rs.) *</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                    placeholder="0.00"
+                    className="bg-background/50"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Date *</Label>
+                  <Input
+                    type="date"
+                    value={formData.txn_date}
+                    onChange={(e) => setFormData({ ...formData, txn_date: e.target.value })}
+                    className="bg-background/50"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Category *</Label>
+                  <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
+                    <SelectTrigger className="bg-background/50">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Description *</Label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Details about this transaction..."
+                  className="bg-background/50"
+                  rows={3}
+                />
+              </div>
+
+              {/* ✅ NEW: Receipt image upload */}
+              <div className="space-y-2">
+                <Label>Receipt Image (optional)</Label>
+
+                {editingTransaction?.photo_path && !receiptFile && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" />
+                    <span>Existing receipt attached.</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    className="bg-background/50"
+                    onChange={(e) => handleReceiptChange(e.target.files?.[0] ?? null)}
+                  />
+                  {receiptFile && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleReceiptChange(null)}
+                      title="Remove"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+
+                {receiptPreviewUrl && (
+                  <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/40">
+                    <img src={receiptPreviewUrl} alt="Receipt preview" className="w-full h-48 object-contain" />
+                  </div>
+                )}
+
+                {!receiptPreviewUrl && existingReceiptUrl && (
+                  <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/40">
+                    <img src={existingReceiptUrl} alt="Existing receipt" className="w-full h-48 object-contain" />
+                  </div>
+                )}
+
+                {!receiptPreviewUrl && existingReceiptLoading && (
+                  <div className="mt-2 text-xs text-muted-foreground">Loading receipt...</div>
+                )}
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Description *</Label>
-              <Textarea
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                placeholder="Details about this transaction..."
-                className="bg-background/50"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCloseDialog}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveTransaction} disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
-                </>
-              ) : editingTransaction ? (
-                'Update Transaction'
-              ) : (
-                'Add Transaction'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={handleCloseDialog} disabled={saving || receiptUploading}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveTransaction} disabled={saving || receiptUploading}>
+                {saving || receiptUploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {receiptUploading ? 'Uploading...' : 'Saving...'}
+                  </>
+                ) : editingTransaction ? (
+                  'Update Transaction'
+                ) : (
+                  'Add Transaction'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Transaction</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this transaction? This action cannot be undone.
-              {transactionToDelete && (
-                <div className="mt-4 p-3 bg-muted rounded-lg">
-                  <p className="text-sm">
-                    <strong>Category:</strong> {transactionToDelete.category}
-                  </p>
-                  <p className="text-sm">
-                    <strong>Amount:</strong> Rs. {transactionToDelete.amount.toLocaleString()}
-                  </p>
-                  <p className="text-sm">
-                    <strong>Date:</strong>{' '}
-                    {transactionToDelete.txn_date ? new Date(transactionToDelete.txn_date).toLocaleDateString() : '-'}
-                  </p>
-                </div>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteTransaction}
-              disabled={deleting}
-              className="bg-red-500 hover:bg-red-600"
-            >
-              {deleting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <Dialog open={auditDialogOpen} onOpenChange={setAuditDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Upload Audit Summary</DialogTitle>
+              <DialogDescription>
+                This will generate a PDF from the current filters and save it to the Audit page.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="audit-event">Event Name *</Label>
+                <Input
+                  id="audit-event"
+                  value={auditEventName}
+                  onChange={(e) => setAuditEventName(e.target.value)}
+                  placeholder="Enter event name"
+                  className="bg-background/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="audit-year">Committee Year *</Label>
+                <Input
+                  id="audit-year"
+                  type="number"
+                  value={auditYear}
+                  onChange={(e) => setAuditYear(Number(e.target.value))}
+                  className="bg-background/50"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAuditDialogOpen(false)} disabled={auditUploading}>
+                Cancel
+              </Button>
+              <Button onClick={handleUploadAuditPdf} disabled={auditUploading}>
+                {auditUploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  'Upload PDF'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Transaction</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this transaction? This action cannot be undone.
+                {transactionToDelete && (
+                  <div className="mt-4 p-3 bg-muted rounded-lg">
+                    <p className="text-sm">
+                      <strong>Category:</strong> {transactionToDelete.category}
+                    </p>
+                    <p className="text-sm">
+                      <strong>Amount:</strong> Rs. {transactionToDelete.amount.toLocaleString()}
+                    </p>
+                    <p className="text-sm">
+                      <strong>Date:</strong>{' '}
+                      {transactionToDelete.txn_date ? new Date(transactionToDelete.txn_date).toLocaleDateString() : '-'}
+                    </p>
+                  </div>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteTransaction}
+                disabled={deleting}
+                className="bg-red-500 hover:bg-red-600"
+              >
+                {deleting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </PermissionGate>
   );

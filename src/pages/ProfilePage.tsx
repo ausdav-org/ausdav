@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   User,
@@ -69,6 +69,44 @@ const SpaceOverlay: React.FC<{ opacity?: number }> = ({ opacity = 0.35 }) => {
         <circle key={i} cx={cx} cy={cy} r={r} fill="white" opacity={o} />
       ))}
     </svg>
+  );
+};
+
+const IconUser = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+    <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-4.418 0-8 2.239-8 5v1h16v-1c0-2.761-3.582-5-8-5z" />
+  </svg>
+);
+
+const ImageAvatar: React.FC<{ photo?: string; alt?: string; isDark: boolean }> = ({ photo, alt, isDark }) => {
+  const [imgOk, setImgOk] = useState<boolean>(!!photo);
+
+  return (
+    <div className="relative">
+      {imgOk && photo ? (
+        <div className="w-28 h-28 rounded-full p-[2px] bg-gradient-to-br from-cyan-400/70 via-sky-500/70 to-indigo-500/70 shadow">
+          <img
+            src={photo}
+            alt={alt}
+            className="w-full h-full rounded-full object-cover"
+            onError={() => setImgOk(false)}
+          />
+        </div>
+      ) : (
+        <div className="w-28 h-28 rounded-full p-[2px] bg-gradient-to-br from-cyan-400/70 to-indigo-500/70 flex items-center justify-center shadow">
+          <div
+            className={cn(
+              'w-14 h-14 rounded-full flex items-center justify-center',
+              isDark ? 'bg-white/10 text-white' : 'bg-white/20 text-black'
+            )}
+          >
+            <IconUser />
+          </div>
+        </div>
+      )}
+
+      <div className="absolute -inset-3 rounded-full blur-2xl bg-cyan-500/20" />
+    </div>
   );
 };
 
@@ -169,16 +207,7 @@ const ProfilePage: React.FC = () => {
             )}
           >
             <div className="flex flex-col items-center text-center">
-              <div className="relative">
-                <div className="w-28 h-28 rounded-full p-[2px] bg-gradient-to-br from-cyan-400/70 via-sky-500/70 to-indigo-500/70 shadow">
-                  <img
-                    src={profile.photo}
-                    alt={profile.fullName}
-                    className="w-full h-full rounded-full object-cover"
-                  />
-                </div>
-                <div className="absolute -inset-3 rounded-full blur-2xl bg-cyan-500/20" />
-              </div>
+                <ImageAvatar photo={profile.photo} alt={profile.fullName} isDark={isDark} />
 
               <h2 className={cn('mt-5 text-2xl md:text-3xl font-serif font-bold', textMain)}>
                 {profile.fullName}

@@ -123,7 +123,7 @@ export const usePermissionRequests = () => {
       const { data: admins, error: adminsError } = await supabase
         .from('members')
         .select('auth_user_id, mem_id, fullname, username, role')
-        .eq('role', 'admin')
+        .in('role', ['admin', 'super_admin'])
         .not('auth_user_id', 'is', null);
 
       if (adminsError) throw adminsError;
