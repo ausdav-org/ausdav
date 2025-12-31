@@ -116,6 +116,8 @@ export function AdminSidebar() {
 
     // For admin, check if they have the required permission
     if (role === 'admin' && item.permissionKey) {
+      // Allow admins to view the Feedback portal even if they don't have the granular 'feedback' grant.
+      if (item.permissionKey === 'feedback') return true;
       return hasPermission(item.permissionKey);
     }
 
@@ -126,7 +128,6 @@ export function AdminSidebar() {
 
     return true;
   });
-  
 
   return (
     <motion.aside
@@ -147,7 +148,17 @@ export function AdminSidebar() {
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
                 <span className="text-primary-foreground font-bold text-sm">A</span>
               </div>
-              <span className="font-semibold text-foreground">AUSDAV Admin</span>
+              <span className="font-semibold text-foreground">
+                {role === 'super_admin'
+                  ? 'AUSDAV Super Admin'
+                  : role === 'admin'
+                    ? 'AUSDAV Admin'
+                    : role === 'member'
+                      ? 'AUSDAV Member'
+                      : role === 'honourable'
+                        ? 'AUSDAV Honourable'
+                        : 'AUSDAV'}
+              </span>
             </motion.div>
           )}
         </AnimatePresence>

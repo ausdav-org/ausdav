@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Sun, Moon, Globe, Heart, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -11,20 +11,94 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 const PROFILE_IMG = '/ausdav/src/assets/Committee/2022/Ruthu.jpg';
 
 const Navbar: React.FC = () => {
   const [scrolled, setScrolled] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [hasUser, setHasUser] = useState(false);
+  const [userLabel, setUserLabel] = useState('');
   const { language, setLanguage, t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAvatarForUser = async (userId: string) => {
+      const { data: member } = await supabase
+        .from('members')
+        .select('fullname, profile_bucket, profile_path')
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+
+      if (isMounted && member?.fullname) setUserLabel(member.fullname);
+
+      if (!member?.profile_path) {
+        if (isMounted) setAvatarUrl(null);
+        return;
+      }
+
+      const bucket = member.profile_bucket || 'member-profiles';
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(member.profile_path, 60 * 60);
+
+      if (isMounted) {
+        setAvatarUrl(error ? null : data?.signedUrl ?? null);
+      }
+    };
+
+    const loadFromSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId) {
+        if (isMounted) {
+          setAvatarUrl(null);
+          setHasUser(false);
+          setUserLabel('');
+        }
+        return;
+      }
+      if (isMounted) {
+        const metaName = (session?.user?.user_metadata as any)?.full_name as string | undefined;
+        setUserLabel(metaName || session?.user?.email || '');
+      }
+      if (isMounted) setHasUser(true);
+      await loadAvatarForUser(userId);
+    };
+
+    loadFromSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const userId = session?.user?.id;
+      if (!userId) {
+        setAvatarUrl(null);
+        setHasUser(false);
+        setUserLabel('');
+        return;
+      }
+      const metaName = (session?.user?.user_metadata as any)?.full_name as string | undefined;
+      setUserLabel(metaName || session?.user?.email || '');
+      setHasUser(true);
+      loadAvatarForUser(userId);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const navLinks = [
@@ -37,6 +111,15 @@ const Navbar: React.FC = () => {
   ];
 
   const isActive = (path: string) => location.pathname === path;
+  const initials = userLabel
+    ? userLabel
+        .split(' ')
+        .filter(Boolean)
+        .map((part) => part[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase()
+    : 'U';
 
   return (
     <motion.nav
@@ -150,39 +233,46 @@ const Navbar: React.FC = () => {
             </DropdownMenu>
 
             {/* ✅ Profile Avatar Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="ml-1 flex items-center justify-center rounded-full p-0.5 hover:bg-primary/10 transition"
-                  aria-label="Account menu"
+            {hasUser && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="ml-1 flex items-center justify-center rounded-full p-0.5 hover:bg-primary/10 transition"
+                    aria-label="Account menu"
+                  >
+                    <Avatar className="h-8 w-8 border border-primary/20">
+                      <AvatarImage src={avatarUrl || PROFILE_IMG} alt="Profile" />
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                </DropdownMenuTrigger>
+
+                <DropdownMenuContent
+                  align="end"
+                  className="glass-card w-40 p-1.5 border border-white/20 shadow-xl"
                 >
-                  <img
-                    src={PROFILE_IMG}
-                    alt="Profile"
-                    className="w-8 h-8 rounded-full object-cover border border-primary/20"
-                  />
-                </button>
-              </DropdownMenuTrigger>
+                  {/* ?o. FIXED: use route path */}
+                  <DropdownMenuItem asChild className="cursor-pointer rounded-md">
+                    <Link to="/profile" className="w-full px-2 py-1.5">
+                      Profile
+                    </Link>
+                  </DropdownMenuItem>
 
-              <DropdownMenuContent
-                align="end"
-                className="glass-card w-40 p-1.5 border border-white/20 shadow-xl"
-              >
-                {/* ✅ FIXED: use route path */}
-                <DropdownMenuItem asChild className="cursor-pointer rounded-md">
-                  <Link to="/profile" className="w-full px-2 py-1.5">
-                    Profile
-                  </Link>
-                </DropdownMenuItem>
-
-                <DropdownMenuItem asChild className="cursor-pointer rounded-md">
-                  <Link to="/logout" className="w-full px-2 py-1.5">
+                  <DropdownMenuItem
+                    className="cursor-pointer rounded-md"
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      navigate('/');
+                    }}
+                  >
                     Logout
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </div>
