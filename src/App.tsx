@@ -83,7 +83,9 @@ const App = () => {
               <BrowserRouter basename={import.meta.env.BASE_URL}>
                 <Routes>
                   {/* Public routes with Layout */}
-                  <Route path="/" element={<Layout><HomePage /></Layout>} />
+                  <Route path="/signup" element={<Layout><SignupPortalPage /></Layout>} />
+                  <Route path="/login" element={<Layout><LoginPage /></Layout>} />
+                  {/* <Route path="/" element={<Layout><HomePage /></Layout>} />
                   <Route path="/about" element={<Layout><AboutPage /></Layout>} />
                   <Route path="/under-construction" element={<Layout><UnderConstructionPage /></Layout>} />
                   <Route path="/committee" element={<Layout><CommitteePage /></Layout>} />
@@ -94,7 +96,7 @@ const App = () => {
                   <Route path="/donate" element={<Layout><DonatePage /></Layout>} />
                   <Route path="/login" element={<Layout><LoginPage /></Layout>} />
                   <Route path="/signup" element={<Layout><SignupPortalPage /></Layout>} />
-                  <Route path="/register" element={<Navigate to="/signup" replace />} />
+                  <Route path="/register" element={<Navigate to="/signup" replace />} /> */}
 
                   {/* ✅ Recommended clean profile route */}
 
