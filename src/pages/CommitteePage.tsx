@@ -77,151 +77,108 @@ const IconUser = () => (
   </svg>
 );
 
-const Card = ({
-  m,
-  i,
-  lang,
-  isDark,
-}: {
-  m: Member;
-  i: number;
-  lang: Lang;
-  isDark: boolean;
-}) => {
-  const [imgOk, setImgOk] = useState<boolean>(!!m.photo);
+
+const Card = ({ m, i, lang, isDark }) => {
+  const [imgOk, setImgOk] = useState(!!m.photo);
   const name = lang === 'en' ? m.name : m.nameTA;
   const role = lang === 'en' ? m.role : m.roleTA;
-  const work = (lang === 'en' ? m.Work : m.WorkTA ?? m.Work).split(',');
 
+  
   return (
     <motion.div
-      initial={{ opacity: 0, y: 28 }}
+      key={m.id}
+      initial={{ opacity: 0, y: 30 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-80px' }}
-      transition={{ delay: i * 0.04, duration: 0.5, ease: 'easeOut' }}
-      whileHover={{ y: -6, scale: 1.01 }}
-      className={cn('glass-card rounded-2xl p-8 text-center neon-glow-hover')}
+      viewport={{ once: true }}
+      transition={{ duration: 0.6, delay: i * 0.15 }} // Keep the 'i' for staggered animation
+      whileHover={{ y: -10 }}
+      // THE COPIED TEMPLATE CLASSES BELOW:
+      className="bg-cyan-500/20 backdrop-blur-sm rounded-2xl p-8 border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300 text-center"
     >
-      {m.linkedin && (
-        <a
-          href={m.linkedin}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn('absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center transition shadow', isDark ? 'bg-white/10 text-white hover:bg-white/15' : 'bg-muted text-foreground hover:bg-muted/80')}
-          aria-label="LinkedIn Profile"
-        >
-          <IconLI />
-        </a>
-      )}
-
-      {imgOk && m.photo ? (
-        <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary to-gold-light flex items-center justify-center neon-glow">
-          <img
-            src={m.photo}
-            alt={m.role === 'Patron' ? '' : name}
-            className="w-full h-full rounded-2xl object-cover"
-            loading="lazy"
-            onError={() => setImgOk(false)}
+      {/* The Cyan Box for Photo/Initial */}
+      <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-cyan-400 flex items-center justify-center overflow-hidden">
+        {imgOk && m.photo ? (
+          <img 
+            src={m.photo} 
+            className="w-full h-full object-cover" 
+            onError={() => setImgOk(false)} 
           />
-        </div>
-      ) : (
-        <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary to-gold-light flex items-center justify-center neon-glow">
-          <span className="text-3xl font-bold text-primary-foreground">
+        ) : (
+          <span className="text-3xl font-bold text-slate-900">
             {name.charAt(0)}
           </span>
-        </div>
-      )}
+        )}
+      </div>
 
-      <h3 className={cn('font-bold text-xl mb-1', isDark ? 'text-white' : '')}>
+      {/* The Text Content */}
+      <h3 className="font-bold text-xl mb-1 text-white">
         {name}
       </h3>
-      <p className={cn('text-primary font-medium mb-2', isDark ? 'text-cyan-200/90' : '')}>
+      <p className="text-cyan-400 font-medium mb-2">
         {role}
       </p>
-
-      <p className={cn('text-sm text-muted-foreground')}> 
-        {work.map((t, idx) => (
-          <React.Fragment key={idx}>
-            {t.trim()}
-            {idx < work.length - 1 && <br />}
-          </React.Fragment>
-        ))}
+      <p className="text-sm text-slate-400">
+        {m.Work}
       </p>
     </motion.div>
   );
 };
 
-const Section = ({
-  title,
-  sub,
-  members,
-  cols = 'grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6',
-  gradient = true,
-  lang,
-  isDark,
-}: {
-  title: string;
-  sub?: string;
-  members: Member[];
-  cols?: string;
-  gradient?: boolean;
-  lang: Lang;
+
+const Section = ({ 
+  title, 
+  sub, 
+  members, 
+  lang, 
+  isDark 
+}: { 
+  title: string; 
+  sub?: string; 
+  members: any[]; 
+  lang: string;
   isDark: boolean;
 }) => {
-  if (!members.length) return null;
+  if (!members || members.length === 0) return null;
 
   return (
-    <>
-      <section
-        className={gradient ? 'py-14 md:py-20' : 'py-10'}
-        style={
-          gradient
-            ? {
-                background:
-                  'radial-gradient(900px 300px at 50% 0%, rgba(34,211,238,.18), transparent 60%), radial-gradient(900px 300px at 50% 100%, rgba(99,102,241,.16), transparent 65%)',
-              }
-            : undefined
-        }
-      >
-        <div className="container mx-auto px-4 text-center max-w-4xl">
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.45 }}
-          >
-            <div
-              className={cn(
-                'inline-flex items-center gap-3 px-5 py-2 rounded-full border backdrop-blur-md shadow',
-                isDark ? 'border-white/10 bg-white/5' : 'border-border/60 bg-card/70'
-              )}
-            >
-              <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,.8)]" />
-              <h2 className={cn('text-3xl md:text-4xl font-serif font-bold', isDark ? 'text-white' : 'text-foreground')}>
-                {title}
-              </h2>
-            </div>
-            {sub && (
-              <p className={cn('mt-4 text-base md:text-lg', isDark ? 'text-white/70' : 'text-muted-foreground')}>
-                {sub}
-              </p>
-            )}
-          </motion.div>
-        </div>
-      </section>
-
-      <section className="py-12 md:py-16">
-        <div className="container mx-auto px-4">
-          <div className={cols}>
-            {members.map((m, i) => (
-              <Card key={m.id} m={m} i={i} lang={lang} isDark={isDark} />
-            ))}
+    <section className="py-20 relative">
+      <div className="container mx-auto px-4">
+        {/* HEADER AREA */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-16 space-y-4"
+        >
+          {/* THE PILL SHAPE HEADER (Matches your image) */}
+          <div className="inline-flex items-center gap-3 px-6 py-2 rounded-full border border-cyan-500/30 bg-slate-800/40 backdrop-blur-md shadow-[0_0_20px_rgba(34,211,238,0.1)]">
+            {/* The Glowing Cyan Dot */}
+            <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.8)] animate-pulse" />
+            
+            <h2 className="text-xl md:text-2xl font-bold tracking-wide text-white">
+              {title}
+            </h2>
           </div>
+
+          {/* SUBTITLE (The smaller text below the title) */}
+          {sub && (
+            <p className="text-slate-400 text-sm md:text-base max-w-xl mx-auto italic">
+              {sub}
+            </p>
+          )}
+        </motion.div>
+
+        {/* GRID AREA (The container for your cards) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl mx-auto">
+          {members.map((m, i) => (
+            <Card key={m.id || i} m={m} i={i} lang={lang} isDark={isDark} />
+          ))}
         </div>
-      </section>
-    </>
+      </div>
+    </section>
   );
 };
+
 
 type Block = { tEn: string; tTa: string; sEn?: string; sTa?: string; members: Member[]; cols?: string; gradient?: boolean };
 type Page = { year: number; blocks: Block[] };
@@ -372,11 +329,9 @@ const CommitteePage: React.FC = () => {
         const bDes = b.designation || '';
         const orderDiff = (designationOrder[aDes] || 99) - (designationOrder[bDes] || 99);
         if (orderDiff !== 0) return orderDiff;
-        // If same designation, sort by name
         return a.fullname.localeCompare(b.fullname);
       });
 
-      // Organize members by designation type
       const execMembers: Member[] = [];
       const repMembers: Member[] = [];
       const eduMembers: Member[] = [];
@@ -389,7 +344,6 @@ const CommitteePage: React.FC = () => {
         if (EXEC_DESIGNATIONS.includes(designation)) {
           execMembers.push(member);
         } else if (designation === 'university_representative') {
-          // For representatives, use university name as role
           member.role = memberRow.university;
           member.roleTA = memberRow.university;
           repMembers.push(member);
@@ -407,46 +361,13 @@ const CommitteePage: React.FC = () => {
           sEn: 'Meet the dedicated team guiding AUSDAV',
           sTa: 'AUSDAV ஐ வழிநடத்தும் அர்ப்பணிப்பு குழுவை சந்திக்கவும்',
           members: patronsMembers,
-          cols: 'grid sm:grid-cols-2 lg:grid-cols-4 gap-6',
-          gradient: true,
         },
       ];
 
-      if (execMembers.length > 0) {
-        blocks.push({
-          tEn: TITLES.exec.en,
-          tTa: TITLES.exec.ta,
-          members: execMembers,
-          gradient: true,
-        });
-      }
-
-      if (repMembers.length > 0) {
-        blocks.push({
-          tEn: TITLES.reps.en,
-          tTa: TITLES.reps.ta,
-          members: repMembers,
-          gradient: true,
-        });
-      }
-
-      if (eduMembers.length > 0) {
-        blocks.push({
-          tEn: TITLES.edu.en,
-          tTa: TITLES.edu.ta,
-          members: eduMembers,
-          gradient: true,
-        });
-      }
-
-      if (genMembers.length > 0) {
-        blocks.push({
-          tEn: TITLES.gen.en,
-          tTa: TITLES.gen.ta,
-          members: genMembers,
-          gradient: true,
-        });
-      }
+      if (execMembers.length > 0) blocks.push({ tEn: TITLES.exec.en, tTa: TITLES.exec.ta, members: execMembers });
+      if (repMembers.length > 0) blocks.push({ tEn: TITLES.reps.en, tTa: TITLES.reps.ta, members: repMembers });
+      if (eduMembers.length > 0) blocks.push({ tEn: TITLES.edu.en, tTa: TITLES.edu.ta, members: eduMembers });
+      if (genMembers.length > 0) blocks.push({ tEn: TITLES.gen.en, tTa: TITLES.gen.ta, members: genMembers });
 
       return { year: batch, blocks };
     });
@@ -455,14 +376,13 @@ const CommitteePage: React.FC = () => {
   const [idx, setIdx] = useState(0);
   const cur = pages[idx] || pages[0];
 
-  const bgStyle = useMemo(
-    () => ({
-      background: isDark
-        ? 'linear-gradient(180deg, #050914 0%, #070B18 40%, #050812 100%)'
-        : 'linear-gradient(180deg, rgba(236,254,255,1) 0%, rgba(239,246,255,1) 40%, rgba(255,255,255,1) 100%)',
-    }),
-    [isDark]
-  );
+  const bgStyle = {
+    background: isDark
+      ? `radial-gradient(circle at 0% 0%, rgba(34, 211, 238, 0.08) 0%, transparent 50%),
+         radial-gradient(circle at 100% 100%, rgba(34, 211, 238, 0.08) 0%, transparent 50%),
+         linear-gradient(180deg, #020617 0%, #0f172a 50%, #020617 100%)`
+      : 'linear-gradient(180deg, #ecfeff 0%, #eff6ff 40%, #ffffff 100%)',
+  };
 
   const YearBtn = ({ active, children, onClick }: { active?: boolean; children: React.ReactNode; onClick: () => void }) => (
     <motion.button
@@ -541,23 +461,21 @@ const CommitteePage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen" style={bgStyle}>
-      {cur.blocks.map((b, bi) => {
-        const membersForBlock = b.tEn === TITLES.patrons.en ? (patronsMembers.length ? patronsMembers : b.members) : b.members;
-        return (
-          <React.Fragment key={`${cur.year}-${bi}`}>
-            <Section
-              title={lang === 'en' ? b.tEn : b.tTa}
-              sub={lang === 'en' ? b.sEn : b.sTa}
-              members={membersForBlock}
-              cols={b.cols}
-              gradient={b.gradient}
-              lang={lang}
-              isDark={isDark}
-            />
-          </React.Fragment>
-        );
-      })}
+    <div className="min-h-screen relative overflow-hidden" style={bgStyle}>
+      {/* HOME PAGE GLOW EFFECTS */}
+      <div className="absolute top-0 -left-20 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 -right-20 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px] pointer-events-none" />
+
+      {cur?.blocks.map((b, bi) => (
+        <Section
+          key={`${cur.year}-${bi}`}
+          title={lang === 'en' ? b.tEn : b.tTa}
+          sub={lang === 'en' ? b.sEn : b.sTa}
+          members={b.members}
+          lang={lang}
+          isDark={isDark}
+        />
+      ))}
 
       <div className="flex items-center justify-center gap-2 pb-14">
         {pages.map((p, i) => (
