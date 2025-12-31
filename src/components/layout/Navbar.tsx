@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
+const PROFILE_IMG = '/ausdav/src/assets/Committee/2022/Ruthu.jpg';
+
 const Navbar: React.FC = () => {
   const [scrolled, setScrolled] = useState(false);
   const { language, setLanguage, t } = useLanguage();
@@ -40,22 +42,17 @@ const Navbar: React.FC = () => {
     <motion.nav
       initial={{ y: -100 }}
       animate={{ y: 0 }}
-      transition={{ duration: 0.6, ease: "easeOut" }}
+      transition={{ duration: 0.6, ease: 'easeOut' }}
       className={cn(
-        "fixed top-0 left-0 right-0 z-50 transition-all duration-500",
-        scrolled 
-          ? "glass-card shadow-lg"
-          : "bg-transparent"
+        'fixed top-0 left-0 right-0 z-50 transition-all duration-500',
+        scrolled ? 'glass-card shadow-lg' : 'bg-transparent'
       )}
     >
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-20">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3 group">
-            <motion.div 
-              whileHover={{ scale: 1.05, rotate: 5 }}
-              className="relative"
-            >
+            <motion.div whileHover={{ scale: 1.05, rotate: 5 }} className="relative">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center neon-glow">
                 <Sparkles className="w-6 h-6 text-primary-foreground" />
               </div>
@@ -79,10 +76,8 @@ const Navbar: React.FC = () => {
                 <Link
                   to={link.href}
                   className={cn(
-                    "relative px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300",
-                    isActive(link.href)
-                      ? "text-primary"
-                      : "text-foreground/70 hover:text-foreground"
+                    'relative px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300',
+                    isActive(link.href) ? 'text-primary' : 'text-foreground/70 hover:text-foreground'
                   )}
                 >
                   {link.label}
@@ -90,7 +85,7 @@ const Navbar: React.FC = () => {
                     <motion.div
                       layoutId="activeNav"
                       className="absolute inset-0 bg-primary/10 rounded-lg border border-primary/20"
-                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                      transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
                     />
                   )}
                 </Link>
@@ -122,11 +117,7 @@ const Navbar: React.FC = () => {
                 animate={{ rotate: 0, opacity: 1 }}
                 transition={{ duration: 0.3 }}
               >
-                {theme === 'light' ? (
-                  <Moon className="w-5 h-5" />
-                ) : (
-                  <Sun className="w-5 h-5" />
-                )}
+                {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
               </motion.div>
             </Button>
 
@@ -139,37 +130,61 @@ const Navbar: React.FC = () => {
                   className="text-foreground/70 hover:text-primary hover:bg-primary/10 gap-1.5"
                 >
                   <Globe className="w-4 h-4" />
-                  <span className="text-xs font-bold uppercase">
-                    {language === 'en' ? 'EN' : 'TA'}
-                  </span>
+                  <span className="text-xs font-bold uppercase">{language === 'en' ? 'EN' : 'TA'}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="glass-card">
                 <DropdownMenuItem
                   onClick={() => setLanguage('en')}
-                  className={cn(
-                    "cursor-pointer",
-                    language === 'en' && "text-primary bg-primary/10"
-                  )}
+                  className={cn('cursor-pointer', language === 'en' && 'text-primary bg-primary/10')}
                 >
                   English
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setLanguage('ta')}
-                  className={cn(
-                    "cursor-pointer font-tamil",
-                    language === 'ta' && "text-primary bg-primary/10"
-                  )}
+                  className={cn('cursor-pointer font-tamil', language === 'ta' && 'text-primary bg-primary/10')}
                 >
                   தமிழ்
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Mobile Menu Button - hidden since we use floating nav widget */}
+            {/* ✅ Profile Avatar Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="ml-1 flex items-center justify-center rounded-full p-0.5 hover:bg-primary/10 transition"
+                  aria-label="Account menu"
+                >
+                  <img
+                    src={PROFILE_IMG}
+                    alt="Profile"
+                    className="w-8 h-8 rounded-full object-cover border border-primary/20"
+                  />
+                </button>
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent
+                align="end"
+                className="glass-card w-40 p-1.5 border border-white/20 shadow-xl"
+              >
+                {/* ✅ FIXED: use route path */}
+                <DropdownMenuItem asChild className="cursor-pointer rounded-md">
+                  <Link to="/profile" className="w-full px-2 py-1.5">
+                    Profile
+                  </Link>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem asChild className="cursor-pointer rounded-md">
+                  <Link to="/logout" className="w-full px-2 py-1.5">
+                    Logout
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
-
       </div>
     </motion.nav>
   );

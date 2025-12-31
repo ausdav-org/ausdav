@@ -4,25 +4,34 @@ import { supabase } from '@/integrations/supabase/client';
 
 type AppRole = 'member' | 'honourable' | 'admin' | 'super_admin';
 
-interface Profile {
-  id: string;
-  user_id: string;
-  full_name: string;
-  email: string;
-  phone: string | null;
-  batch: string | null;
-  avatar_url: string | null;
-  is_active: boolean;
-  can_submit_finance: boolean;
-  mfa_enabled: boolean;
+// Mirrors the new "members" table schema used by the SQL migrations.
+interface MemberProfile {
+  mem_id: number;
+  fullname: string;
+  username: string;
+  nic: string;
+  gender: boolean;
+  role: AppRole;
+  batch: number;
+  university: string;
+  uni_degree?: string | null;
+  school: string;
+  phone: string;
+  designation: string;
+  auth_user_id: string | null;
+  profile_bucket: string;
+  profile_path: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface AdminAuthContextType {
   user: User | null;
   session: Session | null;
-  profile: Profile | null;
+  profile: MemberProfile | null;
   role: AppRole | null;
   loading: boolean;
+  needsProfileSetup: boolean;
   isAdmin: boolean;
   isSuperAdmin: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -35,91 +44,55 @@ const AdminAuthContext = createContext<AdminAuthContextType | undefined>(undefin
 export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
+  const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserData = async (userId: string, email?: string | null, meta?: Record<string, any>) => {
+  const fetchUserData = async (userId: string) => {
     try {
-      // Fetch profile
-      const { data: profileData } = await supabase
-        .from('profiles')
+      const { data: memberData, error } = await supabase
+        .from('members')
         .select('*')
-        .eq('user_id', userId)
+        .eq('auth_user_id', userId)
         .maybeSingle();
 
-      if (profileData) {
-        setProfile(profileData as Profile);
+      if (error) throw error;
+
+      if (memberData) {
+        setProfile(memberData as MemberProfile);
+        setRole(memberData.role as AppRole);
+        setNeedsProfileSetup(false);
       } else {
-        // Self-heal: if auth user exists but profile row doesn't, create one (first-run or partial setup)
-        const { count: profilesCount } = await supabase
-          .from('profiles')
-          .select('*', { count: 'exact', head: true });
-
-        const isFirstProfile = (profilesCount ?? 0) === 0;
-        const fullNameGuess =
-          (meta?.full_name as string | undefined) ||
-          (meta?.name as string | undefined) ||
-          (email ? email.split('@')[0] : undefined) ||
-          'User';
-
-        const { data: createdProfile } = await supabase
-          .from('profiles')
-          .insert({
-            user_id: userId,
-            email: email ?? '',
-            full_name: fullNameGuess,
-            phone: null,
-            batch: null,
-            avatar_url: null,
-            is_active: isFirstProfile,
-            can_submit_finance: isFirstProfile,
-            mfa_enabled: false,
-          })
-          .select('*')
-          .maybeSingle();
-
-        if (createdProfile) {
-          setProfile(createdProfile as Profile);
+        // No members row found, check user metadata for role fallback
+        const { data: userData, error: userErr } = await supabase.auth.getUser(userId);
+        if (!userErr && userData?.user) {
+          const meta = userData.user.user_metadata;
+          let fallbackRole: AppRole | null = null;
+          if (meta?.is_super_admin === true) fallbackRole = 'super_admin';
+          else if (Array.isArray(meta?.roles) && meta.roles.includes('super_admin')) fallbackRole = 'super_admin';
+          else if (Array.isArray(meta?.roles) && meta.roles.includes('admin')) fallbackRole = 'admin';
+          
+          if (fallbackRole) {
+            setProfile(null);
+            setRole(fallbackRole);
+            setNeedsProfileSetup(false);
+            return;
+          }
         }
-      }
-
-      // Fetch role
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (roleData) {
-        setRole(roleData.role as AppRole);
-      } else {
-        // Self-heal: create a default role if missing.
-        const { count: rolesCount } = await supabase
-          .from('user_roles')
-          .select('*', { count: 'exact', head: true });
-
-        const isFirstRole = (rolesCount ?? 0) === 0;
-        const roleToAssign: AppRole = isFirstRole ? 'super_admin' : 'member';
-
-        const { data: createdRole } = await supabase
-          .from('user_roles')
-          .insert({ user_id: userId, role: roleToAssign })
-          .select('role')
-          .maybeSingle();
-
-        if (createdRole) {
-          setRole(createdRole.role as AppRole);
-        }
+        // No role found anywhere
+        setProfile(null);
+        setRole(null);
+        setNeedsProfileSetup(true);
       }
     } catch (error) {
-      console.error('Error fetching user data:', error);
+      console.error('Error fetching member data:', error);
     }
   };
 
   const refreshProfile = async () => {
     if (user) {
-      await fetchUserData(user.id, user.email, user.user_metadata as Record<string, any>);
+      await fetchUserData(user.id);
     }
   };
 
@@ -131,13 +104,13 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Defer Supabase calls with setTimeout
           setTimeout(() => {
-            fetchUserData(session.user.id, session.user.email, session.user.user_metadata as Record<string, any>);
+            fetchUserData(session.user!.id);
           }, 0);
         } else {
           setProfile(null);
           setRole(null);
+          setNeedsProfileSetup(false);
         }
         setLoading(false);
       }
@@ -148,7 +121,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchUserData(session.user.id, session.user.email, session.user.user_metadata as Record<string, any>);
+        fetchUserData(session.user.id);
       }
       setLoading(false);
     });
@@ -183,6 +156,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         role,
         loading,
+        needsProfileSetup,
         isAdmin,
         isSuperAdmin,
         signIn,

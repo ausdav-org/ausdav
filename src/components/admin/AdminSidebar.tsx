@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,28 +15,57 @@ import {
   DollarSign,
   Megaphone,
   Shield,
+  Phone,
+  GraduationCap,
+  BookOpen,
+  UserPlus,
+  HandHelping,
+  TrendingUp, // ✅ added for Results page icon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import { useAdminGrantedPermissions } from '@/hooks/useAdminGrantedPermissions';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
 
 interface NavItem {
   title: string;
   href: string;
   icon: React.ElementType;
   roles: string[];
+  permissionKey?: string; // Required permission for admins
 }
 
 const navItems: NavItem[] = [
   { title: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard, roles: ['admin', 'super_admin'] },
   { title: 'Profile', href: '/admin/profile', icon: User, roles: ['member', 'honourable', 'admin', 'super_admin'] },
-  { title: 'Members', href: '/admin/members', icon: Users, roles: ['admin', 'super_admin'] },
-  { title: 'Events', href: '/admin/events', icon: CalendarDays, roles: ['admin', 'super_admin'] },
+
+  { title: 'Members', href: '/admin/members', icon: Users, roles: ['admin', 'super_admin'], permissionKey: 'member' },
+
+  { title: 'Applicants', href: '/admin/applicants', icon: UserPlus, roles: ['member', 'admin', 'super_admin'], permissionKey: 'applicant' },
+
+  // ✅ ADDED: Results Page (uses same permissionKey as Applicants)
+  // If your route is different, just change href.
+  { title: 'Results', href: '/admin/results', icon: TrendingUp, roles: ['admin', 'super_admin'], permissionKey: 'applicant' },
+
+  { title: 'Patrons', href: '/admin/patrons', icon: UserPlus, roles: ['super_admin'] },
+  { title: 'Designations', href: '/admin/designations', icon: User, roles: ['super_admin'] },
+
+  { title: 'Events', href: '/admin/events', icon: CalendarDays, roles: ['admin', 'super_admin'], permissionKey: 'events' },
+  { title: 'Exam', href: '/admin/exam', icon: GraduationCap, roles: ['admin', 'super_admin'], permissionKey: 'exam' },
+  { title: 'Seminar', href: '/admin/seminar', icon: BookOpen, roles: ['admin', 'super_admin'], permissionKey: 'seminar' },
+
   { title: 'Submit Finance', href: '/admin/finance/submit', icon: Receipt, roles: ['member'] },
-  { title: 'Verify Finance', href: '/admin/finance/verify', icon: CheckSquare, roles: ['admin', 'super_admin'] },
-  { title: 'Finance Ledger', href: '/admin/finance/ledger', icon: DollarSign, roles: ['admin', 'super_admin'] },
-  { title: 'Announcements', href: '/admin/announcements', icon: Megaphone, roles: ['admin', 'super_admin'] },
+  { title: 'Verify Finance', href: '/admin/finance/verify', icon: CheckSquare, roles: ['admin', 'super_admin'], permissionKey: 'finance' },
+  { title: 'Finance Ledger', href: '/admin/finance/ledger', icon: DollarSign, roles: ['admin', 'super_admin'], permissionKey: 'finance' },
+
+  { title: 'Announcements', href: '/admin/announcements', icon: Megaphone, roles: ['admin', 'super_admin'], permissionKey: 'announcement' },
+
+  { title: 'Feedback', href: '/admin/feedback', icon: Megaphone, roles: ['admin', 'super_admin'], permissionKey: 'feedback' },
+
+  { title: 'Claim Permission', href: '/admin/claim-permission', icon: HandHelping, roles: ['admin'] },
   { title: 'Permissions', href: '/admin/permissions', icon: Shield, roles: ['super_admin'] },
+  { title: 'Contact', href: '/admin/contact', icon: Phone, roles: ['admin', 'super_admin'] },
   { title: 'Audit Log', href: '/admin/audit', icon: FileText, roles: ['super_admin'] },
   { title: 'Settings', href: '/admin/settings', icon: Settings, roles: ['super_admin'] },
 ];
@@ -44,16 +73,57 @@ const navItems: NavItem[] = [
 export function AdminSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
-  const { role, profile } = useAdminAuth();
+  const { role, isSuperAdmin } = useAdminAuth();
+  const { hasPermission } = useAdminGrantedPermissions();
+  const [manualApplicantsOpen, setManualApplicantsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!role || role === 'admin' || role === 'super_admin') return;
+    let active = true;
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('app_settings' as any)
+          .select('allow_manual_applications')
+          .eq('id', 1)
+          .maybeSingle<{ allow_manual_applications: boolean | null }>();
+
+        if (error) throw error;
+        if (active) setManualApplicantsOpen(Boolean(data?.allow_manual_applications));
+      } catch (err) {
+        console.error('Failed to load manual applications setting', err);
+        if (active) setManualApplicantsOpen(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [role]);
 
   const filteredNavItems = navItems.filter((item) => {
     if (!role) return false;
-    // Special case: member can only see finance submit if enabled
-    if (item.href === '/admin/finance/submit' && role === 'member') {
-      return profile?.can_submit_finance;
+
+    // Check if role is allowed
+    if (!item.roles.includes(role)) return false;
+
+    // For super_admin, always show all items they have role access to
+    if (isSuperAdmin) return true;
+
+    // For admin, check if they have the required permission
+    if (role === 'admin' && item.permissionKey) {
+      return hasPermission(item.permissionKey);
     }
-    return item.roles.includes(role);
+
+    // For members, show Applicants only when manual applications are open
+    if (role === 'member' && item.href === '/admin/applicants') {
+      return manualApplicantsOpen;
+    }
+
+    return true;
   });
+  
 
   return (
     <motion.aside
@@ -89,7 +159,7 @@ export function AdminSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav className="flex-1 overflow-y-auto p-2 scrollbar-thin">
         <ul className="space-y-1">
           {filteredNavItems.map((item) => {
             const isActive = location.pathname === item.href;
@@ -133,13 +203,15 @@ export function AdminSidebar() {
               exit={{ opacity: 0 }}
               className="flex items-center gap-2"
             >
-              <div className={cn(
-                'px-2 py-1 rounded-md text-xs font-medium capitalize',
-                role === 'super_admin' && 'bg-red-500/20 text-red-400',
-                role === 'admin' && 'bg-primary/20 text-primary',
-                role === 'member' && 'bg-green-500/20 text-green-400',
-                role === 'honourable' && 'bg-yellow-500/20 text-yellow-400'
-              )}>
+              <div
+                className={cn(
+                  'px-2 py-1 rounded-md text-xs font-medium capitalize',
+                  role === 'super_admin' && 'bg-red-500/20 text-red-400',
+                  role === 'admin' && 'bg-primary/20 text-primary',
+                  role === 'member' && 'bg-green-500/20 text-green-400',
+                  role === 'honourable' && 'bg-yellow-500/20 text-yellow-400'
+                )}
+              >
                 {role.replace('_', ' ')}
               </div>
             </motion.div>

@@ -10,11 +10,19 @@ import {
   Calendar,
   FileText,
   Megaphone,
+  Settings,
+  ShieldCheck,
+  Key,
 } from 'lucide-react';
+import { useAdminGrantedPermissions } from '@/hooks/useAdminGrantedPermissions';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import invokeFunction from '@/integrations/supabase/functions';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
+// Use a loose-typed client for queries against tables not present in generated types
+const db = supabase as any;
 import { useNavigate } from 'react-router-dom';
 
 interface DashboardStats {
@@ -42,66 +50,23 @@ export default function AdminDashboardPage() {
     fetchDashboardStats();
   }, []);
 
+  const { session } = useAdminAuth();
+
   const fetchDashboardStats = async () => {
     try {
-      // Fetch member stats
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('is_active, batch');
+      setLoading(true);
+      const { data, error } = await invokeFunction('fetch-dashboard-stats', {});
+      if (error) throw error;
 
-      if (profiles) {
-        const totalMembers = profiles.length;
-        const activeMembers = profiles.filter((p) => p.is_active).length;
-
-        // Group by batch
-        const batchCounts: { [key: string]: number } = {};
-        profiles.forEach((p) => {
-          const batch = p.batch || 'Unknown';
-          batchCounts[batch] = (batchCounts[batch] || 0) + 1;
-        });
-        const membersByBatch = Object.entries(batchCounts)
-          .map(([batch, count]) => ({ batch, count }))
-          .sort((a, b) => b.count - a.count);
-
-        setStats((prev) => ({
-          ...prev,
-          totalMembers,
-          activeMembers,
-          membersByBatch,
-        }));
-      }
-
-      // Fetch pending submissions count
-      const { count: pendingCount } = await supabase
-        .from('finance_submissions')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending');
-
-      // Fetch monthly finance stats
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      const { data: transactions } = await supabase
-        .from('finance_transactions')
-        .select('txn_type, amount')
-        .gte('txn_date', startOfMonth.toISOString().split('T')[0]);
-
-      if (transactions) {
-        const monthlyIncome = transactions
-          .filter((t) => t.txn_type === 'income')
-          .reduce((sum, t) => sum + Number(t.amount), 0);
-        const monthlyExpense = transactions
-          .filter((t) => t.txn_type === 'expense')
-          .reduce((sum, t) => sum + Number(t.amount), 0);
-
-        setStats((prev) => ({
-          ...prev,
-          monthlyIncome,
-          monthlyExpense,
-          pendingSubmissions: pendingCount || 0,
-        }));
-      }
+      setStats((prev) => ({
+        ...prev,
+        totalMembers: data?.totalMembers || 0,
+        activeMembers: data?.activeMembers || 0,
+        monthlyIncome: data?.monthlyIncome || 0,
+        monthlyExpense: data?.monthlyExpense || 0,
+        pendingSubmissions: data?.pendingSubmissions || 0,
+        membersByBatch: data?.membersByBatch || [],
+      }));
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
     } finally {
@@ -144,12 +109,33 @@ export default function AdminDashboardPage() {
     },
   ];
 
-  const quickActions = [
-    { title: 'Create Announcement', icon: Megaphone, href: '/admin/announcements' },
-    { title: 'Add Event', icon: Calendar, href: '/admin/events' },
-    { title: 'Upload Past Paper', icon: FileText, href: '/admin/exams' },
-    { title: 'Verify Submissions', icon: Receipt, href: '/admin/finance/verify' },
+  const { hasPermission, loading: permissionsLoading } = useAdminGrantedPermissions();
+  const { isAdmin, isSuperAdmin } = useAdminAuth();
+
+  const actions = [
+    { title: 'Create Announcement', icon: Megaphone, href: '/admin/announcements', permission: 'announcement' },
+    { title: 'Add Event', icon: Calendar, href: '/admin/events', permission: 'events' },
+    { title: 'Upload Past Paper', icon: FileText, href: '/admin/exams', permission: 'exam' },
+    { title: 'Verify Submissions', icon: Receipt, href: '/admin/finance/verify', permission: 'finance' },
+
+    // Privileged / management actions
+    { title: 'Manage Members', icon: Users, href: '/admin/members', permission: 'member' },
+    { title: 'Manage Patrons', icon: Users, href: '/admin/patrons', permission: 'patrons' },
+    { title: 'Manage Permissions', icon: Key, href: '/admin/permissions', permission: 'permissions' },
+    { title: 'Feedback', icon: Megaphone, href: '/admin/feedback', permission: 'feedback' },
+    { title: 'Audit Log', icon: ShieldCheck, href: '/admin/audit', permission: 'audit' },
+    { title: 'Settings', icon: Settings, href: '/admin/settings', permission: 'settings' },
   ];
+
+  // While permissions are loading, show the existing actions (fallback). Once loaded,
+  // only show actions for which the admin has the required permission.
+  const visibleActions = permissionsLoading
+    ? actions
+    : actions.filter((a) => {
+        // Feedback portal should be visible to Admins and Super Admins.
+        if (a.permission === 'feedback') return isAdmin || isSuperAdmin || hasPermission(a.permission);
+        return hasPermission(a.permission);
+      });
 
   return (
     <div className="min-h-screen">
@@ -221,7 +207,7 @@ export default function AdminDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {quickActions.map((action) => (
+                {visibleActions.map((action) => (
                   <Button
                     key={action.title}
                     variant="outline"

@@ -1,66 +1,57 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Download, MapPin, Users } from 'lucide-react';
+import { Calendar, Download, MapPin, Users, FileText } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
-// Sample seminars
-const seminars = [
-  {
-    id: 1,
-    titleEN: 'A/L Exam Preparation Masterclass 2025',
-    titleTA: 'உ.த. தேர்வு தயாரிப்பு மாஸ்டர்கிளாஸ் 2025',
-    descriptionEN: 'Comprehensive preparation program covering all major subjects with expert guidance and proven strategies.',
-    descriptionTA: 'நிபுணர் வழிகாட்டுதல் மற்றும் நிரூபிக்கப்பட்ட உத்திகளுடன் அனைத்து முக்கிய பாடங்களையும் உள்ளடக்கிய விரிவான தயாரிப்பு திட்டம்.',
-    date: '2025-01-15',
-    location: 'Vavuniya University',
-    speakers: 12,
-    isUpcoming: true,
-    bookletUrl: null,
-  },
-  {
-    id: 2,
-    titleEN: 'Career Guidance Workshop',
-    titleTA: 'தொழில் வழிகாட்டுதல் பட்டறை',
-    descriptionEN: 'Explore career opportunities and learn about university admissions, scholarships, and professional pathways.',
-    descriptionTA: 'தொழில் வாய்ப்புகளை ஆராயுங்கள் மற்றும் பல்கலைக்கழக சேர்க்கைகள், உதவித்தொகைகள் மற்றும் தொழில்முறை வழிகள் பற்றி அறியுங்கள்.',
-    date: '2025-03-20',
-    location: 'Community Hall, Vavuniya',
-    speakers: 8,
-    isUpcoming: true,
-    bookletUrl: null,
-  },
-  {
-    id: 3,
-    titleEN: 'Physics Problem Solving Workshop 2024',
-    titleTA: 'இயற்பியல் சிக்கல் தீர்க்கும் பட்டறை 2024',
-    descriptionEN: 'Intensive workshop focused on solving complex physics problems with step-by-step methodologies.',
-    descriptionTA: 'படிப்படியான முறைகளுடன் சிக்கலான இயற்பியல் சிக்கல்களை தீர்ப்பதில் கவனம் செலுத்தும் தீவிர பட்டறை.',
-    date: '2024-08-15',
-    location: 'Vavuniya Central College',
-    speakers: 5,
-    isUpcoming: false,
-    bookletUrl: '#',
-  },
-  {
-    id: 4,
-    titleEN: 'Chemistry Lab Techniques Seminar 2024',
-    titleTA: 'வேதியியல் ஆய்வக நுட்பங்கள் கருத்தரங்கு 2024',
-    descriptionEN: 'Hands-on training in essential chemistry laboratory techniques and practical exam preparation.',
-    descriptionTA: 'அத்தியாவசிய வேதியியல் ஆய்வக நுட்பங்கள் மற்றும் நடைமுறை தேர்வு தயாரிப்பில் நடைமுறை பயிற்சி.',
-    date: '2024-07-10',
-    location: 'Science Lab, Vavuniya',
-    speakers: 4,
-    isUpcoming: false,
-    bookletUrl: '#',
-  },
-];
+type Seminar = {
+  sem_id: number;
+  yrs: number;
+  seminar_paper_bucket: string;
+  seminar_paper_path: string | null;
+  answers_bucket: string;
+  answers_path: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 const SeminarPage: React.FC = () => {
   const { t, language } = useLanguage();
 
-  const upcomingSeminars = seminars.filter((s) => s.isUpcoming);
-  const pastSeminars = seminars.filter((s) => !s.isUpcoming);
+  // Fetch seminars from database
+  const { data: seminars = [], isLoading: seminarsLoading } = useQuery({
+    queryKey: ['seminars'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('seminars')
+        .select('*')
+        .order('yrs', { ascending: false });
+
+      if (error) throw error;
+      return data as Seminar[];
+    },
+  });
+
+  const openDownload = (seminar: Seminar, type: 'paper' | 'answers') => {
+    const bucket = type === 'paper' ? seminar.seminar_paper_bucket : seminar.answers_bucket;
+    const path = type === 'paper' ? seminar.seminar_paper_path : seminar.answers_path;
+
+    if (!path) {
+      const typeLabel = type === 'paper' ? (language === 'en' ? 'Paper' : 'தாள்') : (language === 'en' ? 'Answers' : 'பதில்கள்');
+      toast.error(language === 'en' ? `${typeLabel} not available` : `${typeLabel} கிடைக்கவில்லை`);
+      return;
+    }
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    if (data?.publicUrl) {
+      window.open(data.publicUrl, '_blank');
+    } else {
+      toast.error(language === 'en' ? 'Download link not available' : 'பதிவிறக்க இணைப்பு கிடைக்கவில்லை');
+    }
+  };
 
   return (
     <div>
@@ -80,14 +71,14 @@ const SeminarPage: React.FC = () => {
             </h1>
             <p className="text-foreground/80 text-lg">
               {language === 'en'
-                ? 'Join our educational seminars and workshops designed to help you succeed'
-                : 'உங்கள் வெற்றிக்கு உதவ வடிவமைக்கப்பட்ட எங்கள் கல்வி கருத்தரங்குகள் மற்றும் பட்டறைகளில் சேரவும்'}
+                ? 'Download seminar papers and answers to enhance your learning'
+                : 'உங்கள் கல்வியை மேம்படுத்துவதற்கு செமினார் தாள்களை மற்றும் பதில்களை பதிவிறக்கவும்'}
             </p>
           </motion.div>
         </div>
       </section>
 
-      {/* Upcoming Seminars */}
+      {/* Seminar Papers and Answers */}
       <section className="py-16 md:py-24 bg-background">
         <div className="container mx-auto px-4">
           <motion.h2
@@ -96,96 +87,70 @@ const SeminarPage: React.FC = () => {
             viewport={{ once: true }}
             className="text-3xl font-serif font-bold text-foreground mb-8"
           >
-            {t('seminar.upcoming')}
+            {language === 'en' ? 'Seminar Resources' : 'செமினார் வளங்கள்'}
           </motion.h2>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            {upcomingSeminars.map((seminar, idx) => (
-              <motion.div
-                key={seminar.id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.1 }}
-                className="bg-card rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow"
-              >
-                <div className="h-2 bg-gradient-to-r from-secondary to-secondary/60" />
-                <div className="p-6">
-                  <div className="flex items-center gap-2 text-secondary text-sm font-medium mb-2">
-                    <Calendar className="w-4 h-4" />
-                    <span>{new Date(seminar.date).toLocaleDateString(language === 'en' ? 'en-US' : 'ta-LK', { dateStyle: 'long' })}</span>
-                  </div>
-                  <h3 className="text-xl font-serif font-bold text-foreground mb-2">
-                    {language === 'en' ? seminar.titleEN : seminar.titleTA}
-                  </h3>
-                  <p className="text-muted-foreground mb-4 line-clamp-2">
-                    {language === 'en' ? seminar.descriptionEN : seminar.descriptionTA}
-                  </p>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-4 h-4" />
-                      {seminar.location}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Users className="w-4 h-4" />
-                      {seminar.speakers} {language === 'en' ? 'Speakers' : 'பேச்சாளர்கள்'}
-                    </span>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
+          <div className="max-w-4xl mx-auto">
+            {seminarsLoading ? (
+              <div className="text-center py-8">
+                <div className="text-muted-foreground">{language === 'en' ? 'Loading seminars...' : 'செமினார்களை ஏற்றுகிறது...'}</div>
+              </div>
+            ) : seminars.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-muted-foreground">{language === 'en' ? 'No seminars available' : 'செமினார்கள் கிடைக்கவில்லை'}</div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {seminars.map((seminar) => (
+                  <motion.div
+                    key={seminar.sem_id}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    className="flex items-center justify-between p-6 bg-card rounded-xl shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center gap-4">
+                      <FileText className="w-8 h-8 text-secondary" />
+                      <div>
+                        <h3 className="text-xl font-semibold text-foreground">
+                          {language === 'en' ? `Seminar ${seminar.yrs}` : `${seminar.yrs} செமினார்`}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(seminar.created_at).toLocaleDateString(language === 'en' ? 'en-US' : 'ta-LK', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </p>
+                      </div>
+                    </div>
 
-      {/* Past Seminars */}
-      <section className="py-16 md:py-24 bg-muted">
-        <div className="container mx-auto px-4">
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-3xl font-serif font-bold text-foreground mb-8"
-          >
-            {t('seminar.past')}
-          </motion.h2>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            {pastSeminars.map((seminar, idx) => (
-              <motion.div
-                key={seminar.id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.1 }}
-                className="bg-card rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow"
-              >
-                <div className="p-6">
-                  <div className="flex items-center gap-2 text-muted-foreground text-sm mb-2">
-                    <Calendar className="w-4 h-4" />
-                    <span>{new Date(seminar.date).toLocaleDateString(language === 'en' ? 'en-US' : 'ta-LK', { dateStyle: 'long' })}</span>
-                  </div>
-                  <h3 className="text-xl font-serif font-bold text-foreground mb-2">
-                    {language === 'en' ? seminar.titleEN : seminar.titleTA}
-                  </h3>
-                  <p className="text-muted-foreground mb-4 line-clamp-2">
-                    {language === 'en' ? seminar.descriptionEN : seminar.descriptionTA}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <MapPin className="w-4 h-4" />
-                      {seminar.location}
-                    </span>
-                    {seminar.bookletUrl && (
-                      <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4 mr-1" />
-                        {t('seminar.download')}
+                    <div className="flex gap-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openDownload(seminar, 'paper')}
+                        disabled={!seminar.seminar_paper_path}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        {language === 'en' ? 'Paper' : 'தாள்'}
                       </Button>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openDownload(seminar, 'answers')}
+                        disabled={!seminar.answers_path}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        {language === 'en' ? 'Answers' : 'பதில்கள்'}
+                      </Button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </section>

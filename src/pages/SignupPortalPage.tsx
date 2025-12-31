@@ -1,0 +1,251 @@
+import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { ShieldCheck, Lock, Sparkles, ArrowRight, AlertTriangle, Loader2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { invokeFunction } from '@/integrations/supabase/functions';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { z } from 'zod';
+
+interface SignupState {
+  allow_signup: boolean;
+  updated_at: string | null;
+}
+
+const signupSchema = z.object({
+  email: z.string().email('Enter a valid email'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+const SignupPortalPage = () => {
+  const [state, setState] = useState<SignupState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [success, setSuccess] = useState('');
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const load = async () => {
+      setError(null);
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('allow_signup, updated_at')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (error) {
+        setError('Unable to load signup status. Please try again later.');
+      } else if (data) {
+        setState({ allow_signup: data.allow_signup ?? false, updated_at: data.updated_at ?? null });
+      }
+
+      setLoading(false);
+    };
+
+    load();
+  }, []);
+
+  const signupOpen = state?.allow_signup === true;
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess('');
+
+    if (!signupOpen) {
+      setError('Signups are currently locked.');
+      return;
+    }
+
+    const validation = signupSchema.safeParse({ email, password });
+    if (!validation.success) {
+      setError(validation.error.errors[0].message);
+      return;
+    }
+
+    setSubmitLoading(true);
+
+    try {
+      const { data, error: fnError } = await invokeFunction('controlled-signup', { email, password });
+
+      if (fnError) throw fnError;
+      if (!data?.userId) throw new Error('Failed to create account');
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (signInError) {
+        setSuccess('Account created. Please sign in to continue.');
+        return;
+      }
+
+      setSuccess('Account created! Redirecting to profile setup...');
+      navigate('/admin/profile-setup');
+    } catch (err: any) {
+      setError(err.message || 'Failed to create account');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative overflow-hidden min-h-[80vh] flex items-center justify-center py-16">
+      <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'var(--gradient-hero)' }} />
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute -top-10 -left-10 w-80 h-80 bg-primary/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-accent/15 rounded-full blur-3xl" />
+      </div>
+
+      <div className="relative z-10 w-full max-w-5xl px-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card border border-border/50 rounded-3xl p-10"
+        >
+          <div className="flex flex-col lg:flex-row gap-10 items-center">
+            <div className="flex-1 space-y-6">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium">
+                <Sparkles className="w-4 h-4" />
+                Controlled Sign Up
+              </div>
+
+              <div className="space-y-3">
+                <h1 className="text-3xl md:text-4xl font-bold text-foreground">Invitation-only access</h1>
+                <p className="text-muted-foreground text-lg">
+                  New accounts are created through a controlled signup. When enabled by a Super Admin, the Sign Up flow becomes available. Otherwise, signups remain locked for security.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-background/60 border border-border/60 flex items-start gap-3">
+                  <ShieldCheck className="w-5 h-5 text-primary mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-foreground">Server-enforced</p>
+                    <p className="text-sm text-muted-foreground">Even if the UI is hidden, the Edge Function blocks signups unless Super Admins enable it.</p>
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl bg-background/60 border border-border/60 flex items-start gap-3">
+                  <Lock className="w-5 h-5 text-primary mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-foreground">No public registration</p>
+                    <p className="text-sm text-muted-foreground">The Supabase Auth setting “Allow new users to sign up” is disabled to prevent bypassing the UI.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {loading ? (
+                  <Badge className="bg-muted text-muted-foreground">Checking status...</Badge>
+                ) : signupOpen ? (
+                  <Badge className="bg-green-500/15 text-green-500">Signups enabled</Badge>
+                ) : (
+                  <Badge className="bg-muted text-muted-foreground">Signups locked</Badge>
+                )}
+                {state?.updated_at && (
+                  <span className="text-xs text-muted-foreground">Updated {new Date(state.updated_at).toLocaleString()}</span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Button asChild size="lg" disabled={!signupOpen}>
+                  <Link to="/login">
+                    {loading ? (
+                      <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</span>
+                    ) : signupOpen ? (
+                      <span className="flex items-center gap-2">Proceed to Sign Up <ArrowRight className="w-4 h-4" /></span>
+                    ) : (
+                      <span className="flex items-center gap-2">Signups Locked</span>
+                    )}
+                  </Link>
+                </Button>
+                <Button variant="outline" asChild size="lg">
+                  <Link to="/login">Already have an account? Sign in</Link>
+                </Button>
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 text-destructive text-sm">
+                  <AlertTriangle className="w-4 h-4" />
+                  {error}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 w-full">
+              <div className="rounded-3xl border border-primary/20 bg-background p-6 shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="text-sm text-primary">Create your admin account</p>
+                    <h2 className="text-xl font-semibold text-foreground">Sign up with email</h2>
+                  </div>
+                  <div className={`px-4 py-2 rounded-full text-sm font-semibold ${signupOpen ? 'bg-green-500/20 text-green-500' : 'bg-border text-muted-foreground'}`}>
+                    {signupOpen ? 'Enabled' : 'Locked'}
+                  </div>
+                </div>
+
+                <form className="space-y-4" onSubmit={handleSignup}>
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
+                  {success && (
+                    <Alert className="border-green-500/40 bg-green-500/10">
+                      <AlertDescription className="text-green-500">{success}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="admin@ausdav.org"
+                      autoComplete="email"
+                      disabled={!signupOpen || submitLoading}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Min. 8 characters"
+                      autoComplete="new-password"
+                      disabled={!signupOpen || submitLoading}
+                    />
+                  </div>
+
+                  <Button type="submit" className="w-full" disabled={!signupOpen || submitLoading}>
+                    {submitLoading ? (
+                      <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Creating account...</span>
+                    ) : (
+                      <span className="flex items-center gap-2">Create & Continue <ArrowRight className="w-4 h-4" /></span>
+                    )}
+                  </Button>
+
+                  <p className="text-xs text-muted-foreground text-center">
+                    After signup, you’ll be taken to set up your member profile.
+                  </p>
+                </form>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
+export default SignupPortalPage;
