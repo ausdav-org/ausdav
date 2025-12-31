@@ -22,12 +22,32 @@
     
     <link rel="canonical" href="https://ausdav.org" />
     
-    <script type="module" crossorigin src="/ausdav/assets/index-CR5k7Aqt.js"></script>
+    <script type="text/javascript">
+      // Handle GitHub Pages 404 redirect for SPA routing
+      (function() {
+        var redirect = sessionStorage.redirect;
+        delete sessionStorage.redirect;
+        if (redirect && redirect !== window.location.pathname) {
+          window.history.replaceState(null, null, redirect);
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/ausdav/assets/index-BIR-7_TL.js"></script>
     <link rel="stylesheet" crossorigin href="/ausdav/assets/index-DWL0TN-Z.css">
   </head>
 
   <body>
     <div id="root"></div>
+    
+    <script>
+      // Store the redirect path from 404.html if it exists
+      if (window.location.search.includes('redirect=')) {
+        var redirectPath = decodeURIComponent(new URLSearchParams(window.location.search).get('redirect'));
+        sessionStorage.redirect = redirectPath;
+        // Clean up the URL and reload
+        window.history.replaceState(null, null, redirectPath);
+      }
+    </script>
     
   </body>
 </html>
