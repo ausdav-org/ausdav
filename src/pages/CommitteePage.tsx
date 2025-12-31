@@ -1,12 +1,13 @@
-import React, { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { motion } from 'framer-motion';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { useTheme } from '@/contexts/ThemeContext';
-import { cn } from '@/lib/utils';
+import React, { useMemo, useState, ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { motion } from "framer-motion";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useTheme } from "@/contexts/ThemeContext";
+import { cn } from "@/lib/utils";
+import BG1 from "@/assets/AboutUs/BG1.jpg";
 
-type Lang = 'en' | 'ta';
+type Lang = "en" | "ta";
 type Member = {
   id: string | number;
   role: string;
@@ -21,37 +22,37 @@ type Member = {
 
 // Map database designation enum to display roles
 const DESIGNATION_TO_ROLE: Record<string, { en: string; ta: string }> = {
-  president: { en: 'President', ta: 'தலைவர்' },
-  vice_president: { en: 'Vice President', ta: 'துணைத் தலைவர்' },
-  secretary: { en: 'Secretary', ta: 'செயலாளர்' },
-  vice_secretary: { en: 'Vice Secretary', ta: 'துணைச் செயலாளர்' },
-  treasurer: { en: 'Treasurer', ta: 'பொருளாளர்' },
-  assistant_treasurer: { en: 'Vice Treasurer', ta: 'துணைப் பொருளாளர்' },
-   editor: { en: 'Editor', ta: 'ஊடக தலைவர்' },
-   web_designer: { en: 'Web Developer', ta: 'இணைய நிர்வாகி' },
-  general_committee_member: { en: 'General', ta: 'பொது' },
-  education_committee_member: { en: 'Education', ta: 'கல்வி' },
-  university_representative: { en: 'Representative', ta: 'பல்கலை பிரதிநிதி' },
+  president: { en: "President", ta: "தலைவர்" },
+  vice_president: { en: "Vice President", ta: "துணைத் தலைவர்" },
+  secretary: { en: "Secretary", ta: "செயலாளர்" },
+  vice_secretary: { en: "Vice Secretary", ta: "துணைச் செயலாளர்" },
+  treasurer: { en: "Treasurer", ta: "பொருளாளர்" },
+  assistant_treasurer: { en: "Vice Treasurer", ta: "துணைப் பொருளாளர்" },
+  editor: { en: "Editor", ta: "ஊடக தலைவர்" },
+  web_designer: { en: "Web Developer", ta: "இணைய நிர்வாகி" },
+  general_committee_member: { en: "General", ta: "பொது" },
+  education_committee_member: { en: "Education", ta: "கல்வி" },
+  university_representative: { en: "Representative", ta: "பல்கலை பிரதிநிதி" },
 };
 
 const TITLES = {
-  patrons: { en: 'Patrons Of AUSDAV', ta: 'AUSDAV ஆதரவாளர்கள்' },
-  exec: { en: 'Executive Committee', ta: 'நிர்வாக குழு' },
-  reps: { en: 'Representative', ta: 'பல்கலை பிரதிநிதிகள்' },
-  edu: { en: 'Education', ta: 'கல்வி' },
-  gen: { en: 'General', ta: 'பொது' },
+  patrons: { en: <>Patrons Of <span className="text-cyan-400">AUSDAV</span></>, ta: "AUSDAV ஆதரவாளர்கள்" },
+  exec: { en: <>Executive <span className="text-cyan-400">Committee</span></>, ta: "நிர்வாக குழு" },
+  reps: { en: <><span className="text-cyan-400">Representative</span></>, ta: "பல்கலை பிரதிநிதிகள்" },
+  edu: { en: <><span className="text-cyan-400">Education</span></>, ta: "கல்வி" },
+  gen: { en: <><span className="text-cyan-400">General</span></>, ta: "பொது" },
 };
 
 // Executive committee designations
 const EXEC_DESIGNATIONS = [
-  'president',
-  'vice_president',
-  'secretary',
-  'vice_secretary',
-  'treasurer',
-  'assistant_treasurer',
-  'editor',
-  'web_designer',
+  "president",
+  "vice_president",
+  "secretary",
+  "vice_secretary",
+  "treasurer",
+  "assistant_treasurer",
+  "editor",
+  "web_designer",
 ];
 
 type MemberRow = {
@@ -66,13 +67,23 @@ type MemberRow = {
 };
 
 const IconLI = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className="w-4 h-4"
+  >
     <path d="M20.447 20.452H17.21v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.078V9h3.112v1.561h.044c.434-.823 1.494-1.692 3.073-1.692 3.287 0 3.894 2.164 3.894 4.977v6.606zM5.337 7.433a1.814 1.814 0 110-3.628 1.814 1.814 0 010 3.628zM6.956 20.452H3.716V9h3.24v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.727v20.545C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.273V1.727C24 .774 23.2 0 22.222 0z" />
   </svg>
 );
 
 const IconUser = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className="w-6 h-6"
+  >
     <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-4.418 0-8 2.239-8 5v1h16v-1c0-2.761-3.582-5-8-5z" />
   </svg>
 );
@@ -89,25 +100,30 @@ const Card = ({
   isDark: boolean;
 }) => {
   const [imgOk, setImgOk] = useState<boolean>(!!m.photo);
-  const name = lang === 'en' ? m.name : m.nameTA;
-  const role = lang === 'en' ? m.role : m.roleTA;
-  const work = (lang === 'en' ? m.Work : m.WorkTA ?? m.Work).split(',');
+  const name = lang === "en" ? m.name : m.nameTA;
+  const role = lang === "en" ? m.role : m.roleTA;
+  const work = (lang === "en" ? m.Work : m.WorkTA ?? m.Work).split(",");
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 28 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-80px' }}
-      transition={{ delay: i * 0.04, duration: 0.5, ease: 'easeOut' }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ delay: i * 0.04, duration: 0.5, ease: "easeOut" }}
       whileHover={{ y: -6, scale: 1.01 }}
-      className={cn('glass-card rounded-2xl p-8 text-center neon-glow-hover')}
+      className={cn("glass-card rounded-2xl p-8 text-center neon-glow-hover")}
     >
       {m.linkedin && (
         <a
           href={m.linkedin}
           target="_blank"
           rel="noopener noreferrer"
-          className={cn('absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center transition shadow', isDark ? 'bg-white/10 text-white hover:bg-white/15' : 'bg-muted text-foreground hover:bg-muted/80')}
+          className={cn(
+            "absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center transition shadow",
+            isDark
+              ? "bg-white/10 text-white hover:bg-white/15"
+              : "bg-muted text-foreground hover:bg-muted/80"
+          )}
           aria-label="LinkedIn Profile"
         >
           <IconLI />
@@ -118,7 +134,7 @@ const Card = ({
         <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary to-gold-light flex items-center justify-center neon-glow">
           <img
             src={m.photo}
-            alt={m.role === 'Patron' ? '' : name}
+            alt={m.role === "Patron" ? "" : name}
             className="w-full h-full rounded-2xl object-cover"
             loading="lazy"
             onError={() => setImgOk(false)}
@@ -132,14 +148,19 @@ const Card = ({
         </div>
       )}
 
-      <h3 className={cn('font-bold text-xl mb-1', isDark ? 'text-white' : '')}>
+      <h3 className={cn("font-bold text-xl mb-1", isDark ? "text-white" : "")}>
         {name}
       </h3>
-      <p className={cn('text-primary font-medium mb-2', isDark ? 'text-cyan-200/90' : '')}>
+      <p
+        className={cn(
+          "text-primary font-medium mb-2",
+          isDark ? "text-cyan-200/90" : ""
+        )}
+      >
         {role}
       </p>
 
-      <p className={cn('text-sm text-muted-foreground')}> 
+      <p className={cn("text-sm text-muted-foreground")}>
         {work.map((t, idx) => (
           <React.Fragment key={idx}>
             {t.trim()}
@@ -155,12 +176,12 @@ const Section = ({
   title,
   sub,
   members,
-  cols = 'grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6',
+  cols = "grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6",
   gradient = true,
   lang,
   isDark,
 }: {
-  title: string;
+  title: ReactNode;
   sub?: string;
   members: Member[];
   cols?: string;
@@ -173,12 +194,12 @@ const Section = ({
   return (
     <>
       <section
-        className={gradient ? 'py-14 md:py-20' : 'py-10'}
+        className={gradient ? "py-14 md:py-20" : "py-10"}
         style={
           gradient
             ? {
                 background:
-                  'radial-gradient(900px 300px at 50% 0%, rgba(34,211,238,.18), transparent 60%), radial-gradient(900px 300px at 50% 100%, rgba(99,102,241,.16), transparent 65%)',
+                  "radial-gradient(900px 300px at 50% 0%, rgba(34,211,238,.18), transparent 60%), radial-gradient(900px 300px at 50% 100%, rgba(99,102,241,.16), transparent 65%)",
               }
             : undefined
         }
@@ -192,17 +213,29 @@ const Section = ({
           >
             <div
               className={cn(
-                'inline-flex items-center gap-3 px-5 py-2 rounded-full border backdrop-blur-md shadow',
-                isDark ? 'border-white/10 bg-white/5' : 'border-border/60 bg-card/70'
+                "inline-flex items-center gap-3 px-5 py-2 rounded-full border backdrop-blur-md shadow",
+                isDark
+                  ? "border-white/10 bg-white/5"
+                  : "border-border/60 bg-card/70"
               )}
             >
               <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,.8)]" />
-              <h2 className={cn('text-3xl md:text-4xl font-serif font-bold', isDark ? 'text-white' : 'text-foreground')}>
+              <h2
+                className={cn(
+                  "text-3xl md:text-4xl font-serif font-bold",
+                  isDark ? "text-white" : "text-foreground"
+                )}
+              >
                 {title}
               </h2>
             </div>
             {sub && (
-              <p className={cn('mt-4 text-base md:text-lg', isDark ? 'text-white/70' : 'text-muted-foreground')}>
+              <p
+                className={cn(
+                  "mt-4 text-base md:text-lg",
+                  isDark ? "text-white/70" : "text-muted-foreground"
+                )}
+              >
                 {sub}
               </p>
             )}
@@ -223,14 +256,23 @@ const Section = ({
   );
 };
 
-type Block = { tEn: string; tTa: string; sEn?: string; sTa?: string; members: Member[]; cols?: string; gradient?: boolean };
+type Block = {
+  type: string;
+  tEn: ReactNode;
+  tTa: string;
+  sEn?: string;
+  sTa?: string;
+  members: Member[];
+  cols?: string;
+  gradient?: boolean;
+};
 type Page = { year: number; blocks: Block[] };
 
 const CommitteePage: React.FC = () => {
   const { language } = useLanguage();
   const { theme } = useTheme();
-  const isDark = theme === 'dark';
-  const lang: Lang = language === 'ta' ? 'ta' : 'en';
+  const isDark = theme === "dark";
+  const lang: Lang = language === "ta" ? "ta" : "en";
 
   // Fetch patrons from DB
   type PatronRow = {
@@ -245,13 +287,15 @@ const CommitteePage: React.FC = () => {
   };
 
   const { data: patronsRows } = useQuery<PatronRow[]>({
-    queryKey: ['patrons', 'public'],
+    queryKey: ["patrons", "public"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('patrons' as any)
-        .select('id, name, designation, image_paths, display_order, is_active, image_alt, linkedin_id')
-        .eq('is_active', true)
-        .order('display_order', { ascending: true });
+        .from("patrons" as any)
+        .select(
+          "id, name, designation, image_paths, display_order, is_active, image_alt, linkedin_id"
+        )
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
       if (error) throw error;
       return (data ?? []) as unknown as PatronRow[];
     },
@@ -259,19 +303,25 @@ const CommitteePage: React.FC = () => {
   });
 
   // Fetch members from DB with designations
-  const { data: membersRows, isLoading: membersLoading, error: membersError } = useQuery<MemberRow[]>({
-    queryKey: ['committee-members'],
+  const {
+    data: membersRows,
+    isLoading: membersLoading,
+    error: membersError,
+  } = useQuery<MemberRow[]>({
+    queryKey: ["committee-members"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('members')
-        .select('mem_id, fullname, designation, batch, university, uni_degree, profile_bucket, profile_path')
-        .not('designation', 'is', null)
-        .neq('designation', 'none')
-        .neq('designation', '')
-        .order('batch', { ascending: false })
-        .order('fullname', { ascending: true });
+        .from("members")
+        .select(
+          "mem_id, fullname, designation, batch, university, uni_degree, profile_bucket, profile_path"
+        )
+        .not("designation", "is", null)
+        .neq("designation", "none")
+        .neq("designation", "")
+        .order("batch", { ascending: false })
+        .order("fullname", { ascending: true });
       if (error) {
-        console.error('Error fetching committee members:', error);
+        console.error("Error fetching committee members:", error);
         throw error;
       }
       return (data ?? []) as unknown as MemberRow[];
@@ -282,17 +332,23 @@ const CommitteePage: React.FC = () => {
 
   // Map patrons to Member format
   const patronsMembers: Member[] = (patronsRows ?? []).map((p: PatronRow) => {
-    const imgPath = Array.isArray(p.image_paths) && p.image_paths.length > 0 && p.image_paths[0] ? p.image_paths[0] : null;
+    const imgPath =
+      Array.isArray(p.image_paths) &&
+      p.image_paths.length > 0 &&
+      p.image_paths[0]
+        ? p.image_paths[0]
+        : null;
     const publicUrl = imgPath
-      ? supabase.storage.from('patrons').getPublicUrl(imgPath).data?.publicUrl ?? null
+      ? supabase.storage.from("patrons").getPublicUrl(imgPath).data
+          ?.publicUrl ?? null
       : null;
     return {
       id: p.id,
-      role: 'Patron',
-      roleTA: 'ஆதரவாளர்',
+      role: "Patron",
+      roleTA: "ஆதரவாளர்",
       name: p.name,
       nameTA: p.name,
-      Work: p.designation || '',
+      Work: p.designation || "",
       photo: publicUrl,
       linkedin: p.linkedin_id || null,
     } as Member;
@@ -315,21 +371,26 @@ const CommitteePage: React.FC = () => {
 
   // Convert member row to Member format
   const mapMemberRowToMember = (row: MemberRow, lang: Lang): Member => {
-    const designation = row.designation || '';
-    const roleInfo = DESIGNATION_TO_ROLE[designation] || { en: designation, ta: designation };
-    const role = lang === 'en' ? roleInfo.en : roleInfo.ta;
-    const roleTA = lang === 'ta' ? roleInfo.ta : roleInfo.en;
+    const designation = row.designation || "";
+    const roleInfo = DESIGNATION_TO_ROLE[designation] || {
+      en: designation,
+      ta: designation,
+    };
+    const role = lang === "en" ? roleInfo.en : roleInfo.ta;
+    const roleTA = lang === "ta" ? roleInfo.ta : roleInfo.en;
 
     // Build work string from uni_degree and university
     const workParts: string[] = [];
     if (row.uni_degree) workParts.push(row.uni_degree);
     if (row.university) workParts.push(row.university);
-    const work = workParts.join(',');
+    const work = workParts.join(",");
 
     // Get photo URL if profile_path exists
     let photo: string | null = null;
     if (row.profile_path && row.profile_bucket) {
-      const { data } = supabase.storage.from(row.profile_bucket).getPublicUrl(row.profile_path);
+      const { data } = supabase.storage
+        .from(row.profile_bucket)
+        .getPublicUrl(row.profile_path);
       photo = data?.publicUrl || null;
     }
 
@@ -349,10 +410,12 @@ const CommitteePage: React.FC = () => {
   const pages: Page[] = useMemo(() => {
     if (!membersByBatch.size) return [];
 
-    const sortedBatches = Array.from(membersByBatch.keys()).sort((a, b) => b - a);
+    const sortedBatches = Array.from(membersByBatch.keys()).sort(
+      (a, b) => b - a
+    );
     return sortedBatches.map((batch) => {
       const members = membersByBatch.get(batch) || [];
-      
+
       // Sort members by designation priority before organizing
       const designationOrder: Record<string, number> = {
         president: 1,
@@ -368,9 +431,10 @@ const CommitteePage: React.FC = () => {
         general_committee_member: 11,
       };
       const sortedMembers = [...members].sort((a, b) => {
-        const aDes = a.designation || '';
-        const bDes = b.designation || '';
-        const orderDiff = (designationOrder[aDes] || 99) - (designationOrder[bDes] || 99);
+        const aDes = a.designation || "";
+        const bDes = b.designation || "";
+        const orderDiff =
+          (designationOrder[aDes] || 99) - (designationOrder[bDes] || 99);
         if (orderDiff !== 0) return orderDiff;
         // If same designation, sort by name
         return a.fullname.localeCompare(b.fullname);
@@ -383,39 +447,43 @@ const CommitteePage: React.FC = () => {
       const genMembers: Member[] = [];
 
       for (const memberRow of sortedMembers) {
-        const designation = memberRow.designation || '';
+        const designation = memberRow.designation || "";
         const member = mapMemberRowToMember(memberRow, lang);
 
         if (EXEC_DESIGNATIONS.includes(designation)) {
           execMembers.push(member);
-        } else if (designation === 'university_representative') {
+        } else if (designation === "university_representative") {
           // For representatives, use university name as role
           member.role = memberRow.university;
           member.roleTA = memberRow.university;
           repMembers.push(member);
-        } else if (designation === 'education_committee_member') {
+        } else if (designation === "education_committee_member") {
           eduMembers.push(member);
-        } else if (designation === 'general_committee_member') {
+        } else if (designation === "general_committee_member") {
           genMembers.push(member);
         }
       }
 
       const blocks: Block[] = [
         {
+          type: "patrons",
           tEn: TITLES.patrons.en,
           tTa: TITLES.patrons.ta,
-          sEn: 'Meet the dedicated team guiding AUSDAV',
-          sTa: 'AUSDAV ஐ வழிநடத்தும் அர்ப்பணிப்பு குழுவை சந்திக்கவும்',
+          sEn: "Meet the dedicated team guiding AUSDAV",
+          sTa: "AUSDAV ஐ வழிநடத்தும் அர்ப்பணிப்பு குழுவை சந்திக்கவும்",
           members: patronsMembers,
-          cols: 'grid sm:grid-cols-2 lg:grid-cols-4 gap-6',
+          cols: "grid sm:grid-cols-2 lg:grid-cols-4 gap-6",
           gradient: true,
         },
       ];
 
       if (execMembers.length > 0) {
         blocks.push({
+          type: "exec",
           tEn: TITLES.exec.en,
           tTa: TITLES.exec.ta,
+          sEn: "Meet the organizing committee",
+          sTa: "அமைப்பு குழுவை சந்திக்கவும்",
           members: execMembers,
           gradient: true,
         });
@@ -423,6 +491,7 @@ const CommitteePage: React.FC = () => {
 
       if (repMembers.length > 0) {
         blocks.push({
+          type: "reps",
           tEn: TITLES.reps.en,
           tTa: TITLES.reps.ta,
           members: repMembers,
@@ -432,6 +501,7 @@ const CommitteePage: React.FC = () => {
 
       if (eduMembers.length > 0) {
         blocks.push({
+          type: "edu",
           tEn: TITLES.edu.en,
           tTa: TITLES.edu.ta,
           members: eduMembers,
@@ -441,6 +511,7 @@ const CommitteePage: React.FC = () => {
 
       if (genMembers.length > 0) {
         blocks.push({
+          type: "gen",
           tEn: TITLES.gen.en,
           tTa: TITLES.gen.ta,
           members: genMembers,
@@ -458,33 +529,47 @@ const CommitteePage: React.FC = () => {
   const bgStyle = useMemo(
     () => ({
       background: isDark
-        ? 'linear-gradient(180deg, #050914 0%, #070B18 40%, #050812 100%)'
-        : 'linear-gradient(180deg, rgba(236,254,255,1) 0%, rgba(239,246,255,1) 40%, rgba(255,255,255,1) 100%)',
+        ? "linear-gradient(180deg, #050914 0%, #070B18 40%, #050812 100%)"
+        : "linear-gradient(180deg, rgba(236,254,255,1) 0%, rgba(239,246,255,1) 40%, rgba(255,255,255,1) 100%)",
     }),
     [isDark]
   );
 
-  const YearBtn = ({ active, children, onClick }: { active?: boolean; children: React.ReactNode; onClick: () => void }) => (
+  const YearBtn = ({
+    active,
+    children,
+    onClick,
+  }: {
+    active?: boolean;
+    children: React.ReactNode;
+    onClick: () => void;
+  }) => (
     <motion.button
       type="button"
       onClick={onClick}
       whileTap={{ scale: 0.96 }}
       whileHover={{ y: -2 }}
       className={cn(
-        'h-10 px-4 rounded-full font-semibold transition outline-none border backdrop-blur-md',
+        "h-10 px-4 rounded-full font-semibold transition outline-none border backdrop-blur-md",
         active
-          ? 'bg-gradient-to-r from-cyan-300/90 to-indigo-400/90 text-black border-transparent'
+          ? "bg-gradient-to-r from-cyan-300/90 to-indigo-400/90 text-black border-transparent"
           : isDark
-            ? 'bg-white/5 text-white border-white/10 hover:bg-white/10'
-            : 'bg-card/70 text-foreground border-border/60 hover:bg-card'
+          ? "bg-white/5 text-white border-white/10 hover:bg-white/10"
+          : "bg-card/70 text-foreground border-border/60 hover:bg-card"
       )}
-      aria-current={active ? 'page' : undefined}
+      aria-current={active ? "page" : undefined}
     >
       {children}
     </motion.button>
   );
 
-  const NextBtn = ({ disabled, onClick }: { disabled: boolean; onClick: () => void }) => (
+  const NextBtn = ({
+    disabled,
+    onClick,
+  }: {
+    disabled: boolean;
+    onClick: () => void;
+  }) => (
     <motion.button
       type="button"
       onClick={onClick}
@@ -492,12 +577,12 @@ const CommitteePage: React.FC = () => {
       whileTap={{ scale: 0.96 }}
       whileHover={!disabled ? { y: -2 } : undefined}
       className={cn(
-        'h-10 px-5 rounded-full font-semibold transition flex items-center gap-2 outline-none border backdrop-blur-md',
+        "h-10 px-5 rounded-full font-semibold transition flex items-center gap-2 outline-none border backdrop-blur-md",
         disabled
           ? isDark
-            ? 'bg-white/5 text-white/40 border-white/10 cursor-not-allowed'
-            : 'bg-muted text-muted-foreground border-border/60 cursor-not-allowed'
-          : 'bg-gradient-to-r from-rose-500/90 to-orange-400/90 text-black border-transparent hover:brightness-110'
+            ? "bg-white/5 text-white/40 border-white/10 cursor-not-allowed"
+            : "bg-muted text-muted-foreground border-border/60 cursor-not-allowed"
+          : "bg-gradient-to-r from-rose-500/90 to-orange-400/90 text-black border-transparent hover:brightness-110"
       )}
     >
       Next <span aria-hidden="true">›</span>
@@ -509,21 +594,41 @@ const CommitteePage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={bgStyle}>
-        <p className={cn('text-lg', isDark ? 'text-white' : 'text-foreground')}>Loading committee data...</p>
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={bgStyle}
+      >
+        <p className={cn("text-lg", isDark ? "text-white" : "text-foreground")}>
+          Loading committee data...
+        </p>
       </div>
     );
   }
 
   if (hasError) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={bgStyle}>
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={bgStyle}
+      >
         <div className="text-center">
-          <p className={cn('text-lg mb-2', isDark ? 'text-red-400' : 'text-red-600')}>
+          <p
+            className={cn(
+              "text-lg mb-2",
+              isDark ? "text-red-400" : "text-red-600"
+            )}
+          >
             Error loading committee data
           </p>
-          <p className={cn('text-sm', isDark ? 'text-white/70' : 'text-muted-foreground')}>
-            {hasError instanceof Error ? hasError.message : 'Please try again later'}
+          <p
+            className={cn(
+              "text-sm",
+              isDark ? "text-white/70" : "text-muted-foreground"
+            )}
+          >
+            {hasError instanceof Error
+              ? hasError.message
+              : "Please try again later"}
           </p>
         </div>
       </div>
@@ -532,8 +637,16 @@ const CommitteePage: React.FC = () => {
 
   if (!cur || pages.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={bgStyle}>
-        <p className={cn('text-lg', isDark ? 'text-white/70' : 'text-muted-foreground')}>
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={bgStyle}
+      >
+        <p
+          className={cn(
+            "text-lg",
+            isDark ? "text-white/70" : "text-muted-foreground"
+          )}
+        >
           No committee data available
         </p>
       </div>
@@ -541,14 +654,76 @@ const CommitteePage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen" style={bgStyle}>
+    <div className="bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+      {/* Hero Section with Background Image */}
+      <section
+        className="relative min-h-screen bg-cover bg-center flex items-center justify-center"
+        style={{
+          backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.6), rgba(15, 23, 42, 0.6)), url('${BG1}')`,
+          backgroundAttachment: "fixed",
+        }}
+      >
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-20 right-10 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="text-center z-10 px-4"
+        >
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="text-cyan-400 text-sm font-semibold mb-4 uppercase tracking-widest"
+          >
+            ✦{" "}
+            {language === "en"
+              ? "Empowering Future Leaders Since 2015"
+              : "2015 முதல் ஆற்றல் சேர்ப்பு"}
+          </motion.p>
+          <motion.h1
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.3 }}
+            className="text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6"
+          >
+            {language === "en" ? (
+              <>
+                Executive <span className="text-cyan-400">Committee</span>
+              </>
+            ) : (
+              "நிர்வாக குழு"
+            )}
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="text-xl md:text-2xl text-slate-300 max-w-3xl mx-auto"
+          >
+            {language === "en"
+              ? "Know the people in the AUSDAV"
+              : "AUSDAV இல் உள்ளவர்களை அறிந்து கொள்ளுங்கள்"}
+          </motion.p>
+        </motion.div>
+      </section>
+
       {cur.blocks.map((b, bi) => {
-        const membersForBlock = b.tEn === TITLES.patrons.en ? (patronsMembers.length ? patronsMembers : b.members) : b.members;
+        const membersForBlock =
+          b.type === "patrons"
+            ? patronsMembers.length
+              ? patronsMembers
+              : b.members
+            : b.members;
         return (
           <React.Fragment key={`${cur.year}-${bi}`}>
             <Section
-              title={lang === 'en' ? b.tEn : b.tTa}
-              sub={lang === 'en' ? b.sEn : b.sTa}
+              title={lang === "en" ? b.tEn : b.tTa}
+              sub={lang === "en" ? b.sEn : b.sTa}
               members={membersForBlock}
               cols={b.cols}
               gradient={b.gradient}
@@ -565,7 +740,10 @@ const CommitteePage: React.FC = () => {
             {p.year}
           </YearBtn>
         ))}
-        <NextBtn disabled={idx === pages.length - 1} onClick={() => setIdx((v) => Math.min(v + 1, pages.length - 1))} />
+        <NextBtn
+          disabled={idx === pages.length - 1}
+          onClick={() => setIdx((v) => Math.min(v + 1, pages.length - 1))}
+        />
       </div>
     </div>
   );

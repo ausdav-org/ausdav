@@ -15,7 +15,7 @@ import AboutPage from "@/pages/AboutPage";
 import UnderConstructionPage from "@/pages/UnderConstructionPage";
 import CommitteePage from "@/pages/CommitteePage";
 import ExamPage from "@/pages/ExamPage";
-import SeminarPage from "@/pages/SeminarPage";
+import ResourcesPage from "@/pages/ResourcesPage";
 import EventsPage from "@/pages/EventsPage";
 import EventDetailsPage from "@/pages/EventDetailsPage";
 import DonatePage from "@/pages/DonatePage";
@@ -42,6 +42,7 @@ import FinanceLedgerPage from "@/pages/admin/finance/FinanceLedgerPage";
 import ProfileSetupPage from "@/pages/admin/ProfileSetupPage";
 import AdminExamPage from "@/pages/admin/AdminExamPage";
 import AdminSeminarPage from "@/pages/admin/AdminSeminarPage";
+import AdminPastPaperPage from "@/pages/admin/AdminPastPaperPage";
 import AdminApplicantsPage from "@/pages/admin/AdminApplicantsPage";
 import ClaimPermissionPage from "@/pages/admin/ClaimPermissionPage";
 
@@ -77,7 +78,9 @@ const App = () => {
             <Toaster />
             <Sonner />
 
-            {showSplash && <NeuralNetworkSplash onComplete={handleSplashComplete} />}
+            {showSplash && (
+              <NeuralNetworkSplash onComplete={handleSplashComplete} />
+            )}
 
             {appReady && (
               <BrowserRouter basename={import.meta.env.BASE_URL}>
@@ -116,7 +119,10 @@ const App = () => {
                   />
 
                   {/* Admin login redirects to unified login */}
-                  <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+                  <Route
+                    path="/admin/login"
+                    element={<Navigate to="/login" replace />}
+                  />
                   <Route
                     path="/admin"
                     element={
@@ -127,10 +133,16 @@ const App = () => {
                   >
                     <Route index element={<AdminDashboardPage />} />
                     <Route path="dashboard" element={<AdminDashboardPage />} />
-                    <Route path="profile-setup" element={<ProfileSetupPage />} />
+                    <Route
+                      path="profile-setup"
+                      element={<ProfileSetupPage />}
+                    />
                     <Route path="profile" element={<AdminProfilePage />} />
                     <Route path="members" element={<AdminMembersPage />} />
-                    <Route path="applicants" element={<AdminApplicantsPage />} />
+                    <Route
+                      path="applicants"
+                      element={<AdminApplicantsPage />}
+                    />
                     <Route path="patrons" element={<AdminPatronsPage />} />
 
                     {/* ✅ ADDED: Results page route */}
@@ -141,20 +153,46 @@ const App = () => {
                     <Route path="events" element={<AdminEventsPage />} />
                     <Route path="exam" element={<AdminExamPage />} />
                     <Route path="seminar" element={<AdminSeminarPage />} />
-                    <Route path="announcements" element={<AdminAnnouncementsPage />} />
+                    <Route path="past-paper" element={<AdminPastPaperPage />} />
+                    <Route
+                      path="announcements"
+                      element={<AdminAnnouncementsPage />}
+                    />
                     <Route path="feedback" element={<AdminFeedbackPage />} />
-                    <Route path="claim-permission" element={<ClaimPermissionPage />} />
-                    <Route path="permissions" element={<AdminPermissionsPage />} />
+                    <Route
+                      path="claim-permission"
+                      element={<ClaimPermissionPage />}
+                    />
+                    <Route
+                      path="permissions"
+                      element={<AdminPermissionsPage />}
+                    />
                     <Route path="contact" element={<ContactSettingsPage />} />
                     <Route path="audit" element={<AdminAuditPage />} />
                     <Route path="settings" element={<AdminSettingsPage />} />
-                    <Route path="finance/submit" element={<FinanceSubmitPage />} />
-                    <Route path="finance/verify" element={<FinanceVerifyPage />} />
-                    <Route path="finance/ledger" element={<FinanceLedgerPage />} />
+                    <Route
+                      path="finance/submit"
+                      element={<FinanceSubmitPage />}
+                    />
+                    <Route
+                      path="finance/verify"
+                      element={<FinanceVerifyPage />}
+                    />
+                    <Route
+                      path="finance/ledger"
+                      element={<FinanceLedgerPage />}
+                    />
                   </Route>
 
                   {/* 404 */}
-                  <Route path="*" element={<Layout><NotFoundPage /></Layout>} />
+                  <Route
+                    path="*"
+                    element={
+                      <Layout>
+                        <NotFoundPage />
+                      </Layout>
+                    }
+                  />
                 </Routes>
               </BrowserRouter>
             )}
