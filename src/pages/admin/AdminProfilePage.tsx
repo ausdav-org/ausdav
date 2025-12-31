@@ -145,7 +145,7 @@ export default function AdminProfilePage() {
         phone: phoneDigits,
       };
 
-      let { error } = await supabase
+      const { error } = await supabase
         .from('members' as any)
         .update(payload as any)
         .eq('mem_id', profile.mem_id);

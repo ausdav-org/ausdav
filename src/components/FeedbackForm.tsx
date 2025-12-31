@@ -4,6 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 
+type FeedbackInsert = {
+  message: string;
+  type: string | null;
+  is_read: boolean;
+};
+
 const db = supabase;
 
 export default function FeedbackForm({
@@ -51,8 +57,7 @@ export default function FeedbackForm({
       }
 
       // Fallback: direct insert using Supabase client
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (db as any)
+      const { error } = await db
         .from("feedback")
         .insert([{ message, type: null, is_read: false }]);
       if (error) throw error;
