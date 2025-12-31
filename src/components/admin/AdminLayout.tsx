@@ -15,12 +15,12 @@ export function AdminLayout() {
         navigate('/login');
         return;
       }
-      if (!profile) {
+      if (needsProfileSetup) {
         navigate('/admin/profile-setup');
         return;
       }
     }
-  }, [user, profile, role, loading, navigate, needsProfileSetup]);
+  }, [user, loading, navigate, needsProfileSetup]);
 
   if (loading) {
     return (
@@ -36,7 +36,7 @@ export function AdminLayout() {
   // Allow the profile setup route to render even when profile is missing.
   const isProfileSetupRoute = location.pathname.endsWith('/admin/profile-setup');
 
-  if (!user || (!profile && !isProfileSetupRoute)) {
+  if (!user || (!profile && needsProfileSetup && !isProfileSetupRoute)) {
     return null;
   }
 

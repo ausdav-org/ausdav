@@ -46,6 +46,46 @@ export default function ProfileSetupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [batchDisabled, setBatchDisabled] = useState(false);
+  const [showUniversitySuggestions, setShowUniversitySuggestions] = useState(false);
+  const [showSchoolSuggestions, setShowSchoolSuggestions] = useState(false);
+
+  const ugcUniversities = [
+    'University of Colombo',
+    'University of Peradeniya',
+    'University of Sri Jayewardenepura',
+    'University of Kelaniya',
+    'University of Moratuwa',
+    'University of Jaffna',
+    'University of Ruhuna',
+    'The Open University of Sri Lanka',
+    'Eastern University, Sri Lanka',
+    'South Eastern University of Sri Lanka',
+    'Rajarata University of Sri Lanka',
+    'Sabaragamuwa University of Sri Lanka',
+    'Wayamba University of Sri Lanka',
+    'Uva Wellassa University',
+    'University of the Visual & Performing Arts',
+    'Gampaha Wickramarachchi University of Indigenous Medicine',
+    'Institute of Technology University of Moratuwa',
+    'University of Vavuniya, Sri Lanka',
+  ];
+  const schoolOptions = [
+    'V/Rambaikulam Girls Maha Vidyalayam',
+    'V/Vavuniya Tamil Madhya Maha Vidyalayam',
+    'V/Vavuniya Muslim Maha Vidyalayam',
+    'V/Nelukkulam Kalaimagal Maha Vidyalayam',
+    'V/Vipulanantha College',
+    'V/Saivapiragasa Ladies College',
+    'V/Cheddikulam Maha Vidyalayam',
+    'Kanakarayankulam Maha Vidyalayam',
+    'Puthukkulam Maha Vidyalayam',
+  ];
+  const filteredUniversities = ugcUniversities.filter((name) =>
+    name.toLowerCase().includes(form.university.trim().toLowerCase())
+  );
+  const filteredSchools = schoolOptions.filter((name) =>
+    name.toLowerCase().includes(form.school.trim().toLowerCase())
+  );
 
   useEffect(() => {
     if (!user) {
@@ -292,15 +332,45 @@ export default function ProfileSetupPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>University</Label>
+                <div className="space-y-2 relative">
+                  <Label htmlFor="university">University</Label>
                   <Input
+                    id="university"
                     value={form.university}
                     onChange={(e) => setForm({ ...form, university: e.target.value })}
                     placeholder="University name"
                     required
                     className="bg-background/50"
+                    autoComplete="off"
+                    onFocus={() => setShowUniversitySuggestions(true)}
+                    onClick={() => setShowUniversitySuggestions(true)}
+                    onBlur={() => {
+                      setTimeout(() => setShowUniversitySuggestions(false), 150);
+                    }}
                   />
+                  {showUniversitySuggestions && (
+                    <div className="absolute z-50 w-full max-h-48 overflow-y-auto rounded-md border border-border bg-background shadow-md scrollbar-thin">
+                      {(form.university.trim().length > 0 && filteredUniversities.length === 0) ? (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                          No matches
+                        </div>
+                      ) : (
+                        (form.university.trim().length > 0 ? filteredUniversities : ugcUniversities).map((name) => (
+                          <button
+                            key={name}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted"
+                            onMouseDown={() => {
+                              setForm({ ...form, university: name });
+                              setShowUniversitySuggestions(false);
+                            }}
+                          >
+                            {name}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Degree / Course</Label>
@@ -314,15 +384,45 @@ export default function ProfileSetupPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>School</Label>
+                <div className="space-y-2 relative">
+                  <Label htmlFor="school">School</Label>
                   <Input
+                    id="school"
                     value={form.school}
                     onChange={(e) => setForm({ ...form, school: e.target.value })}
                     placeholder="School name"
                     required
                     className="bg-background/50"
+                    autoComplete="off"
+                    onFocus={() => setShowSchoolSuggestions(true)}
+                    onClick={() => setShowSchoolSuggestions(true)}
+                    onBlur={() => {
+                      setTimeout(() => setShowSchoolSuggestions(false), 150);
+                    }}
                   />
+                  {showSchoolSuggestions && (
+                    <div className="absolute z-50 w-full max-h-48 overflow-y-auto rounded-md border border-border bg-background shadow-md scrollbar-thin">
+                      {(form.school.trim().length > 0 && filteredSchools.length === 0) ? (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                          No matches
+                        </div>
+                      ) : (
+                        (form.school.trim().length > 0 ? filteredSchools : schoolOptions).map((name) => (
+                          <button
+                            key={name}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted"
+                            onMouseDown={() => {
+                              setForm({ ...form, school: name });
+                              setShowSchoolSuggestions(false);
+                            }}
+                          >
+                            {name}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

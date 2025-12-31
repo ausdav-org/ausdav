@@ -9,14 +9,21 @@ import { toast } from 'sonner';
 import AnnouncementCarousel from '@/components/AnnouncementCarousel';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
-type CarouselAnnouncement = {
+type AnnouncementSeed = {
   id: string;
   en: string;
   ta: string;
   type: 'event' | 'news' | 'urgent';
 };
 
-const fallbackAnnouncements: CarouselAnnouncement[] = [
+type HomeAnnouncement = {
+  id: string;
+  title: string;
+  message: string;
+  image_url?: string | null;
+};
+
+const fallbackAnnouncements: AnnouncementSeed[] = [
   { id: 'seed-1', en: '📚 A/L Exam Preparation Seminar - January 2025', ta: '📚 உ.த. தேர்வு தயாரிப்பு கருத்தரங்கு - ஜனவரி 2025', type: 'event' },
   { id: 'seed-2', en: '🩸 Blood Donation Camp - Save Lives Today', ta: '🩸 இரத்ததான முகாம் - இன்றே உயிர்களைக் காப்பாற்றுங்கள்', type: 'urgent' },
   { id: 'seed-3', en: '🌳 Anbuchangamam Tree Planting Event - Join Us!', ta: '🌳 அன்புசங்கமம் மரம் நடும் நிகழ்வு - எங்களுடன் இணையுங்கள்!', type: 'event' },
@@ -66,20 +73,30 @@ const stats = [
 const HomePage: React.FC = () => {
   const { language, t } = useLanguage();
   const [feedbackForm, setFeedbackForm] = useState({ name: '', contact: '', message: '' });
-  const [announcements, setAnnouncements] = useState<CarouselAnnouncement[]>(fallbackAnnouncements);
+  const fallbackCards = useMemo<HomeAnnouncement[]>(() => {
+    const useTamil = language === 'ta';
+    return fallbackAnnouncements.map((seed) => ({
+      id: seed.id,
+      title: useTamil ? seed.ta : seed.en,
+      message: useTamil ? seed.ta : seed.en,
+      image_url: null,
+    }));
+  }, [language]);
+  const [announcements, setAnnouncements] = useState<HomeAnnouncement[]>(fallbackCards);
   const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
-
-  const mapCategoryToType = (category?: string | null): CarouselAnnouncement['type'] => {
-    const normalized = (category || '').toLowerCase();
-    if (normalized === 'urgent') return 'urgent';
-    if (normalized === 'event') return 'event';
-    return 'news';
-  };
 
   const buildAnnouncementText = (primary?: string | null, fallback?: string | null) => {
     const text = primary?.trim() || fallback?.trim() || '';
     return text || 'Announcement';
+  };
+
+  const getAnnouncementImageUrl = (item: any) => {
+    if (!item?.img_path) return null;
+    const { data } = supabase.storage
+      .from(item.img_bucket || 'announcements')
+      .getPublicUrl(item.img_path);
+    return data?.publicUrl || null;
   };
 
   const loadAnnouncements = useCallback(async () => {
@@ -100,28 +117,32 @@ const HomePage: React.FC = () => {
         return item.is_active !== false && withinStart && withinEnd;
       });
 
-      const mapped = activeItems.map<CarouselAnnouncement>((item: any) => ({
-        id: item.id || item.announcement_id || crypto.randomUUID(),
-        en: buildAnnouncementText(
-          item.description_en ?? item.message_en ?? item.description ?? item.title_en,
-          item.title_en
-        ),
-        ta: buildAnnouncementText(
-          item.description_ta ?? item.message_ta ?? item.title_ta,
-          item.title_ta || item.description_en || item.title_en
-        ),
-        type: mapCategoryToType(item.category ?? item.tag ?? null),
-      }));
+      const useTamil = language === 'ta';
+      const mapped = activeItems.map<HomeAnnouncement>((item: any) => {
+        const title = useTamil
+          ? buildAnnouncementText(item.title_ta, item.title_en)
+          : buildAnnouncementText(item.title_en, item.title_ta);
+        const message = useTamil
+          ? buildAnnouncementText(item.description_ta ?? item.message_ta, item.description_en ?? item.title_en)
+          : buildAnnouncementText(item.description_en ?? item.message_en, item.description_ta ?? item.title_ta);
 
-      setAnnouncements(mapped.length ? mapped : fallbackAnnouncements);
+        return {
+          id: item.id || item.announcement_id || crypto.randomUUID(),
+          title,
+          message,
+          image_url: getAnnouncementImageUrl(item),
+        };
+      });
+
+      setAnnouncements(mapped.length ? mapped : fallbackCards);
     } catch (error) {
       console.error('Error loading announcements:', error);
       toast.error('Unable to load announcements right now.');
-      setAnnouncements(fallbackAnnouncements);
+      setAnnouncements(fallbackCards);
     } finally {
       setIsLoadingAnnouncements(false);
     }
-  }, []);
+  }, [fallbackCards, language]);
   
   useEffect(() => {
     loadAnnouncements();

@@ -95,7 +95,7 @@ export default function AdminLoginPage() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      if (!profile || needsProfileSetup) {
+      if (needsProfileSetup) {
         navigate('/admin/profile-setup');
         return;
       }
