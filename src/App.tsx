@@ -46,6 +46,7 @@ import AdminApplicantsPage from "@/pages/admin/AdminApplicantsPage";
 import ClaimPermissionPage from "@/pages/admin/ClaimPermissionPage";
 
 import AdminPatronsPage from "@/pages/admin/AdminPatronsPage";
+import AdminSiteModePage from "@/pages/admin/AdminSiteModePage";
 
 // ✅ ADD THIS IMPORT (create this file or update the path to your actual results page)
 import AdminResultsPage from "@/pages/admin/AdminResultsPage";
@@ -127,6 +128,7 @@ const App = () => {
                     {/* ✅ ADDED: Results page route */}
                     <Route path="results" element={<AdminResultsPage />} />
                     <Route path="designations" element={<AdminDesignationsPage />} />
+                    <Route path="site-mode" element={<AdminSiteModePage />} />
 
                     <Route path="events" element={<AdminEventsPage />} />
                     <Route path="exam" element={<AdminExamPage />} />
