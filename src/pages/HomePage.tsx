@@ -65,27 +65,7 @@ const annualEvents = [
 
 // Sample committee
 const committeePreview = [
-  {
-    id: 1,
-    role: "President",
-    roleTA: "தலைவர்",
-    name: "Dr. K. Suresh",
-    batch: "2015",
-  },
-  {
-    id: 2,
-    role: "Secretary",
-    roleTA: "செயலாளர்",
-    name: "Ms. T. Priya",
-    batch: "2018",
-  },
-  {
-    id: 3,
-    role: "Treasurer",
-    roleTA: "பொருளாளர்",
-    name: "Mr. S. Rajan",
-    batch: "2017",
-  },
+
 ];
 
 // Executive designations to show on the Home page
@@ -124,6 +104,12 @@ const HomePage: React.FC = () => {
   );
   const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
+
+  // Exec committee row auto-scroll refs
+  const execRowRef = useRef<HTMLDivElement | null>(null);
+  const execAutoIntervalRef = useRef<number | null>(null);
+  const execAnimRef = useRef<number | null>(null);
+  const execIsPausedRef = useRef(false);
 
   const mapCategoryToType = (
     category?: string | null
@@ -233,6 +219,8 @@ const HomePage: React.FC = () => {
     loadAnnouncements();
   }, [loadAnnouncements]);
 
+
+
   // Fetch executive members for the Home page (current/latest batch)
   const { data: execRows } = useQuery<Tables<"members">[]>({
     queryKey: ["home-exec-members"],
@@ -253,38 +241,125 @@ const HomePage: React.FC = () => {
     staleTime: 1000 * 60 * 5,
   });
 
-  const execMembers = useMemo(() => {
-    if (!execRows || execRows.length === 0) return [] as Tables<"members">[];
-    const maxBatch = Math.max(...execRows.map((r) => r.batch || 0));
-    const rows = execRows.filter((r) => (r.batch || 0) === maxBatch);
-    return rows.map((r) => {
-      const roleInfo = HOME_DESIGNATION_TO_ROLE[r.designation] || {
-        en: r.designation,
-        ta: r.designation,
-      };
-      const workParts: string[] = [];
-      if (r.uni_degree) workParts.push(r.uni_degree);
-      if (r.university) workParts.push(r.university);
-      const work = workParts.join(",");
-      let photo: string | null = null;
-      if (r.profile_path && r.profile_bucket) {
-        const { data } = supabase.storage
-          .from(r.profile_bucket)
-          .getPublicUrl(r.profile_path);
-        photo = data?.publicUrl || null;
+  type ExecMember = {
+    id: number | string;
+    role: string;
+    roleTA: string;
+    name: string;
+    nameTA: string;
+    Work?: string;
+    batch?: number | null;
+    photo?: string | null;
+  };
+
+  const execMembers = useMemo<ExecMember[]>(() => {
+    // choose latest batch
+    const maxBatch = execRows && execRows.length ? Math.max(...execRows.map((r) => r.batch || 0)) : 0;
+    const rows = (execRows || []).filter((r) => (r.batch || 0) === maxBatch);
+
+    const byDesignation = new Map(rows.map((r) => [r.designation, r] as const));
+
+    return HOME_EXEC_DESIGNATIONS.map((designation) => {
+      const r = byDesignation.get(designation as string) as Tables<"members"> | undefined;
+      if (r) {
+        const roleInfo = HOME_DESIGNATION_TO_ROLE[r.designation] || {
+          en: r.designation,
+          ta: r.designation,
+        };
+        const workParts: string[] = [];
+        if (r.uni_degree) workParts.push(r.uni_degree);
+        if (r.university) workParts.push(r.university);
+        const work = workParts.join(",");
+        let photo: string | null = null;
+        if (r.profile_path && r.profile_bucket) {
+          const { data } = supabase.storage
+            .from(r.profile_bucket)
+            .getPublicUrl(r.profile_path);
+          photo = data?.publicUrl || null;
+        }
+        return {
+          id: r.mem_id,
+          role: roleInfo.en,
+          roleTA: roleInfo.ta,
+          name: r.fullname,
+          nameTA: r.fullname,
+          Work: work,
+          batch: r.batch,
+          photo,
+        };
       }
+
+      // fallback: try to use preview data or generic placeholder
+      const roleInfo = HOME_DESIGNATION_TO_ROLE[designation] || {
+        en: designation,
+        ta: designation,
+      };
+      const preview = committeePreview.find(
+        (p) => p.role.toLowerCase() === roleInfo.en.toLowerCase()
+      );
+      const nameFallback = preview ? preview.name : language === "en" ? "Unknown" : "தெரியவில்லை";
+
       return {
-        id: r.mem_id,
+        id: `placeholder-${designation}`,
         role: roleInfo.en,
         roleTA: roleInfo.ta,
-        name: r.fullname,
-        nameTA: r.fullname,
-        Work: work,
-        batch: r.batch,
-        photo,
+        name: nameFallback,
+        nameTA: nameFallback,
+        Work: "",
+        batch: null,
+        photo: null,
       };
     });
-  }, [execRows]);
+  }, [execRows, language]);
+
+  // Auto-scroll for executive committee row: loop with snap and pause on hover/focus
+  useEffect(() => {
+    const el = execRowRef.current;
+    if (!el) return;
+    // Respect reduced motion preference
+    const prefersReduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) return;
+
+    // ensure start at beginning
+    el.scrollLeft = 0;
+
+    let last = performance.now();
+    const speed = 40; // px per second
+
+    const step = (now: number) => {
+      const dt = now - last;
+      last = now;
+      if (!execIsPausedRef.current) {
+        el.scrollLeft += (speed * dt) / 1000;
+        const half = el.scrollWidth / 2;
+        if (el.scrollLeft >= half) {
+          // wrap seamlessly
+          el.scrollLeft -= half;
+        }
+      }
+      execAnimRef.current = requestAnimationFrame(step);
+    };
+
+    execAnimRef.current = requestAnimationFrame(step);
+
+    const onPointerEnter = () => { execIsPausedRef.current = true; };
+    const onPointerLeave = () => { execIsPausedRef.current = false; };
+    const onFocusIn = () => { execIsPausedRef.current = true; };
+    const onFocusOut = () => { execIsPausedRef.current = false; };
+
+    el.addEventListener('pointerenter', onPointerEnter);
+    el.addEventListener('pointerleave', onPointerLeave);
+    el.addEventListener('focusin', onFocusIn);
+    el.addEventListener('focusout', onFocusOut);
+
+    return () => {
+      if (execAnimRef.current !== null) cancelAnimationFrame(execAnimRef.current);
+      el.removeEventListener('pointerenter', onPointerEnter);
+      el.removeEventListener('pointerleave', onPointerLeave);
+      el.removeEventListener('focusin', onFocusIn);
+      el.removeEventListener('focusout', onFocusOut);
+    };
+  }, [execMembers]);
 
   const { scrollYProgress } = useScroll({
     target: heroRef,
@@ -483,7 +558,7 @@ const HomePage: React.FC = () => {
               <div className="w-full max-w-3xl aspect-video rounded-2xl overflow-hidden border border-cyan-500/20 shadow-lg">
                 <iframe
                   className="w-full h-full"
-                  src="https://www.youtube.com/embed/LbEa34kbbfg?autoplay=1&controls=0&mute=1&rel=0&modestbranding=1&start=0&end=35&loop=1&playlist=LbEa34kbbfg"
+                  src="https://www.youtube.com/embed/LbEa34kbbfg?autoplay=1&controls=0&mute=1&rel=0&modestbranding=1&start=0&end=34&loop=1&playlist=LbEa34kbbfg"
                   title="AUSDAV Video"
                   frameBorder="0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -541,7 +616,7 @@ const HomePage: React.FC = () => {
               <div className="w-full max-w-3xl aspect-video rounded-2xl overflow-hidden border border-cyan-500/20 shadow-lg">
                 <iframe
                   className="w-full h-full"
-                  src="https://www.youtube.com/embed/e7lYGW8D4pw?autoplay=1&controls=0&mute=1"
+                  src="https://www.youtube.com/embed/e7lYGW8D4pw?autoplay=1&controls=0&mute=1&loop=1&rel=0"
                   title="AUSDAV Video"
                   frameBorder="0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -646,56 +721,122 @@ const HomePage: React.FC = () => {
             </h2>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-            {(execMembers && execMembers.length
-              ? execMembers
-              : committeePreview
-            ).map((member, idx) => (
-              <motion.div
-                key={member.id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.6, delay: idx * 0.15 }}
-                whileHover={{ y: -10 }}
-                className="bg-cyan-500/20 backdrop-blur-sm rounded-2xl p-8 border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300 text-center"
-              >
-                <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-cyan-400 flex items-center justify-center">
-                  <span className="text-3xl font-bold text-slate-900">
-                    {member.name.charAt(0)}
-                  </span>
-                </div>
-                <h3 className="font-bold text-xl mb-1 text-white">
-                  {member.name}
-                </h3>
-                <p className="text-cyan-400 font-medium mb-2">
-                  {language === "en" ? member.role : member.roleTA}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {language === "en" ? "Batch" : "தொகுதி"} {member.batch}
-                </p>
-              </motion.div>
-            ))}
-          </div>
+          <div className="max-w-6xl mx-auto">
+            <style>{`.no-scrollbar::-webkit-scrollbar{display:none} .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}`}</style>
+            <div ref={execRowRef} className="flex gap-6 overflow-x-auto py-4 px-4 md:px-0 scroll-smooth no-scrollbar" role="list" aria-label="Executive committee members" tabIndex={0}>
+              {/* primary sequence */}
+              {(execMembers && execMembers.length ? execMembers : committeePreview).map((member, idx) => (
+                <motion.div
+                  key={member.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.6, delay: idx * 0.15 }}
+                  whileHover={{ y: -10, scale: 1.01 }}
+                  className="glass-card rounded-2xl p-8 text-center neon-glow-hover relative min-w-[240px] flex-shrink-0"
+                  role="listitem"
+                  aria-label={`${member.role} - ${member.name}`}
+                  title={`${member.role} — ${member.name}`}
+                >
+                  <div className="w-20 h-20 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-primary to-gold-light flex items-center justify-center neon-glow overflow-hidden">
+                    {member.photo ? (
+                      <img
+                        src={member.photo}
+                        alt={`${member.name} photo`}
+                        className="w-full h-full rounded-2xl object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className="w-full h-full flex items-center justify-center text-3xl font-bold text-primary-foreground"
+                        aria-hidden="true"
+                      >
+                        {member.name ? member.name.charAt(0) : "?"}
+                      </div>
+                    )}
+                  </div>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            className="text-center mt-12"
-          >
-            <Button
-              asChild
-              variant="outline"
-              size="lg"
-              className="group border-cyan-500/40 hover:border-cyan-500/60 text-cyan-400 hover:text-cyan-300"
+                  <h3 className="font-bold text-xl mb-1 text-white">{member.name}</h3>
+                  <p className="font-medium mb-2 text-cyan-200/90">{language === "en" ? member.role : member.roleTA}</p>
+
+                  <p className="text-sm text-muted-foreground">
+                    {(member.Work && member.Work.trim()) ? (
+                      member.Work
+                    ) : (
+                      <span>{language === "en" ? "Batch" : "தொகுதி"} {member.batch ?? "—"}</span>
+                    )}
+                  </p>
+                </motion.div>
+              ))}
+
+              {/* duplicated sequence for seamless looping (aria-hidden) */}
+              {(execMembers && execMembers.length ? execMembers : committeePreview).map((member, idx) => (
+                <motion.div
+                  key={`loop-${member.id}-${idx}`}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.6, delay: idx * 0.02 }}
+                  whileHover={{ y: -10, scale: 1.01 }}
+                  className="glass-card rounded-2xl p-8 text-center neon-glow-hover relative min-w-[240px] flex-shrink-0"
+                  role="listitem"
+                  aria-hidden="true"
+                >
+                  <div className="w-20 h-20 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-primary to-gold-light flex items-center justify-center neon-glow overflow-hidden">
+                    {member.photo ? (
+                      <img
+                        src={member.photo}
+                        alt=""
+                        className="w-full h-full rounded-2xl object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className="w-full h-full flex items-center justify-center text-3xl font-bold text-primary-foreground"
+                        aria-hidden="true"
+                      >
+                        {member.name ? member.name.charAt(0) : "?"}
+                      </div>
+                    )}
+                  </div>
+
+                  <h3 className="font-bold text-xl mb-1 text-white">{member.name}</h3>
+                  <p className="font-medium mb-2 text-cyan-200/90">{language === "en" ? member.role : member.roleTA}</p>
+
+                  <p className="text-sm text-muted-foreground">
+                    {(member.Work && member.Work.trim()) ? (
+                      member.Work
+                    ) : (
+                      <span>{language === "en" ? "Batch" : "தொகுதி"} {member.batch ?? "—"}</span>
+                    )}
+                  </p>
+                </motion.div>
+              ))}
+            </div>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              className="text-center mt-12"
             >
-              <Link to="/committee">
-                {t("home.committee.viewAll")}
-                <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
-              </Link>
-            </Button>
-          </motion.div>
+              <Button
+                asChild
+                variant="outline"
+                size="lg"
+                className="group border-cyan-500/40 hover:border-cyan-500/60 text-cyan-400 hover:text-cyan-300"
+              >
+                <Link to="/committee">
+                  {t("home.committee.viewAll")}
+                  <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
+                </Link>
+              </Button>
+            </motion.div>
+          </div>
         </div>
       </section>
 

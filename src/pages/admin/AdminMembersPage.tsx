@@ -886,7 +886,7 @@ export default function AdminMembersPage() {
                   id="invite-name"
                   value={inviteName}
                   onChange={(e) => setInviteName(e.target.value)}
-                  placeholder="John Doe"
+                  placeholder=""
                 />
               </div>
               <div className="space-y-2">
@@ -896,7 +896,7 @@ export default function AdminMembersPage() {
                   type="email"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="john@example.com"
+                  placeholder=""
                 />
               </div>
               <div className="space-y-2">
