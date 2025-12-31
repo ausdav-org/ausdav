@@ -93,6 +93,13 @@ const permissionItems: PermissionItem[] = [
     icon: Megaphone,
     color: 'from-indigo-500 to-violet-500',
   },
+  {
+    key: 'feedback',
+    title: 'Feedback Handling',
+    description: 'Classify and manage user feedback submitted via the site footer.',
+    icon: Megaphone,
+    color: 'from-emerald-500 to-green-500',
+  },
 ];
 
 export default function ClaimPermissionPage() {

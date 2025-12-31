@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,6 +15,7 @@ import {
   DollarSign,
   Megaphone,
   Shield,
+  Phone,
   GraduationCap,
   BookOpen,
   UserPlus,
@@ -25,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { useAdminGrantedPermissions } from '@/hooks/useAdminGrantedPermissions';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
 
 interface NavItem {
   title: string;
@@ -40,11 +42,14 @@ const navItems: NavItem[] = [
 
   { title: 'Members', href: '/admin/members', icon: Users, roles: ['admin', 'super_admin'], permissionKey: 'member' },
 
-  { title: 'Applicants', href: '/admin/applicants', icon: UserPlus, roles: ['admin', 'super_admin'], permissionKey: 'applicant' },
+  { title: 'Applicants', href: '/admin/applicants', icon: UserPlus, roles: ['member', 'admin', 'super_admin'], permissionKey: 'applicant' },
 
   // ✅ ADDED: Results Page (uses same permissionKey as Applicants)
   // If your route is different, just change href.
   { title: 'Results', href: '/admin/results', icon: TrendingUp, roles: ['admin', 'super_admin'], permissionKey: 'applicant' },
+
+  { title: 'Patrons', href: '/admin/patrons', icon: UserPlus, roles: ['super_admin'] },
+  { title: 'Designations', href: '/admin/designations', icon: User, roles: ['super_admin'] },
 
   { title: 'Events', href: '/admin/events', icon: CalendarDays, roles: ['admin', 'super_admin'], permissionKey: 'events' },
   { title: 'Exam', href: '/admin/exam', icon: GraduationCap, roles: ['admin', 'super_admin'], permissionKey: 'exam' },
@@ -56,8 +61,11 @@ const navItems: NavItem[] = [
 
   { title: 'Announcements', href: '/admin/announcements', icon: Megaphone, roles: ['admin', 'super_admin'], permissionKey: 'announcement' },
 
+  { title: 'Feedback', href: '/admin/feedback', icon: Megaphone, roles: ['admin', 'super_admin'], permissionKey: 'feedback' },
+
   { title: 'Claim Permission', href: '/admin/claim-permission', icon: HandHelping, roles: ['admin'] },
   { title: 'Permissions', href: '/admin/permissions', icon: Shield, roles: ['super_admin'] },
+  { title: 'Contact', href: '/admin/contact', icon: Phone, roles: ['admin', 'super_admin'] },
   { title: 'Audit Log', href: '/admin/audit', icon: FileText, roles: ['super_admin'] },
   { title: 'Settings', href: '/admin/settings', icon: Settings, roles: ['super_admin'] },
 ];
@@ -67,6 +75,32 @@ export function AdminSidebar() {
   const location = useLocation();
   const { role, isSuperAdmin } = useAdminAuth();
   const { hasPermission } = useAdminGrantedPermissions();
+  const [manualApplicantsOpen, setManualApplicantsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!role || role === 'admin' || role === 'super_admin') return;
+    let active = true;
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('app_settings' as any)
+          .select('allow_manual_applications')
+          .eq('id', 1)
+          .maybeSingle<{ allow_manual_applications: boolean | null }>();
+
+        if (error) throw error;
+        if (active) setManualApplicantsOpen(Boolean(data?.allow_manual_applications));
+      } catch (err) {
+        console.error('Failed to load manual applications setting', err);
+        if (active) setManualApplicantsOpen(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [role]);
 
   const filteredNavItems = navItems.filter((item) => {
     if (!role) return false;
@@ -82,8 +116,14 @@ export function AdminSidebar() {
       return hasPermission(item.permissionKey);
     }
 
+    // For members, show Applicants only when manual applications are open
+    if (role === 'member' && item.href === '/admin/applicants') {
+      return manualApplicantsOpen;
+    }
+
     return true;
   });
+  
 
   return (
     <motion.aside
@@ -119,7 +159,7 @@ export function AdminSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav className="flex-1 overflow-y-auto p-2 scrollbar-thin">
         <ul className="space-y-1">
           {filteredNavItems.map((item) => {
             const isActive = location.pathname === item.href;

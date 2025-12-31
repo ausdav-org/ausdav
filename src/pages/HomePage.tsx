@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { Link } from "react-router-dom";
 import { motion, useScroll, useTransform } from "framer-motion";
 import {
@@ -20,8 +26,9 @@ import { toast } from "sonner";
 import AnnouncementCarousel from "@/components/AnnouncementCarousel";
 import ReviewCarousel from "@/components/ReviewCarousel";
 import { supabase } from "@/integrations/supabase/client";
-import heroBg from "@/assets/Home/back 3.jpg";
-
+import { useQuery } from "@tanstack/react-query";
+import { Tables } from "@/integrations/supabase/types";
+import heroBg from "@/assets/Home/BG1.jpg";
 type CarouselAnnouncement = {
   id: string;
   en: string;
@@ -100,6 +107,23 @@ const committeePreview = [
   },
 ];
 
+// Executive designations to show on the Home page
+const HOME_EXEC_DESIGNATIONS = [
+  "president",
+  "secretary",
+  "treasurer",
+  "editor",
+  "web_designer",
+];
+
+const HOME_DESIGNATION_TO_ROLE: Record<string, { en: string; ta: string }> = {
+  president: { en: "President", ta: "தலைவர்" },
+  secretary: { en: "Secretary", ta: "செயலாளர்" },
+  treasurer: { en: "Treasurer", ta: "பொருளாளர்" },
+  editor: { en: "Editor", ta: "ஊடக தலைவர்" },
+  web_designer: { en: "Web Developer", ta: "இணைய நிர்வாகி" },
+};
+
 const stats = [
   { value: "500+", label: "Students Helped", labelTA: "உதவிய மாணவர்கள்" },
   { value: "50+", label: "Events Organized", labelTA: "நிகழ்வுகள்" },
@@ -149,28 +173,43 @@ const HomePage: React.FC = () => {
 
       if (error) throw error;
 
-      const activeItems = (data || []).filter((item: any) => {
-        const withinStart = !item.start_at || item.start_at <= nowIso;
-        const withinEnd =
-          item.is_permanent || !item.end_at || item.end_at >= nowIso;
-        return item.is_active !== false && withinStart && withinEnd;
-      });
+      const activeItems = (data || []).filter(
+        (item: Tables<"announcements">) => {
+          const withinStart = !item.start_at || item.start_at <= nowIso;
+          const withinEnd =
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (item as any).is_permanent || !item.end_at || item.end_at >= nowIso;
+          return item.is_active !== false && withinStart && withinEnd;
+        }
+      );
 
-      const mapped = activeItems.map<CarouselAnnouncement>((item: any) => ({
-        id: item.id || item.announcement_id || crypto.randomUUID(),
-        en: buildAnnouncementText(
-          item.description_en ??
-            item.message_en ??
-            item.description ??
-            item.title_en,
-          item.title_en
-        ),
-        ta: buildAnnouncementText(
-          item.description_ta ?? item.message_ta ?? item.title_ta,
-          item.title_ta || item.description_en || item.title_en
-        ),
-        type: mapCategoryToType(item.category ?? item.tag ?? null),
-      }));
+      const mapped = activeItems.map<CarouselAnnouncement>(
+        (item: Tables<"announcements">) => ({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          id: item.id || (item as any).announcement_id || crypto.randomUUID(),
+          en: buildAnnouncementText(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (item as any).description_en ??
+              item.message_en ??
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (item as any).description ??
+              item.title_en,
+            item.title_en
+          ),
+          ta: buildAnnouncementText(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (item as any).description_ta ?? item.message_ta ?? item.title_ta,
+            item.title_ta ||
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (item as any).description_en ||
+              item.title_en
+          ),
+          type: mapCategoryToType(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (item as any).category ?? item.tag ?? null
+          ),
+        })
+      );
 
       setAnnouncements(mapped.length ? mapped : fallbackAnnouncements);
     } catch (error) {
@@ -185,6 +224,59 @@ const HomePage: React.FC = () => {
   useEffect(() => {
     loadAnnouncements();
   }, [loadAnnouncements]);
+
+  // Fetch executive members for the Home page (current/latest batch)
+  const { data: execRows } = useQuery<Tables<"members">[]>({
+    queryKey: ["home-exec-members"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("members")
+        .select(
+          "mem_id, fullname, designation, batch, university, uni_degree, profile_bucket, profile_path"
+        )
+        .in("designation", HOME_EXEC_DESIGNATIONS)
+        .neq("designation", "none")
+        .not("designation", "is", null)
+        .order("batch", { ascending: false })
+        .order("fullname", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as Tables<"members">[];
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const execMembers = useMemo(() => {
+    if (!execRows || execRows.length === 0) return [] as Tables<"members">[];
+    const maxBatch = Math.max(...execRows.map((r) => r.batch || 0));
+    const rows = execRows.filter((r) => (r.batch || 0) === maxBatch);
+    return rows.map((r) => {
+      const roleInfo = HOME_DESIGNATION_TO_ROLE[r.designation] || {
+        en: r.designation,
+        ta: r.designation,
+      };
+      const workParts: string[] = [];
+      if (r.uni_degree) workParts.push(r.uni_degree);
+      if (r.university) workParts.push(r.university);
+      const work = workParts.join(",");
+      let photo: string | null = null;
+      if (r.profile_path && r.profile_bucket) {
+        const { data } = supabase.storage
+          .from(r.profile_bucket)
+          .getPublicUrl(r.profile_path);
+        photo = data?.publicUrl || null;
+      }
+      return {
+        id: r.mem_id,
+        role: roleInfo.en,
+        roleTA: roleInfo.ta,
+        name: r.fullname,
+        nameTA: r.fullname,
+        Work: work,
+        batch: r.batch,
+        photo,
+      };
+    });
+  }, [execRows]);
 
   const { scrollYProgress } = useScroll({
     target: heroRef,
@@ -221,6 +313,8 @@ const HomePage: React.FC = () => {
           backgroundRepeat: "no-repeat",
         }}
       >
+        {/* Dark overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-transparent to-black/70"></div>
         {/* Content */}
         <motion.div
           style={{ opacity }}
@@ -237,20 +331,17 @@ const HomePage: React.FC = () => {
               <span className="text-lg md:text-xl lg:text-2xl block mb-2 text-cyan-400 italic">
                 {language === "en" ? "Welcome to" : "வரவேற்கிறோம்"}
               </span>
-              <span className="text-8xl md:text-9xl lg:text-10xl text-white font-black">
-                {language === "en" ? "AUSDAV" : "AUSDAV"}
+              <span className="text-8xl md:text-9xl lg:text-10xl font-black">
+                {language === "en" ? (
+                  <>
+                    <span className="text-white">AUS</span>
+                    <span className="text-cyan-400">DAV</span>
+                  </>
+                ) : (
+                  "AUSDAV"
+                )}
               </span>
             </motion.h1>
-
-            {/* Subtitle */}
-            <motion.p
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.4 }}
-              className="text-lg md:text-xl text-slate-300 max-w-2xl mx-auto mb-10"
-            >
-              {t("home.hero.subtitle")}
-            </motion.p>
 
             {/* Stats */}
             <motion.div
@@ -388,7 +479,10 @@ const HomePage: React.FC = () => {
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-            {committeePreview.map((member, idx) => (
+            {(execMembers && execMembers.length
+              ? execMembers
+              : committeePreview
+            ).map((member, idx) => (
               <motion.div
                 key={member.id}
                 initial={{ opacity: 0, y: 30 }}
@@ -409,7 +503,7 @@ const HomePage: React.FC = () => {
                 <p className="text-cyan-400 font-medium mb-2">
                   {language === "en" ? member.role : member.roleTA}
                 </p>
-                <p className="text-sm text-slate-300">
+                <p className="text-sm text-muted-foreground">
                   {language === "en" ? "Batch" : "தொகுதி"} {member.batch}
                 </p>
               </motion.div>
@@ -434,56 +528,6 @@ const HomePage: React.FC = () => {
               </Link>
             </Button>
           </motion.div>
-        </div>
-      </section>
-
-      {/* Testimonials / Reviews */}
-      <section className="py-16">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="text-center mb-8">
-            <h3 className="text-sm text-cyan-400 font-semibold uppercase mb-2">
-              {language === "en" ? "Reviews" : "அவலிகள்"}
-            </h3>
-            <h2 className="text-3xl md:text-4xl font-bold text-white">
-              {language === "en" ? "What People Say" : "மக்களின் கருத்து"}
-            </h2>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              {
-                en: "This group helped me grow my confidence and skills.",
-                ta: "இந்த குழு எனது தைரியம் மற்றும் திறமைகளை வளர்க்க உதவியது.",
-                author: "S. Kumar",
-              },
-              {
-                en: "Well-organized events and friendly mentors.",
-                ta: "சீரியமைப்பான நிகழ்வுகள் மற்றும் நட்பு வழிகாட்டிகள்.",
-                author: "A. Priya",
-              },
-              {
-                en: "A supportive community that truly cares.",
-                ta: "உண்மையிலேயே கவலைப்படும் ஆதரவு சமுதாயம்.",
-                author: "R. Nadar",
-              },
-            ].map((r, idx) => (
-              <motion.blockquote
-                key={idx}
-                initial={{ opacity: 0, y: 10 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.08 }}
-                className="bg-slate-800/40 border border-slate-700 rounded-xl p-6"
-              >
-                <p className="text-slate-300 italic text-sm">
-                  “{language === "en" ? r.en : r.ta}”
-                </p>
-                <cite className="block mt-4 text-xs text-slate-400">
-                  — {r.author}
-                </cite>
-              </motion.blockquote>
-            ))}
-          </div>
         </div>
       </section>
 

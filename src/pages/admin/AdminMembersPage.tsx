@@ -77,8 +77,9 @@ type RawMember = Pick<
 >;
 
 export default function AdminMembersPage() {
-  const { isSuperAdmin, isAdmin } = useAdminAuth();
+  const { isSuperAdmin, isAdmin, role } = useAdminAuth();
   const [members, setMembers] = useState<Member[]>([]);
+  const [committeeChangingPhase, setCommitteeChangingPhase] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterBatch, setFilterBatch] = useState<string>('all');
@@ -103,19 +104,42 @@ export default function AdminMembersPage() {
     fetchMembers();
   }, []);
 
+  useEffect(() => {
+    // When committee phase setting is loaded/changed, refresh members to apply filter
+    if (committeeChangingPhase !== null) {
+      fetchMembers();
+    }
+  }, [committeeChangingPhase]);
+
+  useEffect(() => {
+    // load committee phase setting
+    (async () => {
+      try {
+        const res = await supabase.from('app_settings').select('committee_changing_phase').eq('id', 1).maybeSingle();
+        // supabase returns { data, error } — guard against missing column or error
+        // prefer explicit names to avoid type inference issues
+        const settingRow = (res as any).data;
+        const settingErr = (res as any).error;
+        if (settingErr) {
+          console.warn('app_settings query error', settingErr);
+          setCommitteeChangingPhase(null);
+        } else {
+          setCommitteeChangingPhase(settingRow?.committee_changing_phase ?? null);
+        }
+      } catch (err) {
+        console.warn('Unable to load committee_changing_phase setting', err);
+        setCommitteeChangingPhase(null);
+      }
+    })();
+  }, []);
+
   const fetchMembers = async () => {
     try {
-      const { data, error } = await supabase
-        // Cast to any until generated types include the new members table.
-        .from('members' as any)
-        .select(
-          'mem_id, auth_user_id, fullname, username, phone, batch, created_at, role, designation'
-        )
-        .order('created_at', { ascending: false });
-
+      // Use edge function so service-role can return all rows (including null auth_user_id)
+      const { data, error } = await invokeFunction('fetch-members', {});
       if (error) throw error;
 
-      const rows = ((data ?? []) as unknown) as RawMember[];
+      const rows = ((data?.members ?? []) as unknown) as RawMember[];
       const normalized: Member[] = rows.map((m) => ({
         ...m,
         // Keep legacy flags defined to avoid UI undefined access; server table lacks these.
@@ -123,7 +147,12 @@ export default function AdminMembersPage() {
         can_submit_finance: false,
       }));
 
-      setMembers(normalized as Member[]);
+      // If committee changing phase is disabled (false), hide honourable members from the list
+      if (committeeChangingPhase === false) {
+        setMembers(normalized.filter((r) => r.role !== 'honourable') as Member[]);
+      } else {
+        setMembers(normalized as Member[]);
+      }
     } catch (error) {
       console.error('Error fetching members:', error);
       toast.error('Failed to fetch members');
@@ -149,12 +178,36 @@ export default function AdminMembersPage() {
   const changeRole = async (member: Member, newRole: string) => {
     // Only super admins may change roles
     if (!isSuperAdmin) {
+      console.error('changeRole blocked: isSuperAdmin=', isSuperAdmin, 'role=', role);
       toast.error('Only super admins can change roles');
       return;
     }
 
     try {
+      // If committee changing phase is disabled, do not allow promoting to honourable
+      if (committeeChangingPhase === false && newRole === 'honourable') {
+        toast.error('Committee changing phase is disabled — cannot promote to Honourable');
+        return;
+      }
       const targetIds = selectedIds && selectedIds.length > 0 ? selectedIds : [member.mem_id];
+
+      // Client-side guard: Honourable role is immutable once assigned
+      if (newRole !== 'honourable') {
+        const honourableSelected = members.find((m) => targetIds.includes(m.mem_id) && m.role === 'honourable');
+        if (honourableSelected) {
+          toast.error('Honourable role is immutable and cannot be changed');
+          return;
+        }
+      }
+
+      // Client-side guard: only allow promoting to honourable if all targets are currently 'admin'
+      if (newRole === 'honourable') {
+        const nonAdmin = members.find((m) => targetIds.includes(m.mem_id) && m.role !== 'admin');
+        if (nonAdmin) {
+          toast.error('Only members with role "admin" may be promoted to Honourable');
+          return;
+        }
+      }
 
       const { data, error } = await invokeFunction('update-member-role', {
         mem_ids: targetIds,
@@ -177,6 +230,28 @@ export default function AdminMembersPage() {
   };
 
   const changeRoleBulk = async (newRole: string) => {
+    if (committeeChangingPhase === false && newRole === 'honourable') {
+      toast.error('Committee changing phase is disabled — cannot promote to Honourable');
+      return;
+    }
+    // If any selected are honourable and we're trying to change them, block early
+    if (newRole !== 'honourable') {
+      const honourableSelected = members.find((m) => selectedIds.includes(m.mem_id) && m.role === 'honourable');
+      if (honourableSelected) {
+        toast.error('Cannot change role of Honourable members');
+        return;
+      }
+    }
+
+    // For promoting to honourable, require all selected be 'admin'
+    if (newRole === 'honourable') {
+      const nonAdmin = members.find((m) => selectedIds.includes(m.mem_id) && m.role !== 'admin');
+      if (nonAdmin) {
+        toast.error('Only members with role "admin" may be promoted to Honourable');
+        return;
+      }
+    }
+
     // changeRole reads `selectedIds` when present, so a dummy member param is fine
     await changeRole({} as Member, newRole);
   };
@@ -522,24 +597,32 @@ export default function AdminMembersPage() {
                   <Button variant="outline">Change Role</Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => changeRoleBulk('member')}>Set as Member</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => changeRoleBulk('honourable')}>Set as Honourable</DropdownMenuItem>
-                  {isSuperAdmin && (
-                    <>
-                      <DropdownMenuItem onClick={() => changeRoleBulk('admin')}>Set as Admin</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => changeRoleBulk('super_admin')}>Set as Super Admin</DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
                   {(() => {
-                    const callerIsAdminOnly = isAdmin && !isSuperAdmin;
                     const selectedTargets = members.filter((m) => selectedIds.includes(m.mem_id));
+                    const hasHonourableSelected = selectedTargets.some((t) => t.role === 'honourable');
+                    const allAdminSelected = selectedTargets.length > 0 && selectedTargets.every((t) => t.role === 'admin');
+                    const callerIsAdminOnly = isAdmin && !isSuperAdmin;
                     const hasNonMember = selectedTargets.find((t) => t.role !== 'member');
+
                     if (callerIsAdminOnly && hasNonMember) {
                       return null;
                     }
+
                     return (
-                      <DropdownMenuItem className="text-red-600" onClick={async () => { await deleteMember({} as Member); }}>Remove selected</DropdownMenuItem>
+                      <>
+                        <DropdownMenuItem onClick={() => changeRoleBulk('member')} disabled={hasHonourableSelected}>Set as Member</DropdownMenuItem>
+                        {committeeChangingPhase !== false && (
+                          <DropdownMenuItem onClick={() => changeRoleBulk('honourable')} disabled={!allAdminSelected}>Set as Honourable</DropdownMenuItem>
+                        )}
+                        {isSuperAdmin && (
+                          <>
+                            <DropdownMenuItem onClick={() => changeRoleBulk('admin')} disabled={hasHonourableSelected}>Set as Admin</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => changeRoleBulk('super_admin')} disabled={hasHonourableSelected}>Set as Super Admin</DropdownMenuItem>
+                          </>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-red-600" onClick={async () => { await deleteMember({} as Member); }}>Remove selected</DropdownMenuItem>
+                      </>
                     );
                   })()}
                 </DropdownMenuContent>
@@ -575,6 +658,7 @@ export default function AdminMembersPage() {
                       </TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Batch</TableHead>
+                      <TableHead>Designation</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -605,6 +689,8 @@ export default function AdminMembersPage() {
 
                       <TableCell>{member.batch ?? '-'}</TableCell>
 
+                      <TableCell>{member.designation ? member.designation.replace(/_/g, ' ') : '-'}</TableCell>
+
                       <TableCell>
                         <Badge className={cn('capitalize', getRoleBadgeColor(member.role || ''))}>
                           {member.role?.replace('_', ' ') || 'Unknown'}
@@ -624,12 +710,27 @@ export default function AdminMembersPage() {
                             <DropdownMenuContent align="end">
                               {isSuperAdmin && (
                                 <>
-                                  <DropdownMenuItem onClick={() => changeRole(member, 'member')}>Set as Member</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => changeRole(member, 'honourable')}>Set as Honourable</DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => changeRole(member, 'admin')}>Set as Admin</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')}>Set as Super Admin</DropdownMenuItem>
-                                  <DropdownMenuSeparator />
+                                      {member.role === 'honourable' ? (
+                                        <>
+                                          <DropdownMenuItem disabled>Honourable (immutable)</DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                        </>
+                                      ) : (
+                                        <>
+                                          <DropdownMenuItem onClick={() => changeRole(member, 'member')}>Set as Member</DropdownMenuItem>
+                                          {committeeChangingPhase !== false && (
+                                            member.role === 'admin' ? (
+                                              <DropdownMenuItem onClick={() => changeRole(member, 'honourable')}>Set as Honourable</DropdownMenuItem>
+                                            ) : (
+                                              <DropdownMenuItem disabled>Set as Honourable (admins only)</DropdownMenuItem>
+                                            )
+                                          )}
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem onClick={() => changeRole(member, 'admin')}>Set as Admin</DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')}>Set as Super Admin</DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                        </>
+                                      )}
                                 </>
                               )}
                               {isSuperAdmin || (isAdmin && member.role === 'member') ? (

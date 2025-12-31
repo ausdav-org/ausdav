@@ -3,10 +3,21 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Facebook, Instagram, Youtube, Phone, Mail, MapPin, Heart, LogIn, ArrowUpRight, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useQuery } from '@tanstack/react-query';
+import { fetchOrgContact, OrgContact } from '@/lib/contact';
 import { Button } from '@/components/ui/button';
+import { useState } from 'react';
+import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 const Footer: React.FC = () => {
   const { t } = useLanguage();
+  const [footerMessage, setFooterMessage] = useState('');
+  const { data: orgContact } = useQuery<OrgContact | null, Error>({
+    queryKey: ['org_contact'],
+    queryFn: fetchOrgContact,
+    staleTime: 1000 * 60 * 5,
+  });
 
   const quickLinks = [
     { href: '/', label: t('nav.home') },
@@ -98,26 +109,35 @@ const Footer: React.FC = () => {
             transition={{ delay: 0.2 }}
           >
             <h4 className="font-bold text-lg mb-6">{t('footer.contact')}</h4>
-            <ul className="space-y-4">
-              <li className="flex items-start gap-3 text-sm text-muted-foreground group">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <MapPin className="w-4 h-4 text-primary" />
-                </div>
-                <span className="pt-1">Vavuniya, Northern Province, Sri Lanka</span>
-              </li>
-              <li className="flex items-center gap-3 text-sm text-muted-foreground group">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <Phone className="w-4 h-4 text-primary" />
-                </div>
-                <span>+94 XX XXX XXXX</span>
-              </li>
-              <li className="flex items-center gap-3 text-sm text-muted-foreground group">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <Mail className="w-4 h-4 text-primary" />
-                </div>
-                <span>info@ausdav.org</span>
-              </li>
-            </ul>
+            {/** Fetch contact settings from DB; fallback to static text if missing */}
+            {(() => {
+              const address = orgContact?.address ?? 'Vavuniya, Northern Province, Sri Lanka';
+              const phoneStr = orgContact?.phone ?? '+94 XX XXX XXXX';
+              const emailStr = orgContact?.email ?? 'info@ausdav.org';
+
+              return (
+                <ul className="space-y-4">
+                  <li className="flex items-start gap-3 text-sm text-muted-foreground group">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                      <MapPin className="w-4 h-4 text-primary" />
+                    </div>
+                    <span className="pt-1">{address}</span>
+                  </li>
+                  <li className="flex items-center gap-3 text-sm text-muted-foreground group">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                      <Phone className="w-4 h-4 text-primary" />
+                    </div>
+                    <span>{phoneStr}</span>
+                  </li>
+                  <li className="flex items-center gap-3 text-sm text-muted-foreground group">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                      <Mail className="w-4 h-4 text-primary" />
+                    </div>
+                    <span>{emailStr}</span>
+                  </li>
+                </ul>
+              );
+            })()}
           </motion.div>
 
           {/* Social */}
@@ -157,17 +177,66 @@ const Footer: React.FC = () => {
               </motion.a>
             </div>
             
-            {/* Newsletter hint */}
+            {/* Feedback box */}
             <div className="mt-8 p-4 glass-card rounded-xl">
-              <p className="text-xs text-muted-foreground mb-2">Stay updated with our events</p>
-              <div className="flex gap-2">
-                <div className="flex-1 h-9 rounded-lg bg-muted/50 px-3 flex items-center">
-                  <span className="text-xs text-muted-foreground">your@email.com</span>
+              <p className="text-xs text-muted-foreground mb-2">Send us feedback</p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                }}
+                className="space-y-2"
+              >
+                <div>
+                  <textarea
+                    id="footer-feedback"
+                    name="message"
+                    placeholder="Share a thought, suggestion or report an issue..."
+                    className="w-full rounded-lg p-2 bg-muted/50 text-sm text-foreground"
+                    rows={3}
+                    value={footerMessage}
+                    onChange={(e) => setFooterMessage(e.target.value)}
+                  />
                 </div>
-                <Button size="sm" className="h-9 px-4">
-                  Join
-                </Button>
-              </div>
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    className="h-9 px-4"
+                    onClick={async () => {
+                      const message = footerMessage.trim();
+                      if (!message) {
+                        toast({ title: 'Empty', description: 'Please enter feedback before sending' });
+                        return;
+                      }
+                      try {
+                        const resp = await fetch('/functions/v1/submit-feedback', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ message }),
+                        });
+                        if (resp.ok) {
+                          toast({ title: 'Thanks', description: 'Feedback submitted' });
+                          setFooterMessage('');
+                          return;
+                        }
+                        if (resp.status === 429) {
+                          toast({ title: 'Rate limited', description: 'Too many submissions, try later' });
+                          return;
+                        }
+                        // fallback to direct insert
+                        const { error } = await (supabase as any).from('feedback').insert([{ message, type: null, is_read: false }]);
+                        if (error) throw error;
+                        toast({ title: 'Thanks', description: 'Feedback submitted' });
+                        setFooterMessage('');
+                      } catch (err) {
+                        console.error('Footer feedback failed', err);
+                        toast({ title: 'Error', description: 'Could not submit feedback' });
+                      }
+                    }}
+                  >
+                    Send
+                  </Button>
+                </div>
+              </form>
             </div>
           </motion.div>
         </div>
