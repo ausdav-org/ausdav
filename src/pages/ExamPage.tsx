@@ -34,6 +34,7 @@ import regCardImg from "@/assets/Exam/check_registration_banner.png";
 
 import { supabase } from "@/integrations/supabase/client";
 import BG1 from "@/assets/AboutUs/BG1.jpg";
+import BG2 from "@/assets/Exam/BG2.jpg";
 
 type AppSettings = {
   allow_exam_applications: boolean;
@@ -820,8 +821,8 @@ const ExamPage: React.FC = () => {
         </motion.div>
       </section>
 
-      <section className="py-16 md:py-24">
-        <div className="container mx-auto px-4">
+      <section className="relative py-16 md:py-24">
+        <div className="relative z-10 container mx-auto px-4">
           <Tabs
             value={activeTab}
             onValueChange={setActiveTab}
