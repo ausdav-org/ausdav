@@ -93,7 +93,7 @@ serve(async (req: Request) => {
     const [membersRes, activeRes, batchRes, financeRes, pendingSubRes, applicantsRes, eventsRes] = await Promise.all([
       adminClient.from('members').select('mem_id', { count: 'exact', head: true }),
       adminClient.from('profiles').select('is_active', { count: 'exact', head: true }).eq('is_active', true),
-      adminClient.from('profiles').select('batch'),
+      adminClient.from('members').select('batch'),
       adminClient.from('finance').select('exp_type, amount, txn_date').gte('txn_date', startISO),
       adminClient.from('finance_submissions').select('*', { count: 'exact', head: true }).eq('approved', false),
       adminClient.from('applicants').select('*', { count: 'exact', head: true }),
