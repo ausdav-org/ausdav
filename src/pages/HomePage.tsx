@@ -1,3 +1,33 @@
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
+import { Link } from "react-router-dom";
+import { motion, useScroll, useTransform } from "framer-motion";
+import {
+  ArrowRight,
+  BookOpen,
+  Users,
+  Calendar,
+  MessageSquare,
+  ChevronRight,
+  Sparkles,
+  GraduationCap,
+  Heart,
+  Zap,
+} from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import AnnouncementCarousel from "@/components/AnnouncementCarousel";
+import ReviewCarousel from "@/components/ReviewCarousel";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+
 import { Tables } from "@/integrations/supabase/types";
 import heroBg from "@/assets/Home/BG1.jpg";
 import logoImg from "@/assets/Exam/AUSDAV logo.png";
@@ -77,6 +107,7 @@ const HOME_EXEC_DESIGNATIONS = [
   "web_designer",
 ];
 
+// Executive designation to role mapping
 const HOME_DESIGNATION_TO_ROLE: Record<string, { en: string; ta: string }> = {
   president: { en: "President", ta: "தலைவர்" },
   secretary: { en: "Secretary", ta: "செயலாளர்" },

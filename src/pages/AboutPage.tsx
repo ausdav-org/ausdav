@@ -24,7 +24,7 @@ const AboutPage: React.FC = () => {
       title: language === "en" ? "Our Mission" : "எங்கள் நோக்கம்",
       content:
         language === "en"
-          ? "To deliver exceptional products and services that empower our clients to achieve their goals and drive sustainable growth in an ever-changing world."
+          ? "Our mission is to inspire and guide young students to become responsible, confident individuals who make a positive impact on society."
           : "எங்கள் கிளையன்டுகளுக்கு ஆற்றல் சேர்க்கும் மிகச்சிறந்த பொருட்கள் மற்றும் சேவைகளை வழங்குவது.",
       color: "bg-cyan-500/20",
       icon_color: "text-cyan-500",
@@ -34,7 +34,7 @@ const AboutPage: React.FC = () => {
       title: language === "en" ? "Our Vision" : "எங்கள் பார்வை",
       content:
         language === "en"
-          ? "To be a global leader in our industry, recognized for innovation, integrity, and our commitment to making a positive difference in the communities we serve."
+          ? "To build a future where empowered, socially responsible young leaders drive positive change in their communities and beyond."
           : "நம் தொழிலில் ஒரு உலகளாவிய தலைவராக இருப்பது.",
       color: "bg-cyan-500/20",
       icon_color: "text-cyan-500",
@@ -44,7 +44,7 @@ const AboutPage: React.FC = () => {
       title: language === "en" ? "Our Values" : "எங்கள் மதிப்புகள்",
       content:
         language === "en"
-          ? "We believe in integrity, collaboration, innovation, and excellence. These core values guide every decision we make and every relationship we build."
+          ? "We believe in honesty, teamwork, and respect for everyone. We aim to guide and support young minds to grow as responsible individuals. Through meaningful activities, we strive to make a positive impact on society."
           : "மு誠誠integrity, collaboration, innovation மற்றும் excellence.",
       color: "bg-cyan-500/20",
       icon_color: "text-cyan-500",
@@ -155,6 +155,29 @@ const AboutPage: React.FC = () => {
         </div>
       </section>
 
+      {/* Our Story Section */}
+      <section className="relative py-20 px-4 bg-slate-800/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+            >
+              <h2 className="text-4xl md:text-5xl font-bold mb-6">
+                <span className="text-cyan-400">Our</span> Story
+              </h2>
+              <p className="text-slate-300 text-lg leading-relaxed mb-6">
+                {language === "en"
+                  ? "Founded with a vision to transform the industry, our organization has grown from a small team of passionate individuals into a thriving company that serves clients worldwide."
+                  : "எங்கள் நிறுவனம் பெரிய வெற்றிகளுடன் வளர்ந்துவிட்டது."}
+              </p>
+              <p className="text-slate-300 text-lg leading-relaxed mb-6">
+                {language === "en"
+                  ? "Over time, we have remained true to our values by creating meaningful projects and events that support young minds and strengthen our communities. Today, we continue to grow with enthusiasm, driven by the belief that small actions can create lasting positive change."
+                  : "நாங்கள் நமது கிளையன்டுகளுக்கு சிறந்த சேவை வழங்க உறுதிபட்டுள்ளோம்."}
+              </p>
+            </motion.div>
 
 
       {/* Who We Are Section */}
