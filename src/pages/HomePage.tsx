@@ -388,8 +388,83 @@ const HomePage: React.FC = () => {
         )}
       </div>
 
+      {/* About Us and Events Section */}
+      <section className="py-16 md:py-24 bg-slate-800/30">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto">
+            {/* About Us Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="bg-cyan-500/20 backdrop-blur-sm rounded-2xl p-8 border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
+            >
+              <div className="text-left">
+                <div className="w-16 h-16 mb-6 rounded-2xl bg-cyan-500/20 flex items-center justify-center">
+                  <Users className="w-8 h-8 text-cyan-400" />
+                </div>
+                <h3 className="text-2xl md:text-3xl font-bold mb-4 text-white">
+                  {language === "en" ? "About Us" : "எங்களைப் பற்றி"}
+                </h3>
+                <p className="text-slate-300 text-lg leading-relaxed mb-6">
+                  {language === "en"
+                    ? "Learn more about our mission, vision, and the dedicated team behind AUSDAV."
+                    : "எங்கள் நோக்கம், பார்வை மற்றும் AUSDAV இன் பின்னால் உள்ள அர்ப்பணிப்பு குழுவைப் பற்றி மேலும் அறிக."}
+                </p>
+                <Button
+                  asChild
+                  variant="outline"
+                  size="lg"
+                  className="border-cyan-500/40 hover:border-cyan-500/60 text-cyan-400 hover:text-cyan-300"
+                >
+                  <Link to="/about">
+                    {language === "en" ? "Learn More" : "மேலும் அறிக"}
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Link>
+                </Button>
+              </div>
+            </motion.div>
+
+            {/* Events Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="bg-cyan-500/20 backdrop-blur-sm rounded-2xl p-8 border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
+            >
+              <div className="text-left">
+                <div className="w-16 h-16 mb-6 rounded-2xl bg-cyan-500/20 flex items-center justify-center">
+                  <Calendar className="w-8 h-8 text-cyan-400" />
+                </div>
+                <h3 className="text-2xl md:text-3xl font-bold mb-4 text-white">
+                  {language === "en" ? "Events" : "நிகழ்வுகள்"}
+                </h3>
+                <p className="text-slate-300 text-lg leading-relaxed mb-6">
+                  {language === "en"
+                    ? "Discover our upcoming events, seminars, and activities that empower students."
+                    : "மாணவர்களை வலுப்படுத்தும் எங்கள் வரவிருக்கும் நிகழ்வுகள், கருத்தரங்குகள் மற்றும் செயல்பாடுகளைக் கண்டறிக."}
+                </p>
+                <Button
+                  asChild
+                  variant="outline"
+                  size="lg"
+                  className="border-cyan-500/40 hover:border-cyan-500/60 text-cyan-400 hover:text-cyan-300"
+                >
+                  <Link to="/events">
+                    {language === "en" ? "View Events" : "நிகழ்வுகளைப் பார்க்க"}
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Link>
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
       {/* Executive Committee */}
-      <section className="py-24 relative">
+      <section className="py-24 relative bg-slate-700/30">
         <div className="container mx-auto px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -459,7 +534,7 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Testimonials / Reviews Carousel */}
-      <section className="py-24 bg-slate-700/30">
+      <section className="py-24 bg-slate-800/30">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-white">
@@ -494,7 +569,7 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Feedback Section */}
-      <section className="py-24 relative bg-slate-800/50">
+      <section className="py-24 relative bg-slate-700/30">
         <div className="container mx-auto px-4 relative z-10">
           <div className="max-w-2xl mx-auto">
             <motion.div
