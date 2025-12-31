@@ -21,6 +21,7 @@ import {
   UserPlus,
   HandHelping,
   TrendingUp, // ✅ added for Results page icon
+  Wrench,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
@@ -62,6 +63,8 @@ const navItems: NavItem[] = [
   { title: 'Announcements', href: '/admin/announcements', icon: Megaphone, roles: ['admin', 'super_admin'], permissionKey: 'announcement' },
 
   { title: 'Feedback', href: '/admin/feedback', icon: Megaphone, roles: ['admin', 'super_admin'], permissionKey: 'feedback' },
+
+  { title: 'Site Mode', href: '/admin/site-mode', icon: Wrench, roles: ['admin', 'super_admin'], permissionKey: 'settings' },
 
   { title: 'Claim Permission', href: '/admin/claim-permission', icon: HandHelping, roles: ['admin'] },
   { title: 'Permissions', href: '/admin/permissions', icon: Shield, roles: ['super_admin'] },
