@@ -995,6 +995,7 @@ export default function AdminApplicantsPage() {
                                 setSelectedApplicant(applicant);
                                 setDetailsOpen(true);
                               }}
+                              className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer"
                             >
                               <FileText className="h-4 w-4 mr-2" />
                               View Details

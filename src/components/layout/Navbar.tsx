@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
-import logoImg from '@/assets/Exam/AUSDAV logo.png';
+import logoImg from '@/assets/logo/AUSDAV logo.png';
 import { cn } from '@/lib/utils';
 
 const PROFILE_IMG = "/ausdav/src/assets/Committee/2022/Ruthu.jpg";
@@ -244,7 +244,7 @@ const Navbar: React.FC = () => {
                 <DropdownMenuItem
                   onClick={() => setLanguage("en")}
                   className={cn(
-                    "cursor-pointer",
+                    "cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950",
                     language === "en" && "text-primary bg-primary/10"
                   )}
                 >
@@ -253,7 +253,7 @@ const Navbar: React.FC = () => {
                 <DropdownMenuItem
                   onClick={() => setLanguage("ta")}
                   className={cn(
-                    "cursor-pointer font-tamil",
+                    "cursor-pointer font-tamil hover:bg-blue-100 dark:hover:bg-blue-950",
                     language === "ta" && "text-primary bg-primary/10"
                   )}
                 >
@@ -285,14 +285,14 @@ const Navbar: React.FC = () => {
                   className="glass-card w-40 p-1.5 border border-white/20 shadow-xl"
                 >
                   {/* ?o. FIXED: use route path */}
-                  <DropdownMenuItem asChild className="cursor-pointer rounded-md">
+                  <DropdownMenuItem asChild className="cursor-pointer rounded-md hover:bg-blue-100 dark:hover:bg-blue-950">
                     <Link to="/profile" className="w-full px-2 py-1.5">
                       Profile
                     </Link>
                   </DropdownMenuItem>
 
                   <DropdownMenuItem
-                    className="cursor-pointer rounded-md"
+                    className="cursor-pointer rounded-md hover:bg-blue-100 dark:hover:bg-blue-950"
                     onClick={async () => {
                       await supabase.auth.signOut();
                       navigate('/');

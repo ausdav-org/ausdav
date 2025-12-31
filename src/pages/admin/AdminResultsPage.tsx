@@ -1822,11 +1822,11 @@ export default function AdminResultsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openEditDialog(a)}>
+                                <DropdownMenuItem onClick={() => openEditDialog(a)} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer">
                                   <Pencil className="h-4 w-4 mr-2" />
                                   Edit
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openDetails(a)}>
+                                <DropdownMenuItem onClick={() => openDetails(a)} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer">
                                   <FileText className="h-4 w-4 mr-2" />
                                   View Details
                                 </DropdownMenuItem>
