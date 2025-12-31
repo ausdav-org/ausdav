@@ -29,6 +29,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { Tables } from "@/integrations/supabase/types";
 import heroBg from "@/assets/Home/BG1.jpg";
+
+type AnnouncementRow = Tables<"announcements"> & {
+  description_en?: string | null;
+  description_ta?: string | null;
+  announcement_id?: string;
+  is_permanent?: boolean;
+  category?: string | null;
+};
+
 type CarouselAnnouncement = {
   id: string;
   en: string;
@@ -173,41 +182,25 @@ const HomePage: React.FC = () => {
 
       if (error) throw error;
 
-      const activeItems = (data || []).filter(
-        (item: Tables<"announcements">) => {
-          const withinStart = !item.start_at || item.start_at <= nowIso;
-          const withinEnd =
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (item as any).is_permanent || !item.end_at || item.end_at >= nowIso;
-          return item.is_active !== false && withinStart && withinEnd;
-        }
-      );
+      const activeItems = (data || []).filter((item: AnnouncementRow) => {
+        const withinStart = !item.start_at || item.start_at <= nowIso;
+        const withinEnd =
+          item.is_permanent || !item.end_at || item.end_at >= nowIso;
+        return item.is_active !== false && withinStart && withinEnd;
+      });
 
       const mapped = activeItems.map<CarouselAnnouncement>(
-        (item: Tables<"announcements">) => ({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          id: item.id || (item as any).announcement_id || crypto.randomUUID(),
+        (item: AnnouncementRow) => ({
+          id: item.id || item.announcement_id || crypto.randomUUID(),
           en: buildAnnouncementText(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (item as any).description_en ??
-              item.message_en ??
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (item as any).description ??
-              item.title_en,
+            item.description_en ?? item.message_en ?? item.title_en,
             item.title_en
           ),
           ta: buildAnnouncementText(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (item as any).description_ta ?? item.message_ta ?? item.title_ta,
-            item.title_ta ||
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (item as any).description_en ||
-              item.title_en
+            item.description_ta ?? item.message_ta ?? item.title_ta,
+            item.title_ta || item.description_en || item.title_en
           ),
-          type: mapCategoryToType(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (item as any).category ?? item.tag ?? null
-          ),
+          type: mapCategoryToType(item.category ?? item.tag ?? null),
         })
       );
 

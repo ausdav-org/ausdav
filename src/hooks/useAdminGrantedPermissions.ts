@@ -2,9 +2,13 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
-// Type-safe wrapper for new tables not yet in the generated types
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+type AdminGrantedPermission = {
+  permission_key: string;
+  admin_id: string;
+  is_active: boolean;
+};
+
+const db = supabase;
 
 export const useAdminGrantedPermissions = () => {
   const { user, isSuperAdmin, isAdmin, role } = useAdminAuth();
@@ -50,8 +54,7 @@ export const useAdminGrantedPermissions = () => {
         .eq("is_active", true);
 
       if (error) throw error;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setGrantedPermissions(data?.map((p: any) => p.permission_key) || []);
+      setGrantedPermissions(data?.map((p) => p.permission_key) || []);
     } catch (err) {
       console.error("Error fetching granted permissions:", err);
       setGrantedPermissions([]);

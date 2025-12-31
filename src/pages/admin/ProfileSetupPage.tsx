@@ -124,7 +124,7 @@ export default function ProfileSetupPage() {
         profile_path: uploadedPath,
       };
 
-      let { error: upsertError } = await supabase
+      const { error: upsertError } = await supabase
         .from('members' as any)
         .upsert(payload as any)
         .eq('auth_user_id', user.id);
