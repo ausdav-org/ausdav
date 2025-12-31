@@ -67,12 +67,23 @@ const LoginPage: React.FC = () => {
         .eq('auth_user_id', userId)
         .maybeSingle();
 
-      if (!member) {
+      let role = (member as any)?.role as string | undefined;
+
+      if (!role) {
+        // Fallback to auth metadata for admin/super_admin accounts without a members row.
+        const { data: userData, error: userErr } = await supabase.auth.getUser();
+        if (!userErr && userData?.user) {
+          const meta = userData.user.user_metadata as Record<string, any> | undefined;
+          if (meta?.is_super_admin === true) role = 'super_admin';
+          else if (Array.isArray(meta?.roles) && meta.roles.includes('super_admin')) role = 'super_admin';
+          else if (Array.isArray(meta?.roles) && meta.roles.includes('admin')) role = 'admin';
+        }
+      }
+
+      if (!member && !role) {
         navigate('/admin/profile-setup');
         return;
       }
-
-      const role = (member as any)?.role as string | undefined;
 
       // Redirect based on role
       switch (role) {
