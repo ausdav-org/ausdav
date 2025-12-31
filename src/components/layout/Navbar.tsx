@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
+import logoImg from '@/assets/logo/AUSDAV logo.png';
 import { cn } from '@/lib/utils';
 
 const PROFILE_IMG = "/ausdav/src/assets/Committee/2022/Ruthu.jpg";
@@ -139,8 +140,9 @@ const Navbar: React.FC = () => {
               whileHover={{ scale: 1.05, rotate: 5 }}
               className="relative"
             >
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center neon-glow">
-                <Sparkles className="w-6 h-6 text-primary-foreground" />
+              <div className="w-12 h-12 bg-transparent rounded-full flex items-center justify-center">
+                {/* <Sparkles className="w-6 h-6 text-primary-foreground" /> */}
+                <img src={logoImg} alt="AUSDAV Logo" className="absolute inset-0 w-full h-full object-contain bg-transparent neon-glow rounded-full" />
               </div>
               <div className="absolute right-0 bottom-0 w-full h-full rounded-xl bg-primary/20 blur-xl group-hover:blur-2xl transition-all" />
             </motion.div>
@@ -203,7 +205,7 @@ const Navbar: React.FC = () => {
             </Button>
 
             {/* Theme Toggle */}
-            <Button
+            {/* <Button
               variant="ghost"
               size="icon"
               onClick={toggleTheme}
@@ -222,7 +224,7 @@ const Navbar: React.FC = () => {
                   <Sun className="w-5 h-5" />
                 )}
               </motion.div>
-            </Button>
+            </Button> */}
 
             {/* Language Switcher */}
             <DropdownMenu>
@@ -242,7 +244,7 @@ const Navbar: React.FC = () => {
                 <DropdownMenuItem
                   onClick={() => setLanguage("en")}
                   className={cn(
-                    "cursor-pointer",
+                    "cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950",
                     language === "en" && "text-primary bg-primary/10"
                   )}
                 >
@@ -251,7 +253,7 @@ const Navbar: React.FC = () => {
                 <DropdownMenuItem
                   onClick={() => setLanguage("ta")}
                   className={cn(
-                    "cursor-pointer font-tamil",
+                    "cursor-pointer font-tamil hover:bg-blue-100 dark:hover:bg-blue-950",
                     language === "ta" && "text-primary bg-primary/10"
                   )}
                 >
@@ -283,14 +285,14 @@ const Navbar: React.FC = () => {
                   className="glass-card w-40 p-1.5 border border-white/20 shadow-xl"
                 >
                   {/* ?o. FIXED: use route path */}
-                  <DropdownMenuItem asChild className="cursor-pointer rounded-md">
+                  <DropdownMenuItem asChild className="cursor-pointer rounded-md hover:bg-blue-100 dark:hover:bg-blue-950">
                     <Link to="/profile" className="w-full px-2 py-1.5">
                       Profile
                     </Link>
                   </DropdownMenuItem>
 
                   <DropdownMenuItem
-                    className="cursor-pointer rounded-md"
+                    className="cursor-pointer rounded-md hover:bg-blue-100 dark:hover:bg-blue-950"
                     onClick={async () => {
                       await supabase.auth.signOut();
                       navigate('/');

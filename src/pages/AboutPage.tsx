@@ -179,23 +179,6 @@ const AboutPage: React.FC = () => {
               </p>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              className="relative"
-            >
-              <div className="h-[400px] rounded-xl overflow-hidden border border-cyan-500/20">
-                <img
-                  src={History}
-                  alt="Our Story"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
 
       {/* Who We Are Section */}
       <section className="relative py-20 px-4">
@@ -286,6 +269,54 @@ const AboutPage: React.FC = () => {
                   className="w-full h-full object-cover"
                 />
               </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* Our Story Section */}
+      <section className="relative py-20 px-4 bg-slate-800/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+
+            <motion.div
+              initial={{ opacity: 0, x: 30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="relative"
+            >
+              <div className="h-[400px] rounded-xl overflow-hidden border border-cyan-500/20">
+                <img
+                  src={History}
+                  alt="Our Story"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+            >
+              <h2 className="text-4xl md:text-5xl font-bold mb-6">
+                <span className="text-cyan-400">Our</span> Story
+              </h2>
+              <p className="text-slate-300 text-lg leading-relaxed mb-6">
+                {language === "en"
+                  ? "Founded with a vision to transform the industry, our organization has grown from a small team of passionate individuals into a thriving company that serves clients worldwide."
+                  : "எங்கள் நிறுவனம் பெரிய வெற்றிகளுடன் வளர்ந்துவிட்டது."}
+              </p>
+              <p className="text-slate-300 text-lg leading-relaxed mb-6">
+                {language === "en"
+                  ? "Over the years, we've remained committed to our founding principles, putting our clients first and fostering innovation and building lasting relationships based on trust and mutual success."
+                  : "நாங்கள் நமது கிளையன்டுகளுக்கு சிறந்த சேவை வழங்க உறுதிபட்டுள்ளோம்."}
+              </p>
+              <p className="text-slate-300 text-lg leading-relaxed">
+                {language === "en"
+                  ? "Today, we're proud to be at the forefront of our industry, continuously pushing boundaries and setting new standards for excellence."
+                  : "இன்று நாங்கள் தொழிலில் முன்னணியில் இருக்கிறோம்."}
+              </p>
             </motion.div>
           </div>
         </div>

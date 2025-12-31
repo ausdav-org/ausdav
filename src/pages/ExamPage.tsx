@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ClipboardList, Award, ImageDown, Check, X } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -125,6 +126,7 @@ const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
 
 const ExamPage: React.FC = () => {
   const { t, language } = useLanguage();
+  const location = useLocation();
 
   const [activeTab, setActiveTab] = useState("apply");
   const [submitting, setSubmitting] = useState(false);
@@ -249,9 +251,26 @@ const ExamPage: React.FC = () => {
     if (didInitTabRef.current) return;
     if (examSettingLoading || resultsSettingLoading) return;
 
-    setActiveTab(tabOrder[0]);
+    const initialHash = (location.hash || "").replace("#", "");
+    if (initialHash === "apply" || initialHash === "results") {
+      setActiveTab(initialHash as "apply" | "results");
+    } else {
+      setActiveTab(tabOrder[0]);
+    }
+
     didInitTabRef.current = true;
-  }, [tabOrder, examSettingLoading, resultsSettingLoading]);
+  }, [tabOrder, examSettingLoading, resultsSettingLoading, location.hash]);
+
+  // Listen to URL hash to allow deep-linking to specific exam sections
+  useEffect(() => {
+    const hash = (location.hash || "").replace("#", "");
+    if (!hash) return;
+    if (hash === "apply" || hash === "results") {
+      setActiveTab(hash as "apply" | "results");
+      const el = document.getElementById("exam-tabs");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [location.hash]);
 
   const tabMeta = useMemo(() => {
     return {
@@ -824,6 +843,7 @@ const ExamPage: React.FC = () => {
       <section className="relative py-16 md:py-24">
         <div className="relative z-10 container mx-auto px-4">
           <Tabs
+            id="exam-tabs"
             value={activeTab}
             onValueChange={setActiveTab}
             className="max-w-4xl mx-auto"
