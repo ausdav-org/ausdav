@@ -799,7 +799,13 @@ const ExamPage: React.FC = () => {
             transition={{ delay: 0.3 }}
             className="text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6"
           >
-            {t("exam.title")}
+            {language === "en" ? (
+              <>
+                Examination <span className="text-cyan-400">Services</span>
+              </>
+            ) : (
+              t("exam.title")
+            )}
           </motion.h1>
           <motion.p
             initial={{ opacity: 0 }}
@@ -814,7 +820,7 @@ const ExamPage: React.FC = () => {
         </motion.div>
       </section>
 
-      <section className="py-16 md:py-24 bg-slate-800/50">
+      <section className="py-16 md:py-24">
         <div className="container mx-auto px-4">
           <Tabs
             value={activeTab}
