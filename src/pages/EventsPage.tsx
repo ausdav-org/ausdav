@@ -15,6 +15,7 @@ import {
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import BG1 from "@/assets/AboutUs/BG1.jpg";
 
 type EventRecord = {
   id: string;
@@ -132,140 +133,64 @@ const EventsPage: React.FC = () => {
   const allEvents = events;
 
   return (
-    <div>
-      {/* Hero */}
+    <div className="bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+      {/* Hero Section with Background Image */}
       <section
-        className="py-16 md:py-24"
-        style={{ backgroundImage: "var(--gradient-hero)" }}
+        className="relative min-h-screen bg-cover bg-center flex items-center justify-center"
+        style={{
+          backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.6), rgba(15, 23, 42, 0.6)), url('${BG1}')`,
+          backgroundAttachment: "fixed",
+        }}
       >
-        <div className="container mx-auto px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center max-w-3xl mx-auto"
-          >
-            <h1 className="text-4xl md:text-5xl font-serif font-bold text-foreground mb-4">
-              {t("events.title")}
-            </h1>
-            <p className="text-foreground/80 text-lg">
-              {language === "en"
-                ? "Discover our upcoming events and explore memories from past activities"
-                : "எங்கள் வரவிருக்கும் நிகழ்வுகளைக் கண்டறியுங்கள் மற்றும் கடந்த செயல்பாடுகளின் நினைவுகளை ஆராயுங்கள்"}
-            </p>
-          </motion.div>
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-20 right-10 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
         </div>
-      </section>
 
-      {/* Events */}
-      <section className="py-16 md:py-24 bg-background">
-        <div className="container mx-auto px-4">
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-3xl font-serif font-bold text-foreground mb-8"
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="text-center z-10 px-4"
+        >
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="text-cyan-400 text-sm font-semibold mb-4 uppercase tracking-widest"
           >
-            {t("events.title")}
-          </motion.h2>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            {isLoadingEvents && (
-              <div className="col-span-2 text-center py-8 text-muted-foreground">
-                Loading events...
-              </div>
-            )}
-            {fetchError && !isLoadingEvents && (
-              <div className="col-span-2 text-center py-8 text-destructive">
-                {fetchError.includes("column events.id does not exist")
-                  ? "The events table is not properly set up. Please run the latest migration."
-                  : fetchError}
-              </div>
-            )}
-            {hasNoEvents && (
-              <div className="col-span-2 text-center py-8 text-muted-foreground">
-                No events to show yet.
-              </div>
-            )}
-            {!isLoadingEvents &&
-              !fetchError &&
-              allEvents.map((event, idx) => (
-                <motion.div
-                  key={event.id}
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: idx * 0.1 }}
-                  className="bg-card rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-all group"
-                >
-                  <div className="h-48 bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center">
-                    {event.coverImage ? (
-                      <div
-                        className="w-full h-full bg-cover bg-center"
-                        style={{ backgroundImage: `url(${event.coverImage})` }}
-                      />
-                    ) : (
-                      <div className="text-center">
-                        <Calendar className="w-12 h-12 text-secondary mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(event.date).toLocaleDateString(
-                            language === "en" ? "en-US" : "ta-LK",
-                            { dateStyle: "long" }
-                          )}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="p-6">
-                    <h3 className="text-xl font-serif font-bold text-foreground mb-2 group-hover:text-secondary transition-colors">
-                      {language === "en" ? event.titleEN : event.titleTA}
-                    </h3>
-                    <p className="text-muted-foreground mb-4 line-clamp-2">
-                      {language === "en"
-                        ? event.descriptionEN
-                        : event.descriptionTA}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <MapPin className="w-4 h-4" />
-                        {event.location}
-                      </span>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link to={`/events/${event.id}`}>
-                          {t("events.viewDetails")}
-                          <ChevronRight className="w-4 h-4 ml-1" />
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-          </div>
-        </div>
+            ✦{" "}
+            {language === "en"
+              ? "Empowering Future Leaders Since 2015"
+              : "2015 முதல் ஆற்றல் சேர்ப்பு"}
+          </motion.p>
+          <motion.h1
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.3 }}
+            className="text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6"
+          >
+            {language === "en" ? "Annual " : "வருடாந்த "}
+            <span className="text-cyan-400">
+              {language === "en" ? "Events" : "நிகழ்வுகள்"}
+            </span>
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="text-xl md:text-2xl text-slate-300 max-w-3xl mx-auto"
+          >
+            {language === "en"
+              ? "Discover our upcoming events and explore memories from past activities"
+              : "எங்கள் வரவிருக்கும் நிகழ்வுகளைக் கண்டறியுங்கள் மற்றும் கடந்த செயல்பாடுகளின் நினைவுகளை ஆராயுங்கள்"}
+          </motion.p>
+        </motion.div>
       </section>
 
       {/* Annual Events Timeline */}
       <section className="py-24 relative overflow-hidden bg-slate-800/50">
         <div className="container mx-auto px-4 relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-3xl md:text-5xl font-bold mb-4 text-white">
-              {language === "en" ? "Annual " : "வருடாந்த "}
-              <span className="text-cyan-400">
-                {language === "en" ? "Events" : "நிகழ்வுகள்"}
-              </span>
-            </h2>
-            <p className="text-slate-300 max-w-2xl mx-auto">
-              {language === "en"
-                ? "Our year-round activities designed to support and develop students"
-                : "மாணவர்களை ஆதரிக்கவும் வளர்க்கவும் வடிவமைக்கப்பட்ட எங்கள் ஆண்டு முழுவதும் செயல்பாடுகள்"}
-            </p>
-          </motion.div>
-
           <div className="relative max-w-4xl mx-auto">
             {/* Timeline line */}
             <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-cyan-500/50 to-transparent -translate-x-1/2" />

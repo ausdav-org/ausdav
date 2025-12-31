@@ -33,6 +33,7 @@ import applyCardImg from "@/assets/Exam/apply_portal_banner.png";
 import regCardImg from "@/assets/Exam/check_registration_banner.png";
 
 import { supabase } from "@/integrations/supabase/client";
+import BG1 from "@/assets/AboutUs/BG1.jpg";
 
 type AppSettings = {
   allow_exam_applications: boolean;
@@ -761,30 +762,59 @@ const ExamPage: React.FC = () => {
   };
 
   return (
-    <div>
+    <div className="bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+      {/* Hero Section with Background Image */}
       <section
-        className="py-16 md:py-24"
-        style={{ backgroundImage: "var(--gradient-hero)" }}
+        className="relative min-h-screen bg-cover bg-center flex items-center justify-center"
+        style={{
+          backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.6), rgba(15, 23, 42, 0.6)), url('${BG1}')`,
+          backgroundAttachment: "fixed",
+        }}
       >
-        <div className="container mx-auto px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center max-w-3xl mx-auto"
-          >
-            <h1 className="text-4xl md:text-5xl font-serif font-bold text-foreground mb-4">
-              {t("exam.title")}
-            </h1>
-            <p className="text-foreground/80 text-lg">
-              {language === "en"
-                ? "Register for exams and check your results"
-                : "தேர்வுகளுக்கு பதிவு செய்யுங்கள் மற்றும் உங்கள் முடிவுகளை சரிபார்க்கவும்"}
-            </p>
-          </motion.div>
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-20 right-10 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
         </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="text-center z-10 px-4"
+        >
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="text-cyan-400 text-sm font-semibold mb-4 uppercase tracking-widest"
+          >
+            ✦{" "}
+            {language === "en"
+              ? "Empowering Future Leaders Since 2015"
+              : "2015 முதல் ஆற்றல் சேர்ப்பு"}
+          </motion.p>
+          <motion.h1
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.3 }}
+            className="text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6"
+          >
+            {t("exam.title")}
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="text-xl md:text-2xl text-slate-300 max-w-3xl mx-auto"
+          >
+            {language === "en"
+              ? "Register for exams and check your results"
+              : "தேர்வுகளுக்கு பதிவு செய்யுங்கள் மற்றும் உங்கள் முடிவுகளை சரிபார்க்கவும்"}
+          </motion.p>
+        </motion.div>
       </section>
 
-      <section className="py-16 md:py-24 bg-background">
+      <section className="py-16 md:py-24 bg-slate-800/50">
         <div className="container mx-auto px-4">
           <Tabs
             value={activeTab}
@@ -823,7 +853,7 @@ const ExamPage: React.FC = () => {
                   <Card className="overflow-hidden border border-border">
                     <CardContent className="p-0">
                       <div className="grid grid-cols-1 md:grid-cols-[320px_1fr]">
-                        <div className="bg-gradient-to-br from-sky-200/40 via-sky-100/20 to-transparent p-6 flex items-center justify-center">
+                        <div className="bg-gradient-to-br from-cyan-500/20 via-cyan-400/10 to-transparent p-6 flex items-center justify-center">
                           {/* ✅ IMAGE HERE */}
                           <div className="h-40 w-full rounded-2xl overflow-hidden border border-border bg-white/60">
                             <img
@@ -1298,7 +1328,7 @@ const ExamPage: React.FC = () => {
                   <Card className="overflow-hidden border border-border">
                     <CardContent className="p-0">
                       <div className="grid grid-cols-1 md:grid-cols-[320px_1fr]">
-                        <div className="bg-gradient-to-br from-sky-200/40 via-sky-100/20 to-transparent p-6 flex items-center justify-center">
+                        <div className="bg-gradient-to-br from-cyan-500/20 via-cyan-400/10 to-transparent p-6 flex items-center justify-center">
                           {/* ✅ IMAGE HERE */}
                           <div className="h-40 w-full rounded-2xl overflow-hidden border border-border bg-white/60">
                             <img
@@ -1648,10 +1678,10 @@ const ExamPage: React.FC = () => {
                             exit={{ opacity: 0, scale: 0.98 }}
                             transition={{ duration: 0.25 }}
                           >
-                            <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-sky-50 via-white to-sky-100 shadow-xl">
+                            <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-cyan-50 via-white to-cyan-100 shadow-xl">
                               <div className="pointer-events-none absolute inset-0 opacity-40">
-                                <div className="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-sky-200 blur-3xl" />
-                                <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-sky-200 blur-3xl" />
+                                <div className="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-cyan-200 blur-3xl" />
+                                <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-cyan-200 blur-3xl" />
                               </div>
 
                               <div className="relative px-6 py-10 md:px-10">
@@ -1673,9 +1703,9 @@ const ExamPage: React.FC = () => {
                                     </div>
 
                                     <div className="mt-4 flex items-center gap-3 w-full max-w-2xl">
-                                      <div className="h-px flex-1 bg-amber-200" />
-                                      <div className="h-2 w-2 rounded-full bg-amber-300" />
-                                      <div className="h-px flex-1 bg-amber-200" />
+                                      <div className="h-px flex-1 bg-cyan-200" />
+                                      <div className="h-2 w-2 rounded-full bg-cyan-300" />
+                                      <div className="h-px flex-1 bg-cyan-200" />
                                     </div>
 
                                     <h3 className="mt-5 text-2xl md:text-3xl font-bold tracking-wide text-slate-900">
@@ -1683,7 +1713,7 @@ const ExamPage: React.FC = () => {
                                     </h3>
                                   </div>
 
-                                  <div className="mt-8 rounded-2xl bg-white/90 backdrop-blur border border-amber-200 shadow-sm">
+                                  <div className="mt-8 rounded-2xl bg-white/90 backdrop-blur border border-cyan-200 shadow-sm">
                                     <div className="p-8">
                                       <div className="grid grid-cols-1 gap-5 text-base">
                                         <Row label="Name" value={certName} />
@@ -1740,7 +1770,7 @@ const ExamPage: React.FC = () => {
                                               <div className="px-6 py-6 text-slate-700 font-semibold">
                                                 {r.subject}
                                               </div>
-                                              <div className="px-6 py-6 text-center font-extrabold text-amber-700 text-xl">
+                                              <div className="px-6 py-6 text-center font-extrabold text-cyan-700 text-xl">
                                                 {r.result}
                                               </div>
                                             </div>
@@ -1778,7 +1808,7 @@ const ExamPage: React.FC = () => {
 
                                   <Button
                                     onClick={handleResultsReset}
-                                    className="bg-amber-600 text-white hover:bg-amber-500"
+                                    className="bg-cyan-600 text-white hover:bg-cyan-500"
                                   >
                                     {language === "en" ? "Back" : "மீண்டும்"}
                                   </Button>
