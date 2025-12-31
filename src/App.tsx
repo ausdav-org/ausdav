@@ -12,9 +12,11 @@ import Layout from "@/components/layout/Layout";
 
 import HomePage from "@/pages/HomePage";
 import AboutPage from "@/pages/AboutPage";
+import UnderConstructionPage from "@/pages/UnderConstructionPage";
 import CommitteePage from "@/pages/CommitteePage";
 import ExamPage from "@/pages/ExamPage";
 import ResourcesPage from "@/pages/ResourcesPage";
+import SeminarPage from "@/pages/SeminarPage";
 import EventsPage from "@/pages/EventsPage";
 import EventDetailsPage from "@/pages/EventDetailsPage";
 import DonatePage from "@/pages/DonatePage";
@@ -46,6 +48,7 @@ import AdminApplicantsPage from "@/pages/admin/AdminApplicantsPage";
 import ClaimPermissionPage from "@/pages/admin/ClaimPermissionPage";
 
 import AdminPatronsPage from "@/pages/admin/AdminPatronsPage";
+import AdminSiteModePage from "@/pages/admin/AdminSiteModePage";
 
 // ✅ ADD THIS IMPORT (create this file or update the path to your actual results page)
 import AdminResultsPage from "@/pages/admin/AdminResultsPage";
@@ -84,99 +87,28 @@ const App = () => {
               <BrowserRouter basename={import.meta.env.BASE_URL}>
                 <Routes>
                   {/* Public routes with Layout */}
-                  <Route
-                    path="/"
-                    element={
-                      <Layout>
-                        <HomePage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/about"
-                    element={
-                      <Layout>
-                        <AboutPage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/committee"
-                    element={
-                      <Layout>
-                        <CommitteePage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/exam"
-                    element={
-                      <Layout>
-                        <ExamPage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/resources"
-                    element={
-                      <Layout>
-                        <ResourcesPage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/events"
-                    element={
-                      <Layout>
-                        <EventsPage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/events/:id"
-                    element={
-                      <Layout>
-                        <EventDetailsPage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/donate"
-                    element={
-                      <Layout>
-                        <DonatePage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/login"
-                    element={
-                      <Layout>
-                        <LoginPage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/signup"
-                    element={
-                      <Layout>
-                        <SignupPortalPage />
-                      </Layout>
-                    }
-                  />
-                  <Route
-                    path="/register"
-                    element={<Navigate to="/signup" replace />}
-                  />
+                  <Route path="/" element={<Layout><HomePage /></Layout>} />
+                  <Route path="/" element={<Layout><HomePage /></Layout>} />
+                  <Route path="/about" element={<Layout><AboutPage /></Layout>} />
+                  <Route path="/under-construction" element={<Layout><UnderConstructionPage /></Layout>} />
+                  <Route path="/committee" element={<Layout><CommitteePage /></Layout>} />
+                  <Route path="/exam" element={<Layout><ExamPage /></Layout>} />
+                  <Route path="/seminar" element={<Layout><SeminarPage /></Layout>} />
+                  <Route path="/events" element={<Layout><EventsPage /></Layout>} />
+                  <Route path="/events/:id" element={<Layout><EventDetailsPage /></Layout>} />
+                  <Route path="/donate" element={<Layout><DonatePage /></Layout>} />
+                  <Route path="/login" element={<Layout><LoginPage /></Layout>} />
+                  <Route path="/signup" element={<Layout><SignupPortalPage /></Layout>} />
+                  <Route path="/register" element={<Navigate to="/signup" replace />} />
 
                   {/* ✅ Recommended clean profile route */}
 
                   <Route
                     path="/profile"
                     element={
-                      <Layout>
-                        <ProfilePage />
-                      </Layout>
+                      <AdminAuthProvider>
+                        <Layout><ProfilePage /></Layout>
+                      </AdminAuthProvider>
                     }
                   />
                   {/* Feedback form moved to footer; no dedicated page */}
@@ -216,10 +148,8 @@ const App = () => {
 
                     {/* ✅ ADDED: Results page route */}
                     <Route path="results" element={<AdminResultsPage />} />
-                    <Route
-                      path="designations"
-                      element={<AdminDesignationsPage />}
-                    />
+                    <Route path="designations" element={<AdminDesignationsPage />} />
+                    <Route path="site-mode" element={<AdminSiteModePage />} />
 
                     <Route path="events" element={<AdminEventsPage />} />
                     <Route path="exam" element={<AdminExamPage />} />

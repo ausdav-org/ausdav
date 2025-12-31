@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
   },
   plugins: [react()],
-  base: mode === 'production' ? "/ausdav/" : "/",
+  base: "/ausdav/",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

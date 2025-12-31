@@ -27,6 +27,7 @@ import AnnouncementCarousel from "@/components/AnnouncementCarousel";
 import ReviewCarousel from "@/components/ReviewCarousel";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+
 import { Tables } from "@/integrations/supabase/types";
 import heroBg from "@/assets/Home/BG1.jpg";
 
@@ -38,37 +39,25 @@ type AnnouncementRow = Tables<"announcements"> & {
   category?: string | null;
 };
 
-type CarouselAnnouncement = {
+type Announcement = {
   id: string;
-  en: string;
-  ta: string;
-  type: "event" | "news" | "urgent";
+  title: string;
+  message: string;
+  image_url?: string | null;
 };
 
-const fallbackAnnouncements: CarouselAnnouncement[] = [
+const fallbackAnnouncements: Announcement[] = [
   {
-    id: "seed-1",
-    en: "📚 A/L Exam Preparation Seminar - January 2025",
-    ta: "📚 உ.த. தேர்வு தயாரிப்பு கருத்தரங்கு - ஜனவரி 2025",
-    type: "event",
+    id: "1",
+    title: "Welcome to AUSDAV",
+    message: "Welcome to AUSDAV",
+    image_url: null,
   },
   {
-    id: "seed-2",
-    en: "🩸 Blood Donation Camp - Save Lives Today",
-    ta: "🩸 இரத்ததான முகாம் - இன்றே உயிர்களைக் காப்பாற்றுங்கள்",
-    type: "urgent",
-  },
-  {
-    id: "seed-3",
-    en: "🌳 Anbuchangamam Tree Planting Event - Join Us!",
-    ta: "🌳 அன்புசங்கமம் மரம் நடும் நிகழ்வு - எங்களுடன் இணையுங்கள்!",
-    type: "event",
-  },
-  {
-    id: "seed-4",
-    en: "🎓 New Scholarship Program Announced for 2025",
-    ta: "🎓 2025 க்கான புதிய உதவித்தொகை திட்டம் அறிவிக்கப்பட்டது",
-    type: "news",
+    id: "2",
+    title: "Stay tuned for updates",
+    message: "Stay tuned for updates",
+    image_url: null,
   },
 ];
 
@@ -125,6 +114,7 @@ const HOME_EXEC_DESIGNATIONS = [
   "web_designer",
 ];
 
+// Executive designation to role mapping
 const HOME_DESIGNATION_TO_ROLE: Record<string, { en: string; ta: string }> = {
   president: { en: "President", ta: "தலைவர்" },
   secretary: { en: "Secretary", ta: "செயலாளர்" },
@@ -142,25 +132,11 @@ const stats = [
 
 const HomePage: React.FC = () => {
   const { language, t } = useLanguage();
-  const [feedbackForm, setFeedbackForm] = useState({
-    name: "",
-    contact: "",
-    message: "",
-  });
-  const [announcements, setAnnouncements] = useState<CarouselAnnouncement[]>(
+  const [announcements, setAnnouncements] = useState<Announcement[]>(
     fallbackAnnouncements
   );
   const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
-
-  const mapCategoryToType = (
-    category?: string | null
-  ): CarouselAnnouncement["type"] => {
-    const normalized = (category || "").toLowerCase();
-    if (normalized === "urgent") return "urgent";
-    if (normalized === "event") return "event";
-    return "news";
-  };
 
   const buildAnnouncementText = (
     primary?: string | null,
@@ -169,6 +145,12 @@ const HomePage: React.FC = () => {
     const text = primary?.trim() || fallback?.trim() || "";
     return text || "Announcement";
   };
+
+  const [feedbackForm, setFeedbackForm] = useState({
+    name: "",
+    contact: "",
+    message: "",
+  });
 
   const loadAnnouncements = useCallback(async () => {
     setIsLoadingAnnouncements(true);
@@ -189,20 +171,18 @@ const HomePage: React.FC = () => {
         return item.is_active !== false && withinStart && withinEnd;
       });
 
-      const mapped = activeItems.map<CarouselAnnouncement>(
-        (item: AnnouncementRow) => ({
-          id: item.id || item.announcement_id || crypto.randomUUID(),
-          en: buildAnnouncementText(
-            item.description_en ?? item.message_en ?? item.title_en,
-            item.title_en
-          ),
-          ta: buildAnnouncementText(
-            item.description_ta ?? item.message_ta ?? item.title_ta,
-            item.title_ta || item.description_en || item.title_en
-          ),
-          type: mapCategoryToType(item.category ?? item.tag ?? null),
-        })
-      );
+      const mapped = activeItems.map<Announcement>((item: AnnouncementRow) => ({
+        id: item.id || item.announcement_id || crypto.randomUUID(),
+        title: buildAnnouncementText(
+          item.message_en ?? item.title_en,
+          item.title_en
+        ),
+        message: buildAnnouncementText(
+          item.message_en ?? item.title_en,
+          item.title_en
+        ),
+        image_url: null,
+      }));
 
       setAnnouncements(mapped.length ? mapped : fallbackAnnouncements);
     } catch (error) {
@@ -250,7 +230,7 @@ const HomePage: React.FC = () => {
       const workParts: string[] = [];
       if (r.uni_degree) workParts.push(r.uni_degree);
       if (r.university) workParts.push(r.university);
-      const work = workParts.join(",");
+      const work = workParts.join(", ");
       let photo: string | null = null;
       if (r.profile_path && r.profile_bucket) {
         const { data } = supabase.storage
