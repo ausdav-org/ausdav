@@ -12,6 +12,7 @@ import Layout from "@/components/layout/Layout";
 
 import HomePage from "@/pages/HomePage";
 import AboutPage from "@/pages/AboutPage";
+import UnderConstructionPage from "@/pages/UnderConstructionPage";
 import CommitteePage from "@/pages/CommitteePage";
 import ExamPage from "@/pages/ExamPage";
 import SeminarPage from "@/pages/SeminarPage";
@@ -83,6 +84,7 @@ const App = () => {
                   {/* Public routes with Layout */}
                   <Route path="/" element={<Layout><HomePage /></Layout>} />
                   <Route path="/about" element={<Layout><AboutPage /></Layout>} />
+                  <Route path="/under-construction" element={<Layout><UnderConstructionPage /></Layout>} />
                   <Route path="/committee" element={<Layout><CommitteePage /></Layout>} />
                   <Route path="/exam" element={<Layout><ExamPage /></Layout>} />
                   <Route path="/seminar" element={<Layout><SeminarPage /></Layout>} />
