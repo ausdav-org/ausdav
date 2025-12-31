@@ -22,11 +22,31 @@
     
     <link rel="canonical" href="https://ausdav.org" />
     
+    <script type="text/javascript">
+      // Handle GitHub Pages 404 redirect for SPA routing
+      (function() {
+        var redirect = sessionStorage.redirect;
+        delete sessionStorage.redirect;
+        if (redirect && redirect !== window.location.pathname) {
+          window.history.replaceState(null, null, redirect);
+        }
+      })();
+    </script>
   </head>
 
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    
+    <script>
+      // Store the redirect path from 404.html if it exists
+      if (window.location.search.includes('redirect=')) {
+        var redirectPath = decodeURIComponent(new URLSearchParams(window.location.search).get('redirect'));
+        sessionStorage.redirect = redirectPath;
+        // Clean up the URL and reload
+        window.history.replaceState(null, null, redirectPath);
+      }
+    </script>
     
   </body>
 </html>

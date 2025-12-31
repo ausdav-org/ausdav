@@ -92,7 +92,6 @@ export default function AdminProfilePage() {
     'V/Saivapiragasa Ladies College',
     'V/Cheddikulam Maha Vidyalayam',
     'Kanakarayankulam Maha Vidyalayam',
-    'Nelukkulam Kalaimakal Maha Vidyalayam',
     'Puthukkulam Maha Vidyalayam',
   ];
   const filteredUniversities = ugcUniversities.filter((name) =>

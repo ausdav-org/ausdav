@@ -1,32 +1,3 @@
-import React, {
-  useEffect,
-  useState,
-  useRef,
-  useCallback,
-  useMemo,
-} from "react";
-import { Link } from "react-router-dom";
-import { motion, useScroll, useTransform } from "framer-motion";
-import {
-  ArrowRight,
-  BookOpen,
-  Users,
-  Calendar,
-  MessageSquare,
-  ChevronRight,
-  Sparkles,
-  GraduationCap,
-  Heart,
-  Zap,
-} from "lucide-react";
-import { useLanguage } from "@/contexts/LanguageContext";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
-import AnnouncementCarousel from "@/components/AnnouncementCarousel";
-import ReviewCarousel from "@/components/ReviewCarousel";
-import { supabase } from "@/integrations/supabase/client";
-import { useQuery } from "@tanstack/react-query";
 import { Tables } from "@/integrations/supabase/types";
 import heroBg from "@/assets/Home/BG1.jpg";
 
@@ -39,38 +10,18 @@ type AnnouncementRow = Tables<"announcements"> & {
 };
 
 type CarouselAnnouncement = {
-  id: string;
-  en: string;
-  ta: string;
-  type: "event" | "news" | "urgent";
-};
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { motion, useScroll, useTransform } from 'framer-motion';
+import { ArrowRight, BookOpen, Users, Calendar, MessageSquare, ChevronRight, Sparkles, GraduationCap, Heart, Zap } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
+import AnnouncementCarousel from '@/components/AnnouncementCarousel';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
-const fallbackAnnouncements: CarouselAnnouncement[] = [
-  {
-    id: "seed-1",
-    en: "📚 A/L Exam Preparation Seminar - January 2025",
-    ta: "📚 உ.த. தேர்வு தயாரிப்பு கருத்தரங்கு - ஜனவரி 2025",
-    type: "event",
-  },
-  {
-    id: "seed-2",
-    en: "🩸 Blood Donation Camp - Save Lives Today",
-    ta: "🩸 இரத்ததான முகாம் - இன்றே உயிர்களைக் காப்பாற்றுங்கள்",
-    type: "urgent",
-  },
-  {
-    id: "seed-3",
-    en: "🌳 Anbuchangamam Tree Planting Event - Join Us!",
-    ta: "🌳 அன்புசங்கமம் மரம் நடும் நிகழ்வு - எங்களுடன் இணையுங்கள்!",
-    type: "event",
-  },
-  {
-    id: "seed-4",
-    en: "🎓 New Scholarship Program Announced for 2025",
-    ta: "🎓 2025 க்கான புதிய உதவித்தொகை திட்டம் அறிவிக்கப்பட்டது",
-    type: "news",
-  },
-];
 
 // Sample events
 const annualEvents = [
@@ -142,11 +93,6 @@ const stats = [
 
 const HomePage: React.FC = () => {
   const { language, t } = useLanguage();
-  const [feedbackForm, setFeedbackForm] = useState({
-    name: "",
-    contact: "",
-    message: "",
-  });
   const [announcements, setAnnouncements] = useState<CarouselAnnouncement[]>(
     fallbackAnnouncements
   );
@@ -168,6 +114,25 @@ const HomePage: React.FC = () => {
   ) => {
     const text = primary?.trim() || fallback?.trim() || "";
     return text || "Announcement";
+  const [feedbackForm, setFeedbackForm] = useState({ name: '', contact: '', message: '' });
+  const fallbackCards = useMemo<HomeAnnouncement[]>(() => {
+    const useTamil = language === 'ta';
+    return fallbackAnnouncements.map((seed) => ({
+      id: seed.id,
+      title: useTamil ? seed.ta : seed.en,
+      message: useTamil ? seed.ta : seed.en,
+      image_url: null,
+    }));
+  }, [language]);
+
+  };
+
+  const getAnnouncementImageUrl = (item: any) => {
+    if (!item?.img_path) return null;
+    const { data } = supabase.storage
+      .from(item.img_bucket || 'announcements')
+      .getPublicUrl(item.img_path);
+    return data?.publicUrl || null;
   };
 
   const loadAnnouncements = useCallback(async () => {
