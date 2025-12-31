@@ -483,7 +483,7 @@ const HomePage: React.FC = () => {
               <div className="w-full max-w-3xl aspect-video rounded-2xl overflow-hidden border border-cyan-500/20 shadow-lg">
                 <iframe
                   className="w-full h-full"
-                  src="https://www.youtube.com/embed/LbEa34kbbfg?si=FpAI3xiGWpMqeq4Q&autoplay=1&controls=0&mute=1&rel=0&modestbranding=1"
+                  src="https://www.youtube.com/embed/LbEa34kbbfg?autoplay=1&controls=0&mute=1&rel=0&modestbranding=1&start=0&end=35&loop=1&playlist=LbEa34kbbfg"
                   title="AUSDAV Video"
                   frameBorder="0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -526,77 +526,105 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* About Us and Events Section */}
-      <section className="py-16 md:py-24 bg-slate-800/30">
+      {/* Empowering Education + Video Section */}
+      <section className="py-16 md:py-24 bg-slate-800/20">
         <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto">
-            {/* About Us Card */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto items-center">
+
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, x: 20 }}
+              whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-              className="bg-cyan-500/20 backdrop-blur-sm rounded-2xl p-8 border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
+              transition={{ duration: 0.7 }}
+              className="flex items-center justify-center"
             >
-              <div className="text-left">
-                <div className="w-16 h-16 mb-6 rounded-2xl bg-cyan-500/20 flex items-center justify-center">
-                  <Users className="w-8 h-8 text-cyan-400" />
-                </div>
-                <h3 className="text-2xl md:text-3xl font-bold mb-4 text-white">
-                  {language === "en" ? "About Us" : "எங்களைப் பற்றி"}
-                </h3>
-                <p className="text-slate-300 text-lg leading-relaxed mb-6">
-                  {language === "en"
-                    ? "Learn more about our mission, vision, and the dedicated team behind AUSDAV."
-                    : "எங்கள் நோக்கம், பார்வை மற்றும் AUSDAV இன் பின்னால் உள்ள அர்ப்பணிப்பு குழுவைப் பற்றி மேலும் அறிக."}
+              <div className="w-full max-w-3xl aspect-video rounded-2xl overflow-hidden border border-cyan-500/20 shadow-lg">
+                <iframe
+                  className="w-full h-full"
+                  src="https://www.youtube.com/embed/e7lYGW8D4pw?autoplay=1&controls=0&mute=1"
+                  title="AUSDAV Video"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.7 }}
+              className="space-y-6"
+            >
+              <h2 className="text-4xl md:text-5xl font-bold text-white">
+                Empowering <span className="text-cyan-400">Education</span>
+              </h2>
+
+              <div className="space-y-4 text-slate-300 text-lg leading-relaxed">
+                {/* <p>
+                  Since 2000, our Annual Pilot Examinations have supported students’ academic growth—evolving from scholarship exams to a stronger focus on G.C.E (O/L) Science and Mathematics, and expanding to G.C.E (A/L) initiatives from 2005—while remaining free of charge and accessible without discrimination.
+                </p> */}
+
+                <p>
+                  Kalvikaram is our grassroots upliftment initiative designed for underprivileged and under-resourced schools across the Northern Province, created in response to teacher shortages.
                 </p>
-                <Button
-                  asChild
-                  variant="outline"
-                  size="lg"
-                  className="border-cyan-500/40 hover:border-cyan-500/60 text-cyan-400 hover:text-cyan-300"
-                >
+
+                <p>
+                  Through Kalvikaram, volunteer educators deliver subject-focused learning support for both G.C.E (O/L) and G.C.E (A/L) students, strengthening understanding, improving exam readiness, and building a lasting motivation for learning—ensuring no student is held back due to limited institutional resources.
+                </p>
+              </div>
+
+              {/* <div>
+                <Button asChild variant="outline" size="lg" className="border-cyan-500/40 hover:border-cyan-500/60 text-cyan-400 hover:text-cyan-300 w-fit">
                   <Link to="/about">
                     {language === "en" ? "Learn More" : "மேலும் அறிக"}
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Link>
                 </Button>
-              </div>
+              </div> */}
             </motion.div>
+          </div>
+        </div>
+      </section>
 
-            {/* Events Card */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="bg-cyan-500/20 backdrop-blur-sm rounded-2xl p-8 border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
-            >
-              <div className="text-left">
-                <div className="w-16 h-16 mb-6 rounded-2xl bg-cyan-500/20 flex items-center justify-center">
-                  <Calendar className="w-8 h-8 text-cyan-400" />
+      {/* About / Events / Donate Cards */}
+      <section className="py-16 md:py-24 bg-slate-800/30">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+            {/* About Us Card (centered icon, title, description) */}
+            <Link to="/about" className="group block rounded-2xl p-8 bg-slate-900/40 border border-cyan-800/20 hover:border-cyan-500/50 hover:bg-slate-900/60 transition-all duration-300">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="w-14 h-14 rounded-lg bg-cyan-800/20 flex items-center justify-center">
+                  <Users className="w-7 h-7 text-cyan-400" />
                 </div>
-                <h3 className="text-2xl md:text-3xl font-bold mb-4 text-white">
-                  {language === "en" ? "Events" : "நிகழ்வுகள்"}
-                </h3>
-                <p className="text-slate-300 text-lg leading-relaxed mb-6">
-                  {language === "en"
-                    ? "Discover our upcoming events, seminars, and activities that empower students."
-                    : "மாணவர்களை வலுப்படுத்தும் எங்கள் வரவிருக்கும் நிகழ்வுகள், கருத்தரங்குகள் மற்றும் செயல்பாடுகளைக் கண்டறிக."}
-                </p>
-                <Button
-                  asChild
-                  variant="outline"
-                  size="lg"
-                  className="border-cyan-500/40 hover:border-cyan-500/60 text-cyan-400 hover:text-cyan-300"
-                >
-                  <Link to="/events">
-                    {language === "en" ? "View Events" : "நிகழ்வுகளைப் பார்க்க"}
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Link>
-                </Button>
+                <h3 className="text-lg md:text-xl font-semibold text-white">{language === "en" ? "About Us" : "எங்களைப் பற்றி"}</h3>
+                <p className="text-sm text-slate-400 max-w-xs">{language === "en" ? "Learn more about our mission, vision, and the dedicated team behind AUSDAV." : "எங்கள் நோக்கம், பார்வை மற்றும் AUSDAV இன் பின்னால் உள்ள அர்ப்பணிப்பு குழுவைப் பற்றி மேலும் அறிக."}</p>
               </div>
-            </motion.div>
+            </Link>
+
+            {/* Events Card (centered) */}
+            <Link to="/events" className="group block rounded-2xl p-8 bg-slate-900/40 border border-cyan-800/20 hover:border-cyan-500/50 hover:bg-slate-900/60 transition-all duration-300">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="w-14 h-14 rounded-lg bg-cyan-800/20 flex items-center justify-center">
+                  <Calendar className="w-7 h-7 text-cyan-400" />
+                </div>
+                <h3 className="text-lg md:text-xl font-semibold text-white">{language === "en" ? "Events" : "நிகழ்வுகள்"}</h3>
+                <p className="text-sm text-slate-400 max-w-xs">{language === "en" ? "Discover our upcoming events, seminars, and activities that empower students." : "மாணவர்களை வலுப்படுத்தும் எங்கள் வரவிருக்கும் நிகழ்வுகள், கருத்தரங்குகள் மற்றும் செயல்பாடுகளைக் கண்டறிக."}</p>
+              </div>
+            </Link>
+
+            {/* Donate Card (centered) */}
+            <Link to="/donate" className="group block rounded-2xl p-8 bg-slate-900/40 border border-cyan-800/20 hover:border-cyan-500/50 hover:bg-slate-900/60 transition-all duration-300">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="w-14 h-14 rounded-lg bg-cyan-800/20 flex items-center justify-center">
+                  <Heart className="w-7 h-7 text-cyan-400" />
+                </div>
+                <h3 className="text-lg md:text-xl font-semibold text-white">{language === "en" ? "Donate" : "தானம்"}</h3>
+                <p className="text-sm text-slate-400 max-w-xs">{language === "en" ? "Support our programs and help students reach their potential." : "எங்கள் திட்டங்களை ஆதரித்து மாணவர்களுக்கு உதவுங்கள்."}</p>
+              </div>
+            </Link>
           </div>
         </div>
       </section>
@@ -613,7 +641,7 @@ const HomePage: React.FC = () => {
             <h2 className="text-3xl md:text-5xl font-bold mb-4 text-white">
               {language === "en" ? "Our " : "எங்கள் "}
               <span className="text-cyan-400">
-                {language === "en" ? "Leadership" : "தலைமை"}
+                {language === "en" ? "Executive Committee" : "தலைமை குழு"}
               </span>
             </h2>
           </motion.div>
@@ -672,7 +700,7 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Testimonials / Reviews Carousel */}
-      <section className="py-24 bg-slate-800/30">
+      {/* <section className="py-24 bg-slate-800/30">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-white">
@@ -704,7 +732,7 @@ const HomePage: React.FC = () => {
             language={language}
           />
         </div>
-      </section>
+      </section> */}
 
     </div>
   );
