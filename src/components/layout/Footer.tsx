@@ -254,7 +254,7 @@ const Footer: React.FC = () => {
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          className="border-t border-border/20 mt-5 pt-5 text-center"
+          className="border-t border-border/20 mt-5 pt-5 text-center py-5 "
         >
           <p className="text-sm text-muted-foreground">
             © {new Date().getFullYear()} AUSDAV. {t('footer.rights')}
