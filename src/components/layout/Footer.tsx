@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import logo from '@/assets/logo/AUSDAV logo.png';
+import logo from '@/assets/logo/AUSDAV_llogo.png';
 
 const Footer: React.FC = () => {
   const { t } = useLanguage();

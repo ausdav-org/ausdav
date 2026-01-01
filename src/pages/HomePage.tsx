@@ -30,7 +30,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Tables } from "@/integrations/supabase/types";
 import heroBg from "@/assets/Home/BG1.jpg";
-import logoImg from "@/assets/Exam/AUSDAV logo.png";
+import logoImg from "@/assets/Exam/AUSDAV_llogo.png";
 import mountainImg from "@/assets/Home/removed.png";
 
 type AnnouncementRow = Tables<"announcements"> & {
