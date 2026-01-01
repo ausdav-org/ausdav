@@ -30,6 +30,7 @@ type EventRecord = {
   description_en: string | null;
   description_ta: string | null;
   event_date: string;
+  created_at: string | null;
   location: string | null;
   is_active: boolean;
   image_bucket: string | null;
@@ -92,10 +93,11 @@ const EventsPage: React.FC = () => {
       const { data, error } = await supabase
         .from("events" as any)
         .select(
-          "id,title_en,title_ta,description_en,description_ta,event_date,location,is_active,image_bucket,image_path"
+          "id,title_en,title_ta,description_en,description_ta,event_date,created_at,location,is_active,image_bucket,image_path"
         )
         .eq("is_active", true)
-        .order("event_date", { ascending: false });
+        .order("event_date", { ascending: true })
+        .order("created_at", { ascending: true });
 
       if (error) {
         return;
