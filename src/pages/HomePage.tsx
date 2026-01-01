@@ -40,18 +40,7 @@ type AnnouncementRow = Tables<"announcements"> & {
   is_permanent?: boolean;
   category?: string | null;
 };
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { motion, useScroll, useTransform } from 'framer-motion';
-import { ArrowRight, BookOpen, Users, Calendar, MessageSquare, ChevronRight, Sparkles, GraduationCap, Heart, Zap } from 'lucide-react';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { toast } from 'sonner';
-import AnnouncementCarousel from '@/components/AnnouncementCarousel';
-import ReviewCarousel from '@/components/ReviewCarousel';
-import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+
 
 interface Announcement {
   id: string;

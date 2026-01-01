@@ -178,7 +178,9 @@ const AboutPage: React.FC = () => {
                   : "நாங்கள் நமது கிளையன்டுகளுக்கு சிறந்த சேவை வழங்க உறுதிபட்டுள்ளோம்."}
               </p>
             </motion.div>
-
+          </div>
+        </div>
+      </section>
 
       {/* Who We Are Section */}
       <section className="relative py-20 px-4">
