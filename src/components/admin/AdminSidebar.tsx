@@ -54,7 +54,8 @@ const navItems: NavItem[] = [
 
   { title: 'Events', href: '/admin/events', icon: CalendarDays, roles: ['admin', 'super_admin'], permissionKey: 'events' },
   { title: 'Exam', href: '/admin/exam', icon: GraduationCap, roles: ['admin', 'super_admin'], permissionKey: 'exam' },
-  { title: 'Seminar', href: '/admin/seminar', icon: BookOpen, roles: ['admin', 'super_admin'], permissionKey: 'seminar' },
+  { title: 'Resources', href: '/admin/seminar', icon: BookOpen, roles: ['admin', 'super_admin'], permissionKey: 'seminar' },
+  { title: 'Past Papers', href: '/admin/past-paper', icon: FileText, roles: ['admin', 'super_admin'], permissionKey: 'seminar' },
 
   { title: 'Submit Finance', href: '/admin/finance/submit', icon: Receipt, roles: ['member'] },
   { title: 'Verify Finance', href: '/admin/finance/verify', icon: CheckSquare, roles: ['admin', 'super_admin'], permissionKey: 'finance' },
@@ -87,7 +88,7 @@ export function AdminSidebar() {
     (async () => {
       try {
         const { data, error } = await supabase
-          .from('app_settings' as any)
+          .from('app_settings')
           .select('allow_manual_applications')
           .eq('id', 1)
           .maybeSingle<{ allow_manual_applications: boolean | null }>();

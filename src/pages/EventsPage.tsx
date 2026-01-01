@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 import {
   Calendar,
   MapPin,
+  ChevronRight,
+  Image,
   GraduationCap,
   BookOpen,
   Heart,
@@ -36,6 +38,9 @@ type EventRecord = {
   image_bucket: string | null;
   image_path: string | null;
 };
+
+import BG1 from "@/assets/AboutUs/BG1.jpg";
+
 
 type EventDisplay = {
   id: string;
@@ -173,7 +178,6 @@ const EventsPage: React.FC = () => {
             </p>
           </motion.div>
         </div>
-      </section>
 
       {/* Annual Events Timeline */}
       <section className="py-24 relative overflow-hidden bg-slate-800/50">

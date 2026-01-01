@@ -610,18 +610,18 @@ export default function AdminMembersPage() {
 
                     return (
                       <>
-                        <DropdownMenuItem onClick={() => changeRoleBulk('member')} disabled={hasHonourableSelected}>Set as Member</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => changeRoleBulk('member')} disabled={hasHonourableSelected} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer disabled:cursor-not-allowed">Set as Member</DropdownMenuItem>
                         {committeeChangingPhase !== false && (
-                          <DropdownMenuItem onClick={() => changeRoleBulk('honourable')} disabled={!allAdminSelected}>Set as Honourable</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => changeRoleBulk('honourable')} disabled={!allAdminSelected} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer disabled:cursor-not-allowed">Set as Honourable</DropdownMenuItem>
                         )}
                         {isSuperAdmin && (
                           <>
-                            <DropdownMenuItem onClick={() => changeRoleBulk('admin')} disabled={hasHonourableSelected}>Set as Admin</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => changeRoleBulk('super_admin')} disabled={hasHonourableSelected}>Set as Super Admin</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => changeRoleBulk('admin')} disabled={hasHonourableSelected} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer disabled:cursor-not-allowed">Set as Admin</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => changeRoleBulk('super_admin')} disabled={hasHonourableSelected} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer disabled:cursor-not-allowed">Set as Super Admin</DropdownMenuItem>
                           </>
                         )}
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-red-600" onClick={async () => { await deleteMember({} as Member); }}>Remove selected</DropdownMenuItem>
+                        <DropdownMenuItem className="text-red-600 hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer" onClick={async () => { await deleteMember({} as Member); }}>Remove selected</DropdownMenuItem>
                       </>
                     );
                   })()}
@@ -712,29 +712,29 @@ export default function AdminMembersPage() {
                                 <>
                                       {member.role === 'honourable' ? (
                                         <>
-                                          <DropdownMenuItem disabled>Honourable (immutable)</DropdownMenuItem>
+                                          <DropdownMenuItem disabled className="cursor-not-allowed">Honourable (immutable)</DropdownMenuItem>
                                           <DropdownMenuSeparator />
                                         </>
                                       ) : (
                                         <>
-                                          <DropdownMenuItem onClick={() => changeRole(member, 'member')}>Set as Member</DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => changeRole(member, 'member')} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer">Set as Member</DropdownMenuItem>
                                           {committeeChangingPhase !== false && (
                                             member.role === 'admin' ? (
-                                              <DropdownMenuItem onClick={() => changeRole(member, 'honourable')}>Set as Honourable</DropdownMenuItem>
+                                              <DropdownMenuItem onClick={() => changeRole(member, 'honourable')} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer">Set as Honourable</DropdownMenuItem>
                                             ) : (
-                                              <DropdownMenuItem disabled>Set as Honourable (admins only)</DropdownMenuItem>
+                                              <DropdownMenuItem disabled className="cursor-not-allowed">Set as Honourable (admins only)</DropdownMenuItem>
                                             )
                                           )}
                                           <DropdownMenuSeparator />
-                                          <DropdownMenuItem onClick={() => changeRole(member, 'admin')}>Set as Admin</DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')}>Set as Super Admin</DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => changeRole(member, 'admin')} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer">Set as Admin</DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => changeRole(member, 'super_admin')} className="hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer">Set as Super Admin</DropdownMenuItem>
                                           <DropdownMenuSeparator />
                                         </>
                                       )}
                                 </>
                               )}
                               {isSuperAdmin || (isAdmin && member.role === 'member') ? (
-                                <DropdownMenuItem onClick={() => deleteMember(member)} className="text-red-600">
+                                <DropdownMenuItem onClick={() => deleteMember(member)} className="text-red-600 hover:bg-blue-100 dark:hover:bg-blue-950 cursor-pointer">
                                   Remove
                                 </DropdownMenuItem>
                               ) : null}
@@ -886,7 +886,7 @@ export default function AdminMembersPage() {
                   id="invite-name"
                   value={inviteName}
                   onChange={(e) => setInviteName(e.target.value)}
-                  placeholder="John Doe"
+                  placeholder=""
                 />
               </div>
               <div className="space-y-2">
@@ -896,7 +896,7 @@ export default function AdminMembersPage() {
                   type="email"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="john@example.com"
+                  placeholder=""
                 />
               </div>
               <div className="space-y-2">
