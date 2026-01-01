@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Calendar, Download, MapPin, Users, FileText } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -36,6 +36,8 @@ const ResourcesPage: React.FC = () => {
 
   const seminarRef = useRef<HTMLDivElement>(null);
   const pastPaperRef = useRef<HTMLDivElement>(null);
+  const [openSeminarYear, setOpenSeminarYear] = useState<number | null>(null);
+  const [openPastPaperYear, setOpenPastPaperYear] = useState<number | null>(null);
 
   // Fetch seminars from database
   const { data: seminars = [], isLoading: seminarsLoading } = useQuery({
@@ -125,6 +127,62 @@ const ResourcesPage: React.FC = () => {
     }
   };
 
+  const seminarYears = useMemo(() => {
+    const years: number[] = [];
+    const seen = new Set<number>();
+
+    for (const seminar of seminars) {
+      if (seen.has(seminar.yrs)) continue;
+      seen.add(seminar.yrs);
+      years.push(seminar.yrs);
+    }
+
+    return years;
+  }, [seminars]);
+
+  const seminarsByYear = useMemo(() => {
+    const grouped = new Map<number, Seminar[]>();
+
+    for (const seminar of seminars) {
+      const existing = grouped.get(seminar.yrs);
+      if (existing) {
+        existing.push(seminar);
+      } else {
+        grouped.set(seminar.yrs, [seminar]);
+      }
+    }
+
+    return grouped;
+  }, [seminars]);
+
+  const pastPaperYears = useMemo(() => {
+    const years: number[] = [];
+    const seen = new Set<number>();
+
+    for (const paper of pastPapers) {
+      if (seen.has(paper.yrs)) continue;
+      seen.add(paper.yrs);
+      years.push(paper.yrs);
+    }
+
+    return years;
+  }, [pastPapers]);
+
+  const pastPapersByYear = useMemo(() => {
+    const grouped = new Map<number, PastPaper[]>();
+
+    for (const paper of pastPapers) {
+      const existing = grouped.get(paper.yrs);
+      if (existing) {
+        existing.push(paper);
+      } else {
+        grouped.set(paper.yrs, [paper]);
+      }
+    }
+
+    return grouped;
+  }, [pastPapers]);
+
   return (
     <div className="bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
       {/* Hero Section with Background Image */}
@@ -207,102 +265,6 @@ const ResourcesPage: React.FC = () => {
         </motion.div>
       </section>
 
-      {/* Seminar Resources */}
-      <section ref={seminarRef} className="py-16 md:py-24">
-        <div className="container mx-auto px-4">
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-3xl font-serif font-bold text-foreground mb-8"
-          >
-            {language === "en" ? (
-              <>
-                Seminar <span className="text-cyan-400">Resources</span>
-              </>
-            ) : (
-              "செமினார் வளங்கள்"
-            )}
-          </motion.h2>
-
-          <div className="max-w-4xl mx-auto">
-            {seminarsLoading ? (
-              <div className="text-center py-8">
-                <div className="text-muted-foreground">
-                  {language === "en"
-                    ? "Loading seminars..."
-                    : "செமினார்களை ஏற்றுகிறது..."}
-                </div>
-              </div>
-            ) : seminars.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="text-muted-foreground">
-                  {language === "en"
-                    ? "No seminars available"
-                    : "செமினார்கள் கிடைக்கவில்லை"}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {seminars.map((seminar) => (
-                  <motion.div
-                    key={seminar.sem_id}
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    className="flex items-center justify-between p-6 bg-cyan-500/20 backdrop-blur-sm rounded-xl border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
-                  >
-                    <div className="flex items-center gap-4">
-                      <FileText className="w-8 h-8 text-secondary" />
-                      <div>
-                        <h3 className="text-xl font-semibold text-foreground">
-                          {language === "en"
-                            ? `Seminar ${seminar.yrs}`
-                            : `${seminar.yrs} செமினார்`}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(seminar.created_at).toLocaleDateString(
-                            language === "en" ? "en-US" : "ta-LK",
-                            {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            }
-                          )}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openDownload(seminar, "paper", true)}
-                        disabled={!seminar.seminar_paper_path}
-                        className="flex items-center gap-2"
-                      >
-                        <Download className="w-4 h-4" />
-                        {language === "en" ? "Paper" : "தாள்"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openDownload(seminar, "answers", true)}
-                        disabled={!seminar.answers_path}
-                        className="flex items-center gap-2"
-                      >
-                        <Download className="w-4 h-4" />
-                        {language === "en" ? "Answers" : "பதில்கள்"}
-                      </Button>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
       {/* Past Papers */}
       <section ref={pastPaperRef} className="py-16 md:py-24 bg-slate-800/50">
         <div className="container mx-auto px-4">
@@ -340,64 +302,255 @@ const ResourcesPage: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {pastPapers.map((paper) => (
-                  <motion.div
-                    key={paper.pp_id}
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    className="flex items-center justify-between p-6 bg-cyan-500/20 backdrop-blur-sm rounded-xl border border-cyan-500/40 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
-                  >
-                    <div className="flex items-center gap-4">
-                      <FileText className="w-8 h-8 text-secondary" />
-                      <div>
-                        <h3 className="text-xl font-semibold text-foreground">
-                          {language === "en"
-                            ? `Past Paper ${paper.yrs}`
-                            : `${paper.yrs} கடந்த கால வினாத்தாள்`}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(paper.created_at).toLocaleDateString(
-                            language === "en" ? "en-US" : "ta-LK",
-                            {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            }
-                          )}
-                        </p>
-                      </div>
-                    </div>
+                {pastPaperYears.map((year) => {
+                  const isOpen = openPastPaperYear === year;
+                  const yearPapers = pastPapersByYear.get(year) || [];
 
-                    <div className="flex gap-3">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openDownload(paper, "paper", false)}
-                        disabled={!paper.exam_paper_path}
-                        className="flex items-center gap-2"
+                  return (
+                    <div
+                      key={year}
+                      className="bg-cyan-500/20 backdrop-blur-sm rounded-xl border border-cyan-500/40"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenPastPaperYear((current) =>
+                            current === year ? null : year
+                          )
+                        }
+                        className="w-full flex items-center justify-between p-5 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
                       >
-                        <Download className="w-4 h-4" />
-                        {language === "en" ? "Paper" : "தாள்"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openDownload(paper, "scheme", false)}
-                        disabled={!paper.scheme_path}
-                        className="flex items-center gap-2"
-                      >
-                        <Download className="w-4 h-4" />
-                        {language === "en" ? "Scheme" : "திட்டம்"}
-                      </Button>
+                        <div className="flex items-center gap-4">
+                          <FileText className="w-7 h-7 text-secondary" />
+                          <h3 className="text-xl font-semibold text-foreground">
+                            {year}
+                          </h3>
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          {isOpen ? "Hide" : "View"}
+                        </span>
+                      </button>
+
+                      {isOpen ? (
+                        <div className="space-y-4 p-5 pt-0">
+                          {yearPapers.map((paper) => (
+                            <motion.div
+                              key={paper.pp_id}
+                              initial={{ opacity: 0, y: 20 }}
+                              whileInView={{ opacity: 1, y: 0 }}
+                              viewport={{ once: true }}
+                              className="flex items-center justify-between p-6 bg-cyan-500/10 backdrop-blur-sm rounded-xl border border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/20 transition-all duration-300"
+                            >
+                              <div className="flex items-center gap-4">
+                                <FileText className="w-8 h-8 text-secondary" />
+                                <div>
+                                  <h3 className="text-xl font-semibold text-foreground">
+                                    {paper.subject ||
+                                      (language === "en"
+                                        ? "Past Paper"
+                                        : "…r…rY…r\"…_?…r …r…r_…rý …ræ…r¨…rc…r_…r…_?…r…r_…r3…_?")}
+                                  </h3>
+                                  <p className="text-sm text-muted-foreground">
+                                    {new Date(
+                                      paper.created_at
+                                    ).toLocaleDateString(
+                                      language === "en" ? "en-US" : "ta-LK",
+                                      {
+                                        year: "numeric",
+                                        month: "long",
+                                        day: "numeric",
+                                      }
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    openDownload(paper, "paper", false)
+                                  }
+                                  disabled={!paper.exam_paper_path}
+                                  className="flex items-center gap-2"
+                                >
+                                  <Download className="w-4 h-4" />
+                                  {language === "en"
+                                    ? "Paper"
+                                    : "…r…r_…r3…_?"}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    openDownload(paper, "scheme", false)
+                                  }
+                                  disabled={!paper.scheme_path}
+                                  className="flex items-center gap-2"
+                                >
+                                  <Download className="w-4 h-4" />
+                                  {language === "en"
+                                    ? "Scheme"
+                                    : "…r…r¨…rY…_?…rY…rr…_?"}
+                                </Button>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
-                  </motion.div>
-                ))}
-              </div>
+                  );
+                })}
+                              </div>
             )}
           </div>
         </div>
       </section>
+
+      {/* Seminar Resources */}
+      <section ref={seminarRef} className="py-16 md:py-24">
+        <div className="container mx-auto px-4">
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-3xl font-serif font-bold text-foreground mb-8"
+          >
+            {language === "en" ? (
+              <>
+                Seminar <span className="text-cyan-400">Resources</span>
+              </>
+            ) : (
+              "செமினார் வளங்கள்"
+            )}
+          </motion.h2>
+
+          <div className="max-w-4xl mx-auto">
+            {seminarsLoading ? (
+              <div className="text-center py-8">
+                <div className="text-muted-foreground">
+                  {language === "en"
+                    ? "Loading seminars..."
+                    : "செமினார்களை ஏற்றுகிறது..."}
+                </div>
+              </div>
+            ) : seminars.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-muted-foreground">
+                  {language === "en"
+                    ? "No seminars available"
+                    : "செமினார்கள் கிடைக்கவில்லை"}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {seminarYears.map((year) => {
+                  const isOpen = openSeminarYear === year;
+                  const yearSeminars = seminarsByYear.get(year) || [];
+
+                  return (
+                    <div
+                      key={year}
+                      className="bg-cyan-500/20 backdrop-blur-sm rounded-xl border border-cyan-500/40"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenSeminarYear((current) =>
+                            current === year ? null : year
+                          )
+                        }
+                        className="w-full flex items-center justify-between p-5 hover:border-cyan-500/60 hover:bg-cyan-500/30 transition-all duration-300"
+                      >
+                        <div className="flex items-center gap-4">
+                          <FileText className="w-7 h-7 text-secondary" />
+                          <h3 className="text-xl font-semibold text-foreground">
+                            {year}
+                          </h3>
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          {isOpen ? "Hide" : "View"}
+                        </span>
+                      </button>
+
+                      {isOpen ? (
+                        <div className="space-y-4 p-5 pt-0">
+                          {yearSeminars.map((seminar) => (
+                            <motion.div
+                              key={seminar.sem_id}
+                              initial={{ opacity: 0, y: 20 }}
+                              whileInView={{ opacity: 1, y: 0 }}
+                              viewport={{ once: true }}
+                              className="flex items-center justify-between p-6 bg-cyan-500/10 backdrop-blur-sm rounded-xl border border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/20 transition-all duration-300"
+                            >
+                              <div className="flex items-center gap-4">
+                                <FileText className="w-8 h-8 text-secondary" />
+                                <div>
+                                  <h3 className="text-xl font-semibold text-foreground">
+                                    {language === "en"
+                                      ? `Seminar ${seminar.yrs}`
+                                      : `${seminar.yrs} …rs…_+…rr…r¨…rc…r_…rø…_?`}
+                                  </h3>
+                                  <p className="text-sm text-muted-foreground">
+                                    {new Date(
+                                      seminar.created_at
+                                    ).toLocaleDateString(
+                                      language === "en" ? "en-US" : "ta-LK",
+                                      {
+                                        year: "numeric",
+                                        month: "long",
+                                        day: "numeric",
+                                      }
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    openDownload(seminar, "paper", true)
+                                  }
+                                  disabled={!seminar.seminar_paper_path}
+                                  className="flex items-center gap-2"
+                                >
+                                  <Download className="w-4 h-4" />
+                                  {language === "en"
+                                    ? "Paper"
+                                    : "…r…r_…r3…_?"}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    openDownload(seminar, "answers", true)
+                                  }
+                                  disabled={!seminar.answers_path}
+                                  className="flex items-center gap-2"
+                                >
+                                  <Download className="w-4 h-4" />
+                                  {language === "en"
+                                    ? "Answers"
+                                    : "…r¦…r…r¨…rý…_?…r…r3…_?"}
+                                </Button>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      
     </div>
   );
 };

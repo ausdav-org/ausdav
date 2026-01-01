@@ -178,6 +178,7 @@ const EventsPage: React.FC = () => {
             </p>
           </motion.div>
         </div>
+      </section>
 
       {/* Annual Events Timeline */}
       <section className="py-24 relative overflow-hidden bg-slate-800/50">
