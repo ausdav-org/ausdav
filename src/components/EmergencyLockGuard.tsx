@@ -6,32 +6,15 @@ export const EmergencyLockGuard: React.FC<{ children: React.ReactNode }> = ({ ch
   const navigate = useNavigate();
   const location = useLocation();
   const [lastRedirect, setLastRedirect] = React.useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!active) return;
-      setCurrentUserId(session?.user?.id ?? null);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUserId(session?.user?.id ?? null);
-    });
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     let active = true;
     const checkEmergencyLock = async () => {
       try {
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
         // Skip checks if already on access-denied or emergency-lock pages
         if (
           location.pathname.includes('access-denied') || 
@@ -40,32 +23,31 @@ export const EmergencyLockGuard: React.FC<{ children: React.ReactNode }> = ({ ch
         ) {
           return;
         }
-        if (!currentUserId) return;
 
         // Check if emergency lock is enabled
-        // @ts-expect-error - Column exists in database after migration
-        const { data: settingsData } = await supabase
+        const { data: settingsData, error: settingsError } = await supabase
           .from('app_settings')
           .select('master_admin_emergency_lock')
           .maybeSingle();
 
         if (!active) return;
 
-        const locked = settingsData?.master_admin_emergency_lock === true;
+        // If column doesn't exist, assume lock is disabled
+        const locked = !settingsError && (settingsData as any)?.master_admin_emergency_lock === true;
 
         // If locked AND on admin page -> check if user is master admin
         if (locked && location.pathname.startsWith('/admin')) {
           try {
             // Check if user is master admin
-            // @ts-expect-error - Column exists in database
-            const { data: memberData } = await supabase
+            // @ts-expect-error - Supabase type inference causes deep type instantiation
+            const result: any = await supabase
               .from('members')
               .select('is_master_admin')
-              .eq('auth_user_id', currentUserId)
+              .eq('user_id', user.id)
               .maybeSingle();
 
-            // If not master admin, redirect to access denied (only once per redirect)
-            if (memberData?.is_master_admin !== true && lastRedirect !== '/access-denied') {
+            // If not master admin or column doesn't exist, redirect to access denied (only once per redirect)
+            if (result?.error || result?.data?.is_master_admin !== true) {
               setLastRedirect('/access-denied');
               navigate('/access-denied', { replace: true });
             }
@@ -95,7 +77,7 @@ export const EmergencyLockGuard: React.FC<{ children: React.ReactNode }> = ({ ch
       active = false;
       clearInterval(interval);
     };
-  }, [location.pathname, navigate, lastRedirect, currentUserId]);
+  }, [location.pathname, navigate, lastRedirect]);
 
   return <>{children}</>;
 };

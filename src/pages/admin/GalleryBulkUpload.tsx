@@ -43,7 +43,7 @@ const GalleryBulkUpload: React.FC<GalleryBulkUploadProps> = ({ galleryId, eventI
         .eq('id', galleryId)
         .single();
       if (error) throw error;
-      return data as GalleryRow;
+      return data as GalleryRow & { post_urls?: Record<string, string> };
     },
   });
 
